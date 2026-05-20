@@ -4,4 +4,4 @@
   X-Frame-Options: DENY
   Referrer-Policy: strict-origin-when-cross-origin
   Permissions-Policy: camera=(), geolocation=(), payment=(), usb=()
-  Content-Security-Policy: default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; media-src 'self' blob:; connect-src 'self' https://api.webfitalchemist.online wss://api.webfitalchemist.online; frame-ancestors 'none'
+  Content-Security-Policy: default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; media-src 'self' blob: mediastream: https://*.twilio.com https://media.twiliocdn.com; connect-src 'self' https://api.webfitalchemist.online wss://api.webfitalchemist.online https://*.twilio.com wss://*.twilio.com https://media.twiliocdn.com; frame-ancestors 'none'
