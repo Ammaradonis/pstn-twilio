@@ -3,6 +3,7 @@ import { create } from 'zustand';
 import { persist, createJSONStorage } from 'zustand/middleware';
 
 import { setToken } from './api-client';
+import { closeSocket, refreshSocketAuth } from './realtime';
 
 interface AuthState {
   user: UserDto | null;
@@ -26,6 +27,7 @@ export const useAuthStore = create<AuthState>()(
       setSession: (token, user) => {
         setToken(token);
         set({ token, user, status: 'authenticated', error: null });
+        refreshSocketAuth();
       },
       setUser: (user) => set({ user }),
       setStatus: (status) => set({ status }),
@@ -33,6 +35,7 @@ export const useAuthStore = create<AuthState>()(
       logout: () => {
         setToken(null);
         set({ token: null, user: null, status: 'unauthenticated', error: null });
+        closeSocket();
       },
     }),
     {
@@ -43,6 +46,7 @@ export const useAuthStore = create<AuthState>()(
         if (state?.token) {
           setToken(state.token);
           state.status = 'authenticated';
+          refreshSocketAuth();
         }
       },
     },

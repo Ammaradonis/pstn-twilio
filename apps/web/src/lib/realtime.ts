@@ -29,3 +29,11 @@ export function closeSocket(): void {
     socketInstance = null;
   }
 }
+
+// Call when the auth token changes (login / logout / refresh). Cycles the live
+// socket so the next handshake picks up the new token via the lazy auth callback.
+export function refreshSocketAuth(): void {
+  if (!socketInstance) return;
+  socketInstance.disconnect();
+  socketInstance.connect();
+}
