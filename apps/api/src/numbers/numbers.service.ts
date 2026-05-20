@@ -85,6 +85,17 @@ export class NumbersService {
         raw = (await countryResource.local.list(params as never)) as never;
       }
     } catch (err) {
+      // Twilio returns 404 when a (country, type) combo isn't in its inventory
+      // (e.g. NL Local, NL TollFree). Treat that as "no results" rather than a
+      // user-facing error, matching the empty-array UX when there are simply
+      // no matches in a region we DO sell.
+      const status = (err as { status?: number })?.status;
+      if (status === 404) {
+        this.logger.debug(
+          `Twilio has no ${input.type} inventory for ${input.country}; returning []`,
+        );
+        return [];
+      }
       const message = err instanceof Error ? err.message : 'Twilio search failed';
       this.logger.warn(`Number search failed: ${message}`);
       throw new BadRequestException({
