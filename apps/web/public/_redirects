@@ -1,0 +1,3 @@
+# Cloudflare Pages SPA fallback — every non-asset request gets index.html so
+# React Router can handle the route on the client.
+/*  /index.html  200

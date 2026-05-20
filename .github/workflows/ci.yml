@@ -1,0 +1,63 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  ci:
+    name: install · lint · typecheck · test · build · prisma format
+    runs-on: ubuntu-latest
+
+    env:
+      # Stub env so Prisma's schema validation passes in CI without real secrets.
+      DATABASE_URL: postgresql://stub:stub@localhost:5432/stub?schema=public
+      DIRECT_DATABASE_URL: postgresql://stub:stub@localhost:5432/stub?schema=public
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 11
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Build shared package
+        run: pnpm --filter @pstn-twilio/shared build
+
+      - name: Prisma format (schema lint)
+        run: pnpm prisma:format
+
+      - name: Prisma generate
+        run: pnpm prisma:generate
+
+      - name: Typecheck
+        run: pnpm typecheck
+
+      - name: Lint
+        run: pnpm lint
+
+      - name: Test
+        run: pnpm test
+
+      - name: Build
+        run: pnpm build

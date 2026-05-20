@@ -1,0 +1,4 @@
+# Cloudflare Pages SPA fallback.
+# All non-asset requests (no file extension) are served the React entry HTML
+# so React Router can handle them client-side.
+/*  /index.html  200

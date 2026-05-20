@@ -1,0 +1,253 @@
+import type { PhoneNumberDto } from '@pstn-twilio/shared';
+import { useQueries, useQuery } from '@tanstack/react-query';
+import { useMemo } from 'react';
+import { Link } from 'react-router-dom';
+
+import { useApiHealth } from '../hooks/use-api-health';
+import { api } from '../lib/api-client';
+import { useAuthStore } from '../lib/auth-store';
+import { formatDate, formatPhone } from '../lib/format';
+
+function StatCard({
+  title,
+  value,
+  hint,
+  tone = 'default',
+}: {
+  title: string;
+  value: string | number;
+  hint?: string;
+  tone?: 'default' | 'warn' | 'danger' | 'good';
+}) {
+  const ring =
+    tone === 'warn'
+      ? 'border-amber-200 bg-amber-50'
+      : tone === 'danger'
+        ? 'border-rose-200 bg-rose-50'
+        : tone === 'good'
+          ? 'border-emerald-200 bg-emerald-50'
+          : 'border-slate-200 bg-white';
+  return (
+    <div className={`rounded border p-4 ${ring}`}>
+      <p className="text-xs font-medium uppercase tracking-wide text-slate-500">{title}</p>
+      <p className="mt-1 text-2xl font-semibold text-slate-900">{value}</p>
+      {hint && <p className="mt-1 text-xs text-slate-600">{hint}</p>}
+    </div>
+  );
+}
+
+function isWebhookOk(n: PhoneNumberDto) {
+  return Boolean(n.voiceWebhookUrl) && Boolean(n.smsWebhookUrl) && Boolean(n.statusCallbackUrl);
+}
+
+export function Dashboard() {
+  const user = useAuthStore((s) => s.user);
+
+  const numbersQuery = useQuery({
+    queryKey: ['numbers'],
+    queryFn: () => api.numbers.list(),
+  });
+
+  const recentInboundSms = useQuery({
+    queryKey: ['messages', 'search', { direction: 'INBOUND', limit: 5 }],
+    queryFn: () => api.messages.search({ direction: 'INBOUND', limit: 5 }),
+  });
+
+  const apiHealth = useApiHealth();
+  const dbHealth = useQuery({
+    queryKey: ['health', 'db'],
+    queryFn: () => api.health.db(),
+    refetchInterval: 30_000,
+    refetchOnWindowFocus: false,
+  });
+  const redisHealth = useQuery({
+    queryKey: ['health', 'redis'],
+    queryFn: () => api.health.redis(),
+    refetchInterval: 30_000,
+    refetchOnWindowFocus: false,
+  });
+  const twilioHealth = useQuery({
+    queryKey: ['health', 'twilio'],
+    queryFn: () => api.health.twilio(),
+    refetchInterval: 60_000,
+    refetchOnWindowFocus: false,
+  });
+
+  const numbers = useMemo(() => numbersQuery.data ?? [], [numbersQuery.data]);
+  const activeNumbers = useMemo(() => numbers.filter((n) => n.active), [numbers]);
+  const needsWebhookConfig = useMemo(() => numbers.filter((n) => !isWebhookOk(n)), [numbers]);
+
+  const topNumberIds = activeNumbers.slice(0, 5).map((n) => n.id);
+  const callsQueries = useQueries({
+    queries: topNumberIds.map((id) => ({
+      queryKey: ['calls', id, { limit: 3 }],
+      queryFn: () => api.calls.list(id, { limit: 3 }),
+      staleTime: 30_000,
+    })),
+  });
+  const recentCalls = useMemo(() => {
+    const items = callsQueries.flatMap((q) => q.data?.items ?? []);
+    return items
+      .slice()
+      .sort((a, b) => new Date(b.startedAt).getTime() - new Date(a.startedAt).getTime())
+      .slice(0, 5);
+  }, [callsQueries]);
+
+  const numberById = useMemo(() => {
+    const map = new Map<string, PhoneNumberDto>();
+    for (const n of numbers) map.set(n.id, n);
+    return map;
+  }, [numbers]);
+
+  return (
+    <section className="space-y-6">
+      <header>
+        <h1 className="text-2xl font-semibold">Dashboard</h1>
+        <p className="mt-1 text-sm text-slate-600">
+          Welcome back{user?.email ? `, ${user.email}` : ''}. Live overview of provisioned numbers,
+          inbound activity, and system health.
+        </p>
+      </header>
+
+      <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+        <StatCard
+          title="Active numbers"
+          value={numbersQuery.isLoading ? '…' : activeNumbers.length}
+          hint={`${numbers.length} total provisioned`}
+          tone="good"
+        />
+        <StatCard
+          title="Need webhook config"
+          value={numbersQuery.isLoading ? '…' : needsWebhookConfig.length}
+          hint="Reconfigure from the number detail page"
+          tone={needsWebhookConfig.length > 0 ? 'warn' : 'default'}
+        />
+        <StatCard
+          title="Recent inbound SMS"
+          value={recentInboundSms.isLoading ? '…' : (recentInboundSms.data?.length ?? 0)}
+          hint="Last 5 across all numbers"
+        />
+        <StatCard
+          title="Recent calls"
+          value={recentCalls.length}
+          hint={`Across top ${topNumberIds.length || 0} numbers`}
+        />
+      </div>
+
+      <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+        <StatCard
+          title="API"
+          value={apiHealth.data?.status ?? (apiHealth.isLoading ? '…' : 'down')}
+          tone={apiHealth.data?.status === 'ok' ? 'good' : 'danger'}
+        />
+        <StatCard
+          title="Database"
+          value={dbHealth.data?.status ?? (dbHealth.isLoading ? '…' : 'down')}
+          tone={dbHealth.data?.status === 'ok' ? 'good' : 'danger'}
+        />
+        <StatCard
+          title="Redis"
+          value={redisHealth.data?.status ?? (redisHealth.isLoading ? '…' : 'down')}
+          tone={redisHealth.data?.status === 'ok' ? 'good' : 'danger'}
+        />
+        <StatCard
+          title="Twilio credentials"
+          value={twilioHealth.data?.status ?? (twilioHealth.isLoading ? '…' : 'down')}
+          tone={twilioHealth.data?.status === 'ok' ? 'good' : 'warn'}
+        />
+      </div>
+
+      {needsWebhookConfig.length > 0 && (
+        <div className="rounded border border-amber-300 bg-amber-50 p-3 text-sm text-amber-900">
+          <p className="font-semibold">
+            {needsWebhookConfig.length} number(s) need webhook configuration.
+          </p>
+          <ul className="mt-1 space-y-0.5 text-xs">
+            {needsWebhookConfig.map((n) => (
+              <li key={n.id}>
+                <Link to={`/numbers/${n.id}`} className="font-mono underline">
+                  {formatPhone(n.phoneNumberE164)}
+                </Link>{' '}
+                — {n.friendlyName}
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+
+      <div className="rounded border border-amber-200 bg-amber-50 p-3 text-xs leading-snug text-amber-800">
+        WhatsApp compatibility is not guaranteed. Some VoIP, toll-free, landline, or virtual numbers
+        may be unsupported by WhatsApp/Meta. Eligibility depends on number type, country, account
+        standing, and current WhatsApp/Meta policy.
+      </div>
+
+      <div className="grid gap-4 lg:grid-cols-2">
+        <div className="rounded border border-slate-200 bg-white p-4">
+          <h2 className="text-sm font-semibold uppercase tracking-wide text-slate-500">
+            Recent inbound SMS
+          </h2>
+          {recentInboundSms.isLoading && <p className="mt-2 text-sm text-slate-500">Loading…</p>}
+          {!recentInboundSms.isLoading && (recentInboundSms.data?.length ?? 0) === 0 && (
+            <p className="mt-2 text-sm text-slate-500">No inbound SMS yet.</p>
+          )}
+          <ul className="mt-2 divide-y divide-slate-100">
+            {(recentInboundSms.data ?? []).map((m) => (
+              <li key={m.id} className="py-2 text-sm">
+                <div className="flex items-center justify-between text-xs text-slate-500">
+                  <span className="font-mono">from {formatPhone(m.from)}</span>
+                  <span>{formatDate(m.createdAt)}</span>
+                </div>
+                <p className="mt-0.5 line-clamp-2 text-slate-900">{m.body || '—'}</p>
+                <Link
+                  to={`/numbers/${m.phoneNumberId}/messages`}
+                  className="text-xs text-slate-600 underline"
+                >
+                  Open inbox
+                </Link>
+              </li>
+            ))}
+          </ul>
+        </div>
+
+        <div className="rounded border border-slate-200 bg-white p-4">
+          <h2 className="text-sm font-semibold uppercase tracking-wide text-slate-500">
+            Recent calls
+          </h2>
+          {recentCalls.length === 0 && (
+            <p className="mt-2 text-sm text-slate-500">No recent calls.</p>
+          )}
+          <ul className="mt-2 divide-y divide-slate-100">
+            {recentCalls.map((c) => {
+              const n = c.phoneNumberId ? numberById.get(c.phoneNumberId) : null;
+              return (
+                <li key={c.id} className="py-2 text-sm">
+                  <div className="flex items-center justify-between text-xs text-slate-500">
+                    <span>
+                      {c.direction === 'INBOUND'
+                        ? `${formatPhone(c.from)} → ${n ? formatPhone(n.phoneNumberE164) : c.to}`
+                        : `${n ? formatPhone(n.phoneNumberE164) : c.from} → ${formatPhone(c.to)}`}
+                    </span>
+                    <span>{formatDate(c.startedAt)}</span>
+                  </div>
+                  <div className="mt-0.5 flex items-center justify-between text-xs">
+                    <span className="rounded bg-slate-100 px-1.5 py-0.5 font-medium text-slate-700">
+                      {c.status.toLowerCase()}
+                    </span>
+                    {c.phoneNumberId && (
+                      <Link
+                        to={`/numbers/${c.phoneNumberId}/calls`}
+                        className="text-slate-600 underline"
+                      >
+                        Open call log
+                      </Link>
+                    )}
+                  </div>
+                </li>
+              );
+            })}
+          </ul>
+        </div>
+      </div>
+    </section>
+  );
+}

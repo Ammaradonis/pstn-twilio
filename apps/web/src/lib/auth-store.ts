@@ -1,0 +1,50 @@
+import type { UserDto } from '@pstn-twilio/shared';
+import { create } from 'zustand';
+import { persist, createJSONStorage } from 'zustand/middleware';
+
+import { setToken } from './api-client';
+
+interface AuthState {
+  user: UserDto | null;
+  token: string | null;
+  status: 'unauthenticated' | 'loading' | 'authenticated';
+  error: string | null;
+  setSession: (token: string, user: UserDto) => void;
+  setUser: (user: UserDto | null) => void;
+  setStatus: (status: AuthState['status']) => void;
+  setError: (error: string | null) => void;
+  logout: () => void;
+}
+
+export const useAuthStore = create<AuthState>()(
+  persist(
+    (set) => ({
+      user: null,
+      token: null,
+      status: 'unauthenticated',
+      error: null,
+      setSession: (token, user) => {
+        setToken(token);
+        set({ token, user, status: 'authenticated', error: null });
+      },
+      setUser: (user) => set({ user }),
+      setStatus: (status) => set({ status }),
+      setError: (error) => set({ error }),
+      logout: () => {
+        setToken(null);
+        set({ token: null, user: null, status: 'unauthenticated', error: null });
+      },
+    }),
+    {
+      name: 'pstn-twilio.auth',
+      storage: createJSONStorage(() => localStorage),
+      partialize: (s) => ({ token: s.token, user: s.user }),
+      onRehydrateStorage: () => (state) => {
+        if (state?.token) {
+          setToken(state.token);
+          state.status = 'authenticated';
+        }
+      },
+    },
+  ),
+);

@@ -1,0 +1,1224 @@
+You are a highly advanced autonomous full-stack coding agent with permission to browse the web, read official documentation, use my terminal, run commands, create/edit code, access my GitHub via API keys, access my Twilio account, access my Cloudflare account for deployment, and configure DNS for my Namecheap domain webfitalchemist.online.
+
+Your mission is to design, build, test, document, and deploy a minimalistic but production-grade web application that lets the authenticated owner provision Twilio phone numbers, manage those numbers, receive and send SMS, view SMS inboxes and call logs per number, answer inbound PSTN calls in the browser using Twilio Voice JavaScript SDK/WebRTC, and place outbound PSTN calls from the browser using selected Twilio caller IDs.
+
+This project must use Twilio legitimately. Do not attempt to create arbitrary PSTN numbers, spoof caller ID, bypass Twilio, bypass carriers, bypass WhatsApp, automate WhatsApp account creation, scrape verification codes for abuse, or represent Twilio VoIP numbers as guaranteed WhatsApp-compatible. The correct language is “search, purchase, provision, configure, and manage Twilio numbers.” WhatsApp compatibility must be treated as “not guaranteed; subject to WhatsApp/Meta/Twilio rules, number type, country, account standing, and current policy.” Build the app so it can receive SMS and voice calls for numbers I legitimately own in Twilio, and let the user manually view/answer messages and calls.
+
+Core architecture:
+
+Frontend:
+- React
+- TypeScript
+- Vite
+- Tailwind CSS
+- Twilio Voice JavaScript SDK
+- WebSocket or Socket.IO client for app-level real-time updates
+- Minimalistic responsive UI
+- No FreePBX
+- No Zoiper
+- No VPS-specific SIP server
+- No direct SIP stack unless research proves it is required; default to Twilio Voice JS SDK
+
+Backend:
+- Node.js
+- TypeScript
+- NestJS
+- Twilio Node SDK
+- Twilio webhook validation
+- PostgreSQL via Neon.tech
+- Prisma ORM or Drizzle ORM; choose one after research, prefer Prisma unless there is a strong reason not to
+- Redis for ephemeral call state, token/session cache, rate limiting, and event fanout
+- REST API for users, numbers, SMS, calls, Twilio tokens, settings
+- WebSocket gateway for real-time inbound SMS/call status updates
+- Secure session system
+- Role-based access control, even if initially only one owner/admin exists
+- Structured logging
+- Input validation with Zod or class-validator
+- E.164 phone-number validation
+- Rate limiting
+- Audit logs for sensitive actions
+
+External services:
+- Twilio Programmable Voice
+- Twilio Voice JavaScript SDK
+- Twilio Programmable Messaging
+- Twilio Phone Numbers API
+- Twilio IncomingPhoneNumbers API
+- Twilio AvailablePhoneNumbers Local, Mobile, and TollFree resources
+- Twilio webhook signature validation
+- Neon PostgreSQL
+- Redis provider, either Upstash Redis or Cloudflare-compatible Redis alternative if Cloudflare stack requires it
+- Cloudflare Pages for frontend if appropriate
+- Cloudflare Workers or another Cloudflare-supported backend deployment option only if compatible with NestJS and Twilio webhook requirements; otherwise use a Node-compatible deployment target and configure Cloudflare DNS/proxy in front
+- Namecheap domain: webfitalchemist.online
+- GitHub repository with CI/CD
+
+Critical Twilio voice architecture:
+
+Inbound PSTN call:
+1. Someone calls a Twilio number owned by this app.
+2. Twilio sends a signed webhook to:
+   POST /webhooks/twilio/voice/inbound
+3. Backend validates the Twilio signature.
+4. Backend looks up the Twilio number in the database.
+5. Backend creates/updates a call log row.
+6. Backend emits a WebSocket event to the owner’s active browser sessions.
+7. Backend returns TwiML:
+   <Response>
+     <Dial>
+       <Client>{computed_client_identity_for_number_or_user}</Client>
+     </Dial>
+   </Response>
+8. Browser rings through Twilio Voice JS SDK.
+9. User can accept/reject the call in the dedicated number call page.
+10. Backend updates call state from status callbacks.
+
+Outbound PSTN call:
+1. User opens the dialer page for a selected Twilio number.
+2. Frontend requests a short-lived Twilio Voice access token from:
+   POST /api/voice/token
+3. Frontend initializes Twilio.Device with the token.
+4. User enters destination PSTN number.
+5. Frontend starts a Twilio Voice SDK call with params:
+   - selectedNumberId
+   - destinationNumber
+   - optional callContextId
+6. Twilio requests TwiML from the TwiML App Voice URL:
+   POST /webhooks/twilio/voice/outbound
+7. Backend validates Twilio signature.
+8. Backend validates that the requesting identity is allowed to use the selected Twilio number.
+9. Backend returns TwiML:
+   <Response>
+     <Dial callerId="{selectedTwilioNumberE164}">
+       <Number>{destinationNumberE164}</Number>
+     </Dial>
+   </Response>
+10. Backend records call log and updates status via callbacks.
+
+SMS inbound:
+1. Twilio receives SMS on one of the provisioned numbers.
+2. Twilio sends signed webhook:
+   POST /webhooks/twilio/messaging/inbound
+3. Backend validates signature.
+4. Backend stores the message in PostgreSQL.
+5. Backend emits real-time WebSocket event to the relevant number inbox page.
+6. Backend returns valid TwiML or 200 response as required by Twilio.
+
+SMS outbound:
+1. User opens a number-specific inbox.
+2. User enters destination number and body.
+3. Frontend calls:
+   POST /api/numbers/:numberId/messages
+4. Backend validates user authorization, rate limits, validates E.164 number, stores pending message, sends through Twilio Messaging API, updates message status, and emits updates.
+
+Non-negotiable security and compliance:
+- Never commit secrets.
+- Never print API keys, auth tokens, database URLs, or private credentials in logs.
+- Use .env.example with placeholders.
+- Use encrypted environment variables in deployment.
+- Validate all Twilio webhooks using official Twilio helper library.
+- Reject unsigned/invalid Twilio webhook requests.
+- Protect all user APIs with authentication.
+- Add CSRF protection if using cookie sessions.
+- Add CORS allowlist for production domains.
+- Enforce rate limits on:
+  - phone-number search
+  - phone-number purchase/provisioning
+  - outbound SMS
+  - outbound calls
+  - login
+  - token generation
+- Store audit logs for:
+  - purchased numbers
+  - released numbers
+  - webhook config changes
+  - outbound SMS
+  - outbound calls
+  - auth events
+- Do not build bulk account creation, bulk WhatsApp registration, spam tooling, caller ID spoofing, or hidden forwarding logic.
+- Do not build SMS/call forwarding as a hidden workaround. The UI may display inbound messages and allow manual answering through the browser only.
+- Add clear UI copy: “WhatsApp compatibility is not guaranteed. Some VoIP, toll-free, landline, or virtual numbers may be unsupported by WhatsApp/Meta.”
+
+Deliverables:
+- GitHub repository
+- Production-ready frontend
+- Production-ready backend
+- Database schema and migrations
+- Twilio webhook configuration automation where possible
+- Cloudflare/DNS/deployment setup
+- RESEARCH.md with official source links and notes
+- ARCHITECTURE.md
+- API.md
+- SECURITY.md
+- DEPLOYMENT.md
+- TESTING.md
+- .env.example
+- Seed script
+- End-to-end test plan
+- Manual Twilio test checklist
+- Production launch checklist
+
+Implementation phases:
+
+PHASE 1 — Research, policy validation, and architecture confirmation
+
+Browse and verify current official documentation before coding. Do not rely on stale memory.
+
+Research these exact areas:
+1. Twilio Phone Numbers API
+2. Twilio AvailablePhoneNumbers Local, Mobile, and TollFree resources
+3. Twilio IncomingPhoneNumbers API
+4. Twilio Programmable Voice
+5. Twilio Voice JavaScript SDK
+6. Twilio Access Tokens and Voice grants
+7. TwiML App configuration
+8. Twilio <Dial>, <Client>, and <Number> TwiML
+9. Twilio Programmable Messaging inbound message webhooks
+10. Twilio Messaging status callbacks
+11. Twilio webhook signature validation
+12. Twilio number capability fields: voice, SMS, MMS, mobile, local, toll-free, country/region limitations
+13. Twilio regulatory requirements for purchasing numbers by country
+14. Twilio WhatsApp sender registration rules, if relevant
+15. WhatsApp/Meta phone-number eligibility and unsupported number types
+16. Cloudflare deployment constraints for NestJS/WebSockets
+17. Namecheap DNS configuration for Cloudflare nameservers
+18. Neon PostgreSQL production connection pooling
+19. Redis provider compatibility
+20. Twilio Voice JS SDK browser support and limitations
+
+Create RESEARCH.md with:
+- Source title
+- Source URL
+- Date accessed
+- Short summary
+- Implementation implication
+- Any compliance warning
+
+After research, write a short “Architecture Decision Record” in docs/adr/0001-telephony-architecture.md answering:
+- Why Twilio Voice JS SDK is used instead of SIP.js/JsSIP
+- Why backend TwiML webhooks control call routing
+- Why no FreePBX/Zoiper/VPS PBX is used
+- Why WhatsApp compatibility cannot be guaranteed
+- What number types are supported by the first release
+
+Acceptance criteria:
+- RESEARCH.md exists.
+- ADR exists.
+- No code assumes WhatsApp compatibility.
+- All Twilio implementation choices cite current official docs in RESEARCH.md.
+
+PHASE 2 — Repository setup, monorepo structure, coding standards
+
+Create a production-grade monorepo.
+
+Recommended structure:
+
+/apps
+  /api
+    NestJS backend
+  /web
+    React frontend
+/packages
+  /shared
+    shared TypeScript types, DTOs, validation schemas
+/docs
+  RESEARCH.md
+  ARCHITECTURE.md
+  API.md
+  SECURITY.md
+  DEPLOYMENT.md
+  TESTING.md
+  /adr
+/prisma or /drizzle
+  schema and migrations
+/scripts
+  local dev scripts
+  Twilio setup scripts
+  deployment helpers
+
+Set up:
+- TypeScript strict mode
+- ESLint
+- Prettier
+- Husky or equivalent pre-commit hooks
+- pnpm workspace or npm workspace; prefer pnpm
+- Vitest/Jest for unit tests
+- Playwright for end-to-end tests
+- GitHub Actions CI:
+  - install
+  - lint
+  - typecheck
+  - test
+  - build
+  - migration check
+
+Status: COMPLETE — finalized 2026-05-19
+
+Backend package:
+- NestJS
+- Config module
+- Twilio SDK
+- Prisma/Drizzle
+- Redis client
+- WebSocket gateway
+- Auth module
+- Numbers module
+- Messages module
+- Calls module
+- Twilio module
+- Webhooks module
+- Audit module
+- Health module
+
+Frontend package:
+- Vite React TypeScript
+- Tailwind
+- React Router
+- TanStack Query
+- Zustand or lightweight state manager
+- Twilio Voice JS SDK
+- Socket.IO client or native WebSocket
+- Minimal component library; avoid heavy UI frameworks unless necessary
+
+Acceptance criteria:
+- Repo runs locally with one command.
+- Separate web/api apps are functional.
+- Shared types are imported by both frontend and backend.
+- CI workflow passes.
+
+PHASE 3 — Environment, secrets, database, Redis, and infrastructure baseline
+
+Create .env.example with:
+
+Backend:
+- NODE_ENV
+- PORT
+- PUBLIC_BASE_URL
+- WEB_APP_URL
+- DATABASE_URL
+- DIRECT_DATABASE_URL if needed for migrations
+- REDIS_URL
+- SESSION_SECRET
+- JWT_SECRET if JWT is used
+- COOKIE_DOMAIN
+- CORS_ORIGINS
+- TWILIO_ACCOUNT_SID
+- TWILIO_AUTH_TOKEN
+- TWILIO_API_KEY_SID
+- TWILIO_API_KEY_SECRET
+- TWILIO_TWIML_APP_SID
+- TWILIO_DEFAULT_COUNTRY
+- TWILIO_WEBHOOK_BASE_URL
+- TWILIO_VOICE_STATUS_CALLBACK_URL
+- TWILIO_MESSAGING_STATUS_CALLBACK_URL
+- OWNER_EMAIL
+- OWNER_INITIAL_PASSWORD or invite-token bootstrapping variable
+
+Frontend:
+- VITE_API_BASE_URL
+- VITE_WS_URL
+- VITE_APP_NAME
+
+Infrastructure:
+- CLOUDFLARE_ACCOUNT_ID
+- CLOUDFLARE_API_TOKEN
+- CLOUDFLARE_ZONE_ID
+- NAMECHEAP_DOMAIN=webfitalchemist.online
+
+Set up Neon PostgreSQL:
+- Create database.
+- Enable SSL.
+- Configure pooling.
+- Document migration command.
+- Add backup/restore notes.
+
+Set up Redis:
+- Select provider.
+- Confirm TLS support.
+- Configure env var.
+- Use Redis for:
+  - rate limits
+  - ephemeral voice call state
+  - WebSocket pub/sub if multiple backend instances
+  - short-lived token replay prevention if needed
+
+Create health endpoints:
+- GET /api/health
+- GET /api/health/db
+- GET /api/health/redis
+- GET /api/health/twilio
+
+Acceptance criteria:
+- Local env documented.
+- Health checks pass.
+- Database migrations run.
+- Redis connection works.
+- Secrets never appear in logs.
+
+PHASE 4 — Database schema and domain model
+
+Design relational schema for a single-owner app but extensible to multi-user.
+
+Core tables:
+
+users:
+- id UUID PK
+- email unique
+- password_hash nullable if magic-link/OAuth is used
+- role enum: OWNER, ADMIN, OPERATOR, VIEWER
+- created_at
+- updated_at
+- last_login_at
+- disabled_at
+
+sessions or refresh_tokens:
+- id
+- user_id
+- token_hash
+- user_agent
+- ip_address
+- expires_at
+- revoked_at
+- created_at
+
+twilio_accounts:
+- id
+- account_sid
+- friendly_name
+- is_default
+- created_at
+- updated_at
+
+phone_numbers:
+- id UUID
+- user_id or owner_id
+- twilio_account_sid
+- twilio_incoming_phone_number_sid
+- phone_number_e164 unique
+- country
+- region
+- locality
+- postal_code
+- area_code
+- number_type enum: LOCAL, MOBILE, TOLL_FREE, UNKNOWN
+- capabilities_voice boolean
+- capabilities_sms boolean
+- capabilities_mms boolean
+- capabilities_whatsapp_candidate boolean default false
+- whatsapp_compatibility_status enum: UNKNOWN, NOT_GUARANTEED, USER_TESTING, UNSUPPORTED, APPROVED_BUSINESS_SENDER
+- voice_webhook_url
+- sms_webhook_url
+- status_callback_url
+- friendly_name
+- tags jsonb
+- active boolean
+- purchased_at
+- released_at
+- created_at
+- updated_at
+
+number_searches:
+- id
+- user_id
+- country
+- area_code
+- contains
+- number_type
+- required_sms boolean
+- required_voice boolean
+- result_count
+- created_at
+
+sms_messages:
+- id UUID
+- phone_number_id
+- twilio_message_sid unique nullable
+- direction enum: INBOUND, OUTBOUND
+- from_e164
+- to_e164
+- body
+- num_media
+- media jsonb
+- status enum: RECEIVED, QUEUED, SENT, DELIVERED, FAILED, UNDELIVERED
+- error_code nullable
+- error_message nullable
+- raw_payload jsonb
+- created_at
+- updated_at
+
+calls:
+- id UUID
+- phone_number_id nullable
+- twilio_call_sid unique nullable
+- parent_call_sid nullable
+- direction enum: INBOUND, OUTBOUND
+- from_e164
+- to_e164
+- browser_identity
+- selected_caller_id
+- destination_e164
+- status enum: INITIATED, RINGING, IN_PROGRESS, COMPLETED, BUSY, FAILED, NO_ANSWER, CANCELED
+- duration_seconds nullable
+- price nullable
+- price_unit nullable
+- raw_payload jsonb
+- started_at
+- answered_at nullable
+- ended_at nullable
+- created_at
+- updated_at
+
+voice_identities:
+- id
+- user_id
+- phone_number_id nullable
+- identity unique
+- label
+- created_at
+- updated_at
+
+audit_logs:
+- id
+- user_id nullable
+- action
+- entity_type
+- entity_id
+- ip_address
+- user_agent
+- metadata jsonb
+- created_at
+
+webhook_events:
+- id
+- provider enum: TWILIO
+- event_type
+- signature_valid boolean
+- twilio_sid nullable
+- dedupe_key nullable unique
+- raw_payload jsonb
+- processed_at
+- created_at
+
+app_settings:
+- key unique
+- value jsonb
+- updated_by
+- updated_at
+
+Indexes:
+- phone_numbers(phone_number_e164)
+- phone_numbers(twilio_incoming_phone_number_sid)
+- sms_messages(phone_number_id, created_at desc)
+- sms_messages(twilio_message_sid)
+- calls(phone_number_id, created_at desc)
+- calls(twilio_call_sid)
+- audit_logs(created_at desc)
+- webhook_events(dedupe_key)
+
+Acceptance criteria:
+- Schema migration exists.
+- Seed script creates owner user.
+- Database constraints prevent duplicate phone numbers.
+- Raw Twilio payloads are stored for debugging but secrets are never stored.
+
+PHASE 5 — Authentication, authorization, sessions, and security middleware
+
+Build secure authentication.
+
+Minimum:
+- Owner login page.
+- Password hashing with argon2id or bcrypt.
+- HTTP-only secure cookies for sessions, or access/refresh JWT with secure storage; choose the safer approach for the deployment target.
+- CSRF protection if cookie-based.
+- Role guard.
+- Resource ownership guard.
+- Audit logging for login/logout and sensitive actions.
+
+Backend endpoints:
+- POST /api/auth/login
+- POST /api/auth/logout
+- GET /api/auth/me
+- POST /api/auth/change-password
+- POST /api/auth/bootstrap-owner, enabled only if no owner exists and guarded by BOOTSTRAP_TOKEN
+
+Middleware:
+- request ID
+- structured logger
+- CORS allowlist
+- rate limiter
+- validation pipe
+- exception filter
+- security headers
+
+Acceptance criteria:
+- Unauthenticated users cannot access number, SMS, call, or token APIs.
+- Login rate-limited.
+- All sensitive mutations create audit logs.
+- Session invalidation works.
+
+PHASE 6 — Twilio number search, purchase/provisioning, configuration, and management
+
+Build the number-generation/provisioning feature as legitimate Twilio purchase/provisioning.
+
+Frontend page:
+- /numbers/new
+- User must choose:
+  - country
+  - area code or region/locality where applicable
+  - number type: Local, Mobile, Toll-Free, or Auto, depending on country support
+  - required capabilities:
+    - Voice required
+    - SMS required
+    - MMS optional
+  - optional contains/pattern
+- UI must clearly say:
+  - “This searches Twilio inventory. It does not create arbitrary PSTN numbers.”
+  - “WhatsApp compatibility is not guaranteed.”
+
+Backend APIs:
+- GET /api/phone-number-options/countries
+- GET /api/numbers/available?country=US&type=local&areaCode=...&sms=true&voice=true
+- POST /api/numbers/purchase
+- GET /api/numbers
+- GET /api/numbers/:numberId
+- PATCH /api/numbers/:numberId
+- POST /api/numbers/:numberId/configure-webhooks
+- POST /api/numbers/:numberId/sync
+- POST /api/numbers/:numberId/release
+- DELETE /api/numbers/:numberId or POST /api/numbers/:numberId/deactivate
+
+Number purchase flow:
+1. Validate user input.
+2. Search Twilio AvailablePhoneNumbers for matching candidates.
+3. Return normalized candidates with:
+   - E.164 number
+   - locality/region/country
+   - capabilities
+   - type
+   - monthly price if available from docs/API, otherwise omit
+   - regulatory warning if applicable
+4. User selects one candidate.
+5. Backend calls Twilio IncomingPhoneNumbers create/purchase endpoint.
+6. Backend configures:
+   - voice webhook URL
+   - voice fallback URL
+   - status callback URL
+   - messaging webhook URL
+   - messaging fallback URL if supported
+7. Backend stores number.
+8. Backend emits WebSocket event.
+9. Backend writes audit log.
+
+Twilio webhook URLs to configure:
+- Voice inbound:
+  POST {PUBLIC_BASE_URL}/webhooks/twilio/voice/inbound
+- Voice fallback:
+  POST {PUBLIC_BASE_URL}/webhooks/twilio/voice/fallback
+- Voice status:
+  POST {PUBLIC_BASE_URL}/webhooks/twilio/voice/status
+- Messaging inbound:
+  POST {PUBLIC_BASE_URL}/webhooks/twilio/messaging/inbound
+- Messaging status:
+  POST {PUBLIC_BASE_URL}/webhooks/twilio/messaging/status
+
+Number management page:
+- /numbers
+- Table:
+  - phone number
+  - friendly name
+  - type
+  - country
+  - capabilities
+  - active status
+  - SMS count
+  - call count
+  - WhatsApp compatibility status label
+  - webhook status
+  - actions
+- Actions:
+  - open inbox/call log
+  - open inbound call page
+  - open dialer
+  - rename
+  - sync from Twilio
+  - reconfigure webhooks
+  - release/deactivate
+
+Acceptance criteria:
+- User cannot purchase without explicit confirmation.
+- User must choose area code/region where supported.
+- Purchased numbers are immediately configured with app webhooks.
+- App can resync Twilio-side configuration.
+- Release flow is protected by confirmation and audit log.
+
+PHASE 7 — SMS inbox, outbound SMS, message webhooks, and status callbacks
+
+Frontend page:
+- /numbers/:numberId/messages
+- Combined SMS inbox for selected number.
+- Shows:
+  - inbound messages
+  - outbound messages
+  - timestamp
+  - from/to
+  - delivery status
+  - media attachments if supported
+  - raw technical details collapsed for debugging
+- Compose box:
+  - destination E.164 input
+  - body text
+  - send button
+  - character count
+  - warning about consent/compliance
+
+Backend APIs:
+- GET /api/numbers/:numberId/messages?cursor=&limit=
+- GET /api/numbers/:numberId/messages/:messageId
+- POST /api/numbers/:numberId/messages
+- POST /api/numbers/:numberId/messages/:messageId/retry
+- GET /api/messages/search?query=&from=&to=&direction=
+
+Twilio webhooks:
+- POST /webhooks/twilio/messaging/inbound
+- POST /webhooks/twilio/messaging/status
+
+Inbound SMS webhook behavior:
+1. Validate Twilio signature.
+2. Accept evolving Twilio parameters without breaking validation.
+3. Dedupe by MessageSid.
+4. Find phone_numbers row by To.
+5. Store inbound message.
+6. Store raw payload.
+7. Emit WebSocket event:
+   event: sms.received
+   payload: numberId, messageId, from, to, body, createdAt
+8. Return appropriate TwiML/empty 200.
+
+Outbound SMS behavior:
+1. Authenticate user.
+2. Validate selected number ownership.
+3. Validate selected number has SMS capability.
+4. Validate destination E.164.
+5. Rate limit.
+6. Create pending row.
+7. Send Twilio message.
+8. Store MessageSid.
+9. Emit sms.sent/sms.failed events.
+10. Update status through status callback.
+
+Compliance:
+- Add UI copy requiring lawful consent for outbound messages.
+- Do not build bulk SMS blasting.
+- Do not auto-forward verification codes.
+- Do not parse OTPs into special automation workflows.
+- Messages are displayed to authenticated owner only.
+
+Acceptance criteria:
+- Inbound SMS appears in UI without refresh.
+- Outbound SMS status updates.
+- Invalid signatures rejected.
+- Duplicate webhooks do not duplicate messages.
+- Pagination works.
+
+PHASE 8 — Voice, WebRTC softphone, inbound call answering, outbound dialer, and call logs
+
+Status: COMPLETE — finalized 2026-05-19
+
+Frontend pages:
+1. /numbers/:numberId/calls
+   - Call log for selected number
+   - Direction, from, to, status, duration, timestamps
+   - Filter by direction/status/date
+2. /numbers/:numberId/answer
+   - Dedicated incoming-call screen
+   - Twilio Device status
+   - Selected number identity
+   - Incoming call card
+   - Answer button
+   - Reject button
+   - Mute/unmute
+   - Speaker/device selection if supported
+   - Connection state
+3. /numbers/:numberId/dial
+   - Dial pad
+   - Destination E.164 input
+   - Selected caller ID locked to current number
+   - Call button
+   - Hangup button
+   - Mute/unmute
+   - Live call status
+
+Backend APIs:
+- POST /api/voice/token
+- GET /api/voice/identity
+- POST /api/calls/prepare-outbound
+- GET /api/numbers/:numberId/calls?cursor=&limit=
+- GET /api/numbers/:numberId/calls/:callId
+- POST /api/calls/:callId/notes optional
+- POST /api/calls/:callId/hangup optional if supported by Twilio API
+- GET /api/voice/device-config
+
+Twilio webhooks:
+- POST /webhooks/twilio/voice/inbound
+- POST /webhooks/twilio/voice/outbound
+- POST /webhooks/twilio/voice/status
+- POST /webhooks/twilio/voice/fallback
+
+Voice token generation:
+1. User authenticates.
+2. User optionally passes numberId.
+3. Backend validates user can access number.
+4. Backend creates stable but scoped Twilio Voice identity, e.g.:
+   user_{userId}_number_{numberId}
+   or owner_main
+5. Backend creates short-lived Access Token with VoiceGrant.
+6. Token includes TwiML App SID for outbound calls.
+7. Backend returns:
+   - token
+   - identity
+   - expiresAt
+
+Inbound voice webhook:
+1. Validate Twilio signature.
+2. Read To, From, CallSid.
+3. Find phone number by To.
+4. Create call record.
+5. Choose client identity associated with number owner.
+6. Emit WebSocket event:
+   call.inbound.ringing
+7. Return TwiML:
+   <Response>
+     <Dial answerOnBridge="true" timeout="30">
+       <Client statusCallback="{PUBLIC_BASE_URL}/webhooks/twilio/voice/status"
+               statusCallbackEvent="initiated ringing answered completed">
+         {identity}
+       </Client>
+     </Dial>
+   </Response>
+8. If no active device is available, return a graceful <Say> and <Hangup> or voicemail-like message only if explicitly desired. Do not forward.
+
+Outbound voice webhook:
+1. Validate Twilio signature.
+2. Parse request params from Twilio Voice SDK connection.
+3. Validate selectedNumberId.
+4. Validate destinationNumber.
+5. Confirm selected Twilio number belongs to app and has voice capability.
+6. Create/update outbound call record.
+7. Return TwiML:
+   <Response>
+     <Dial callerId="{selectedNumberE164}"
+           answerOnBridge="true">
+       <Number>{destinationE164}</Number>
+     </Dial>
+   </Response>
+
+Call status webhook:
+1. Validate signature.
+2. Dedupe if needed.
+3. Update call state.
+4. Store duration/price if provided.
+5. Emit WebSocket event:
+   call.status.updated
+
+Frontend Twilio Device behavior:
+- Initialize device only after token retrieval.
+- Refresh token before expiration.
+- Register device for incoming calls.
+- Display device readiness.
+- Handle events:
+  - registered
+  - unregistered
+  - incoming
+  - accept
+  - disconnect
+  - cancel
+  - reject
+  - error
+- Provide graceful browser permission handling for microphone.
+- Show browser compatibility warning.
+- Do not require SIP.js unless research determines Twilio Voice JS SDK is insufficient.
+
+Acceptance criteria:
+- Browser rings on inbound PSTN call.
+- User can answer manually in the dedicated page.
+- User can reject call.
+- User can dial a PSTN destination from selected number.
+- Call logs update in real time.
+- Twilio status callbacks update database.
+- Invalid webhook signatures rejected.
+- Calls cannot be made from numbers not owned by the user.
+
+PHASE 9 — Minimalistic frontend implementation
+
+Status: COMPLETE — finalized 2026-05-19
+
+Build a clean, minimal, fast UI.
+
+Routes:
+- /login
+- /dashboard
+- /numbers/new
+- /numbers
+- /numbers/:numberId
+- /numbers/:numberId/messages
+- /numbers/:numberId/calls
+- /numbers/:numberId/answer
+- /numbers/:numberId/dial
+- /settings
+- /settings/twilio
+- /settings/security
+
+Global layout:
+- Left sidebar or top nav
+- Current selected number switcher
+- Connection status indicator:
+  - API online/offline
+  - WebSocket connected/disconnected
+  - Twilio Device registered/unregistered
+- Toast notifications
+- Error boundary
+
+Dashboard:
+- Total active numbers
+- Recent inbound SMS
+- Recent calls
+- Numbers requiring webhook reconfiguration
+- Warnings:
+  - WhatsApp compatibility not guaranteed
+  - Missing Twilio config
+  - Webhook base URL not public HTTPS
+  - Redis/database issues
+
+Generate number page:
+- Country selector
+- Area code input, required when user chooses NANP-style area code flow
+- Type selector
+- Capability checkboxes
+- Search button
+- Results table
+- Purchase confirmation modal
+- Regulatory warning area
+
+Manage numbers page:
+- Search/filter
+- Number cards/table
+- Capability badges
+- Webhook status
+- Quick links:
+  - Inbox
+  - Calls
+  - Answer
+  - Dial
+  - Settings
+
+Number detail page:
+- Metadata
+- Capabilities
+- Twilio SID
+- Webhook URLs
+- Status
+- WhatsApp compatibility status:
+  - Unknown
+  - Not guaranteed
+  - User testing
+  - Unsupported
+  - Business sender approved, only if actually verified through official API/account status
+- Actions:
+  - rename
+  - sync
+  - reconfigure webhooks
+  - deactivate/release
+
+Inbox page:
+- Thread-like message list
+- Compose panel
+- Real-time updates
+- Delivery status
+- Raw payload drawer for admin
+
+Calls page:
+- Call log table
+- Filters
+- Status badges
+- Raw callback drawer
+
+Answer page:
+- Large incoming call screen
+- Device readiness card
+- Current selected number
+- Accept/reject
+- Mute/hangup
+- Error messages for microphone permission
+
+Dial page:
+- Dial pad
+- Destination number input
+- Selected caller ID display
+- Call/hangup
+- Live status
+
+Settings:
+- Twilio config validation
+- Webhook base URL display
+- Security/session settings
+- Developer diagnostics
+
+Frontend API client:
+- Typed API client using shared DTOs.
+- TanStack Query for reads.
+- Mutations invalidate relevant queries.
+- WebSocket events update query cache.
+
+Acceptance criteria:
+- Minimalistic UI works on desktop and mobile-width screens.
+- No secret values exposed client-side.
+- All routes except login are protected.
+- Frontend handles Twilio Device errors gracefully.
+- User can complete core flows without using Twilio Console manually after initial credential setup.
+
+PHASE 10 — Deployment, DNS, Twilio setup automation, testing, observability, and launch checklist
+
+Status: COMPLETE — finalized 2026-05-20
+
+Deployment:
+1. Create production build for frontend.
+2. Deploy frontend to Cloudflare Pages if compatible.
+3. Deploy backend to a Node-compatible environment.
+   - If using Cloudflare Workers is not compatible with NestJS/WebSockets/Twilio SDK needs, document why and choose a compatible target.
+   - Cloudflare can still manage DNS/proxy/security.
+4. Configure domain:
+   - app.webfitalchemist.online for frontend
+   - api.webfitalchemist.online for backend
+   - optional ws.webfitalchemist.online if needed
+5. Configure Namecheap DNS to use Cloudflare nameservers if not already done.
+6. Configure Cloudflare DNS records.
+7. Ensure HTTPS is active.
+8. Set production env vars.
+9. Run migrations.
+10. Run smoke tests.
+
+Twilio setup:
+- Verify Account SID/Auth Token/API Key config.
+- Create or verify TwiML App.
+- Set TwiML App Voice URL:
+  https://api.webfitalchemist.online/webhooks/twilio/voice/outbound
+- Set TwiML App status callback if needed.
+- Ensure purchased numbers receive:
+  - voice inbound URL
+  - voice status URL
+  - messaging inbound URL
+  - messaging status URL
+- Add script:
+  scripts/twilio-sync.ts
+  that can:
+  - list existing Twilio numbers
+  - import them into database
+  - configure webhooks
+  - verify capabilities
+  - report mismatches
+
+Testing:
+
+Unit tests:
+- auth service
+- Twilio signature validation wrapper
+- E.164 validation
+- number search mapping
+- purchase flow service with mocked Twilio
+- SMS inbound webhook parser
+- SMS outbound sender
+- voice TwiML generation
+- call status mapping
+- authorization guards
+
+Integration tests:
+- database migrations
+- number CRUD
+- message CRUD
+- call CRUD
+- webhook endpoints with valid and invalid Twilio signatures
+- WebSocket event emission
+
+E2E tests:
+- login
+- search available number mock
+- purchase mock
+- manage numbers
+- view inbox
+- send SMS mock
+- inbound SMS webhook mock updates UI
+- inbound call webhook mock updates UI
+- dial page starts mock call
+
+Manual Twilio production checklist:
+- Buy one test number with voice + SMS capabilities.
+- Confirm webhooks configured.
+- Send SMS to number from external phone.
+- Confirm SMS appears in UI.
+- Send outbound SMS to owned test device.
+- Call Twilio number from external phone.
+- Confirm browser rings.
+- Answer manually.
+- Hang up and verify call log.
+- Dial external PSTN number from browser.
+- Verify selected caller ID.
+- Verify call status callback updates.
+- Check Twilio debugger for errors.
+
+Observability:
+- Structured JSON logs.
+- Request IDs.
+- Webhook event logging.
+- Error tracking integration if available.
+- Health dashboard.
+- Admin diagnostics page showing:
+  - database status
+  - Redis status
+  - Twilio credential validation
+  - public webhook URL status
+  - last webhook received
+  - last Twilio error
+
+Docs:
+- RESEARCH.md
+- ARCHITECTURE.md
+- API.md
+- SECURITY.md
+- DEPLOYMENT.md
+- TESTING.md
+- OPERATIONS.md
+- TROUBLESHOOTING.md
+
+API route specification:
+
+Auth:
+- POST /api/auth/bootstrap-owner
+- POST /api/auth/login
+- POST /api/auth/logout
+- GET /api/auth/me
+- POST /api/auth/change-password
+
+Health:
+- GET /api/health
+- GET /api/health/db
+- GET /api/health/redis
+- GET /api/health/twilio
+
+Numbers:
+- GET /api/phone-number-options/countries
+- GET /api/numbers/available
+- POST /api/numbers/purchase
+- GET /api/numbers
+- GET /api/numbers/:numberId
+- PATCH /api/numbers/:numberId
+- POST /api/numbers/:numberId/sync
+- POST /api/numbers/:numberId/configure-webhooks
+- POST /api/numbers/:numberId/release
+- DELETE /api/numbers/:numberId
+
+Messages:
+- GET /api/numbers/:numberId/messages
+- GET /api/numbers/:numberId/messages/:messageId
+- POST /api/numbers/:numberId/messages
+- POST /api/numbers/:numberId/messages/:messageId/retry
+- GET /api/messages/search
+
+Calls:
+- GET /api/numbers/:numberId/calls
+- GET /api/numbers/:numberId/calls/:callId
+- POST /api/calls/prepare-outbound
+- POST /api/calls/:callId/hangup
+- POST /api/calls/:callId/notes
+
+Voice:
+- POST /api/voice/token
+- GET /api/voice/identity
+- GET /api/voice/device-config
+
+Twilio webhooks:
+- POST /webhooks/twilio/voice/inbound
+- POST /webhooks/twilio/voice/outbound
+- POST /webhooks/twilio/voice/status
+- POST /webhooks/twilio/voice/fallback
+- POST /webhooks/twilio/messaging/inbound
+- POST /webhooks/twilio/messaging/status
+
+Settings:
+- GET /api/settings
+- PATCH /api/settings
+- GET /api/settings/twilio/validate
+- POST /api/settings/twilio/sync
+
+Audit:
+- GET /api/audit-logs
+
+WebSocket events:
+Server emits:
+- number.created
+- number.updated
+- number.deleted
+- sms.received
+- sms.sent
+- sms.status.updated
+- call.inbound.ringing
+- call.outbound.started
+- call.status.updated
+- twilio.webhook.error
+- system.health.changed
+
+Client emits if needed:
+- client.presence
+- voice.device.ready
+- voice.device.unavailable
+
+Recommended implementation order:
+1. Research docs and write RESEARCH.md.
+2. Bootstrap monorepo.
+3. Implement database schema.
+4. Implement auth/session.
+5. Implement Twilio client module.
+6. Implement webhook validation.
+7. Implement number search/purchase/configure.
+8. Implement frontend number pages.
+9. Implement SMS inbound/outbound.
+10. Implement SMS UI.
+11. Implement Voice token endpoint.
+12. Implement TwiML outbound/inbound webhooks.
+13. Implement Twilio Voice JS frontend.
+14. Implement call logs and status callbacks.
+15. Add WebSocket real-time updates.
+16. Add tests.
+17. Add docs.
+18. Deploy.
+19. Run manual Twilio checklist.
+20. Fix production issues.
+
+Final production acceptance criteria:
+- I can log in.
+- I can search Twilio inventory by country/type/area code.
+- I can purchase/provision a number I select.
+- The number is stored in PostgreSQL.
+- The number webhooks are configured.
+- I can view and manage all generated/provisioned numbers.
+- I can receive SMS into the selected number’s inbox.
+- I can send SMS from the selected number.
+- I can view call logs per number.
+- I can receive an inbound PSTN call in the browser.
+- I can manually answer or reject an inbound call.
+- I can dial a PSTN number from the browser using a selected Twilio number as caller ID.
+- All Twilio webhooks validate signatures.
+- All sensitive routes require auth.
+- Redis, PostgreSQL, Twilio, frontend, backend, and WebSockets work in production.
+- Documentation is complete.
+- The UI clearly states that WhatsApp compatibility is not guaranteed.
+- No secret is committed.
+- CI passes.
+- Deployment is live on webfitalchemist.online subdomains.
+
+When you finish, provide:
+1. A summary of what was built.
+2. The deployed URLs.
+3. GitHub repository URL.
+4. A table of environment variables still needed from me, if any.
+5. A Twilio test checklist with pass/fail status.
+6. Any unresolved risks, especially around WhatsApp/Meta eligibility.

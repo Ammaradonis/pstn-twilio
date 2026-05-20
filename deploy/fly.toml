@@ -1,0 +1,51 @@
+# Fly.io configuration for the NestJS API.
+#
+# Deploy:
+#   fly launch --no-deploy --copy-config --dockerfile deploy/api.Dockerfile
+#   fly secrets set DATABASE_URL=... TWILIO_ACCOUNT_SID=... ...
+#   fly deploy --remote-only --dockerfile deploy/api.Dockerfile
+#
+# Fly is the recommended Node target because it speaks WebSockets natively
+# and runs a long-lived process — both required by NestJS + Socket.IO.
+
+app = "pstn-twilio-api"
+primary_region = "iad"
+kill_signal = "SIGTERM"
+kill_timeout = "10s"
+
+[build]
+  dockerfile = "deploy/api.Dockerfile"
+
+[env]
+  NODE_ENV = "production"
+  PORT = "3000"
+
+[http_service]
+  internal_port = 3000
+  force_https = true
+  auto_stop_machines = false
+  auto_start_machines = true
+  min_machines_running = 1
+  processes = ["app"]
+
+  [[http_service.checks]]
+    grace_period = "10s"
+    interval = "30s"
+    method = "GET"
+    timeout = "5s"
+    path = "/api/health"
+
+[[services]]
+  internal_port = 3000
+  protocol = "tcp"
+  [[services.ports]]
+    port = 80
+    handlers = ["http"]
+    force_https = true
+  [[services.ports]]
+    port = 443
+    handlers = ["tls", "http"]
+
+[deploy]
+  release_command = "node node_modules/prisma/build/index.js migrate deploy"
+  strategy = "rolling"

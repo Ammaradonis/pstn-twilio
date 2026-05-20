@@ -1,0 +1,288 @@
+generator client {
+  provider        = "prisma-client-js"
+  previewFeatures = []
+}
+
+datasource db {
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
+  directUrl = env("DIRECT_DATABASE_URL")
+}
+
+enum UserRole {
+  OWNER
+  ADMIN
+  OPERATOR
+  VIEWER
+}
+
+enum NumberType {
+  LOCAL
+  MOBILE
+  TOLL_FREE
+  UNKNOWN
+}
+
+enum WhatsAppCompatibilityStatus {
+  UNKNOWN
+  NOT_GUARANTEED
+  USER_TESTING
+  UNSUPPORTED
+  APPROVED_BUSINESS_SENDER
+}
+
+enum MessageDirection {
+  INBOUND
+  OUTBOUND
+}
+
+enum MessageStatus {
+  RECEIVED
+  QUEUED
+  SENT
+  DELIVERED
+  FAILED
+  UNDELIVERED
+}
+
+enum CallDirection {
+  INBOUND
+  OUTBOUND
+}
+
+enum CallStatus {
+  INITIATED
+  RINGING
+  IN_PROGRESS
+  COMPLETED
+  BUSY
+  FAILED
+  NO_ANSWER
+  CANCELED
+}
+
+enum WebhookProvider {
+  TWILIO
+}
+
+model User {
+  id           String    @id @default(uuid())
+  email        String    @unique
+  passwordHash String?   @map("password_hash")
+  role         UserRole  @default(OWNER)
+  createdAt    DateTime  @default(now()) @map("created_at")
+  updatedAt    DateTime  @updatedAt @map("updated_at")
+  lastLoginAt  DateTime? @map("last_login_at")
+  disabledAt   DateTime? @map("disabled_at")
+
+  sessions         Session[]
+  phoneNumbers     PhoneNumber[]
+  numberSearches   NumberSearch[]
+  voiceIdentities  VoiceIdentity[]
+  auditLogs        AuditLog[]
+  updatedSettings  AppSetting[]
+
+  @@map("users")
+}
+
+model Session {
+  id         String    @id @default(uuid())
+  userId     String    @map("user_id")
+  tokenHash  String    @map("token_hash")
+  userAgent  String?   @map("user_agent")
+  ipAddress  String?   @map("ip_address")
+  expiresAt  DateTime  @map("expires_at")
+  revokedAt  DateTime? @map("revoked_at")
+  createdAt  DateTime  @default(now()) @map("created_at")
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([tokenHash])
+  @@map("sessions")
+}
+
+model TwilioAccount {
+  id           String   @id @default(uuid())
+  accountSid   String   @unique @map("account_sid")
+  friendlyName String?  @map("friendly_name")
+  isDefault    Boolean  @default(false) @map("is_default")
+  createdAt    DateTime @default(now()) @map("created_at")
+  updatedAt    DateTime @updatedAt @map("updated_at")
+
+  phoneNumbers PhoneNumber[]
+
+  @@map("twilio_accounts")
+}
+
+model PhoneNumber {
+  id                          String                       @id @default(uuid())
+  userId                      String?                      @map("user_id")
+  twilioAccountSid            String                       @map("twilio_account_sid")
+  twilioIncomingPhoneNumberSid String                      @unique @map("twilio_incoming_phone_number_sid")
+  phoneNumberE164             String                       @unique @map("phone_number_e164")
+  country                     String?
+  region                      String?
+  locality                    String?
+  postalCode                  String?                      @map("postal_code")
+  areaCode                    String?                      @map("area_code")
+  numberType                  NumberType                   @default(UNKNOWN) @map("number_type")
+  capabilitiesVoice           Boolean                      @default(false) @map("capabilities_voice")
+  capabilitiesSms             Boolean                      @default(false) @map("capabilities_sms")
+  capabilitiesMms             Boolean                      @default(false) @map("capabilities_mms")
+  capabilitiesWhatsappCandidate Boolean                    @default(false) @map("capabilities_whatsapp_candidate")
+  whatsappCompatibilityStatus WhatsAppCompatibilityStatus  @default(UNKNOWN) @map("whatsapp_compatibility_status")
+  voiceWebhookUrl             String?                      @map("voice_webhook_url")
+  smsWebhookUrl               String?                      @map("sms_webhook_url")
+  statusCallbackUrl           String?                      @map("status_callback_url")
+  friendlyName                String?                      @map("friendly_name")
+  tags                        Json?
+  active                      Boolean                      @default(true)
+  purchasedAt                 DateTime                     @default(now()) @map("purchased_at")
+  releasedAt                  DateTime?                    @map("released_at")
+  createdAt                   DateTime                     @default(now()) @map("created_at")
+  updatedAt                   DateTime                     @updatedAt @map("updated_at")
+
+  user           User?           @relation(fields: [userId], references: [id], onDelete: SetNull)
+  twilioAccount  TwilioAccount   @relation(fields: [twilioAccountSid], references: [accountSid], onDelete: Cascade)
+  smsMessages    SmsMessage[]
+  calls          Call[]
+  voiceIdentities VoiceIdentity[]
+
+  @@index([phoneNumberE164])
+  @@index([twilioIncomingPhoneNumberSid])
+  @@index([userId])
+  @@map("phone_numbers")
+}
+
+model NumberSearch {
+  id           String    @id @default(uuid())
+  userId       String    @map("user_id")
+  country      String
+  areaCode     String?   @map("area_code")
+  contains     String?
+  numberType   String?   @map("number_type")
+  requiredSms  Boolean   @default(false) @map("required_sms")
+  requiredVoice Boolean  @default(false) @map("required_voice")
+  resultCount  Int       @default(0) @map("result_count")
+  createdAt    DateTime  @default(now()) @map("created_at")
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@map("number_searches")
+}
+
+model SmsMessage {
+  id              String          @id @default(uuid())
+  phoneNumberId   String          @map("phone_number_id")
+  twilioMessageSid String?        @unique @map("twilio_message_sid")
+  direction       MessageDirection
+  fromE164        String          @map("from_e164")
+  toE164          String          @map("to_e164")
+  body            String?
+  numMedia        Int             @default(0) @map("num_media")
+  media           Json?
+  status          MessageStatus   @default(RECEIVED)
+  errorCode       String?         @map("error_code")
+  errorMessage    String?         @map("error_message")
+  rawPayload      Json?           @map("raw_payload")
+  createdAt       DateTime        @default(now()) @map("created_at")
+  updatedAt       DateTime        @updatedAt @map("updated_at")
+
+  phoneNumber PhoneNumber @relation(fields: [phoneNumberId], references: [id], onDelete: Cascade)
+
+  @@index([phoneNumberId, createdAt(sort: Desc)])
+  @@index([twilioMessageSid])
+  @@map("sms_messages")
+}
+
+model Call {
+  id                String       @id @default(uuid())
+  phoneNumberId     String?      @map("phone_number_id")
+  twilioCallSid     String?      @unique @map("twilio_call_sid")
+  parentCallSid     String?      @map("parent_call_sid")
+  direction         CallDirection
+  fromE164          String       @map("from_e164")
+  toE164            String       @map("to_e164")
+  browserIdentity   String?      @map("browser_identity")
+  selectedCallerId  String?      @map("selected_caller_id")
+  destinationE164   String?      @map("destination_e164")
+  status            CallStatus   @default(INITIATED)
+  durationSeconds   Int?         @map("duration_seconds")
+  price             String?
+  priceUnit         String?      @map("price_unit")
+  rawPayload        Json?        @map("raw_payload")
+  startedAt         DateTime?    @map("started_at")
+  answeredAt        DateTime?    @map("answered_at")
+  endedAt           DateTime?    @map("ended_at")
+  createdAt         DateTime     @default(now()) @map("created_at")
+  updatedAt         DateTime     @updatedAt @map("updated_at")
+
+  phoneNumber PhoneNumber? @relation(fields: [phoneNumberId], references: [id], onDelete: SetNull)
+
+  @@index([phoneNumberId, createdAt(sort: Desc)])
+  @@index([twilioCallSid])
+  @@map("calls")
+}
+
+model VoiceIdentity {
+  id            String   @id @default(uuid())
+  userId        String   @map("user_id")
+  phoneNumberId String?  @map("phone_number_id")
+  identity      String   @unique
+  label         String?
+  createdAt     DateTime @default(now()) @map("created_at")
+  updatedAt     DateTime @updatedAt @map("updated_at")
+
+  user        User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  phoneNumber PhoneNumber? @relation(fields: [phoneNumberId], references: [id], onDelete: SetNull)
+
+  @@index([userId])
+  @@map("voice_identities")
+}
+
+model AuditLog {
+  id         String   @id @default(uuid())
+  userId     String?  @map("user_id")
+  action     String
+  entityType String   @map("entity_type")
+  entityId   String?  @map("entity_id")
+  ipAddress  String?  @map("ip_address")
+  userAgent  String?  @map("user_agent")
+  metadata   Json?
+  createdAt  DateTime @default(now()) @map("created_at")
+
+  user User? @relation(fields: [userId], references: [id], onDelete: SetNull)
+
+  @@index([createdAt(sort: Desc)])
+  @@index([userId])
+  @@map("audit_logs")
+}
+
+model WebhookEvent {
+  id             String          @id @default(uuid())
+  provider       WebhookProvider
+  eventType      String          @map("event_type")
+  signatureValid Boolean         @map("signature_valid")
+  twilioSid      String?         @map("twilio_sid")
+  dedupeKey      String?         @unique @map("dedupe_key")
+  rawPayload     Json            @map("raw_payload")
+  processedAt    DateTime?       @map("processed_at")
+  createdAt      DateTime        @default(now()) @map("created_at")
+
+  @@index([dedupeKey])
+  @@index([createdAt(sort: Desc)])
+  @@map("webhook_events")
+}
+
+model AppSetting {
+  key       String   @id
+  value     Json
+  updatedBy String   @map("updated_by")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  user User @relation(fields: [updatedBy], references: [id], onDelete: Cascade)
+
+  @@map("app_settings")
+}
