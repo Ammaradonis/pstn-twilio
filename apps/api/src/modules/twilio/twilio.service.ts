@@ -13,10 +13,18 @@ export class TwilioService {
     if (!this.clientInstance) {
       const sid = this.config.get<string>('TWILIO_ACCOUNT_SID');
       const token = this.config.get<string>('TWILIO_AUTH_TOKEN');
-      if (!sid || !token) {
-        throw new Error('TWILIO_ACCOUNT_SID and TWILIO_AUTH_TOKEN are required');
+      const apiKeySid = this.config.get<string>('TWILIO_API_KEY_SID');
+      const apiKeySecret = this.config.get<string>('TWILIO_API_KEY_SECRET');
+
+      if (apiKeySid && apiKeySecret) {
+        if (!sid) throw new Error('TWILIO_ACCOUNT_SID is required');
+        this.clientInstance = twilio(apiKeySid, apiKeySecret, { accountSid: sid });
+      } else {
+        if (!sid || !token) {
+          throw new Error('TWILIO_ACCOUNT_SID and TWILIO_AUTH_TOKEN are required');
+        }
+        this.clientInstance = twilio(sid, token);
       }
-      this.clientInstance = twilio(sid, token);
     }
     return this.clientInstance;
   }

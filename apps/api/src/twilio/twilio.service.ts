@@ -62,7 +62,13 @@ export class TwilioService {
 
   get client(): Twilio {
     if (!this.clientInstance) {
-      this.clientInstance = twilio(this.accountSid, this.authToken);
+      const apiKeySid = this.config.get<string>('TWILIO_API_KEY_SID');
+      const apiKeySecret = this.config.get<string>('TWILIO_API_KEY_SECRET');
+      if (apiKeySid && apiKeySecret) {
+        this.clientInstance = twilio(apiKeySid, apiKeySecret, { accountSid: this.accountSid });
+      } else {
+        this.clientInstance = twilio(this.accountSid, this.authToken);
+      }
     }
     return this.clientInstance;
   }
