@@ -5,7 +5,7 @@ import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { Roles } from '../auth/roles.decorator';
 import { RolesGuard } from '../auth/roles.guard';
 
-import { type AuditLogsService } from './audit-logs.service';
+import { AuditLogsService } from './audit-logs.service';
 
 @Controller('audit-logs')
 @UseGuards(JwtAuthGuard, RolesGuard)

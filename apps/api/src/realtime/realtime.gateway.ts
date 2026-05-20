@@ -1,8 +1,8 @@
 import { Logger } from '@nestjs/common';
-import { type JwtService } from '@nestjs/jwt';
+import { JwtService } from '@nestjs/jwt';
 import {
-  type OnGatewayConnection,
-  type OnGatewayDisconnect,
+  OnGatewayConnection,
+  OnGatewayDisconnect,
   WebSocketGateway,
   WebSocketServer,
 } from '@nestjs/websockets';

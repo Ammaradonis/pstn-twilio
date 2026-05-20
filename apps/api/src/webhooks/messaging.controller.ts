@@ -1,10 +1,6 @@
 import { Body, Controller, Header, HttpCode, Logger, Post, UseGuards } from '@nestjs/common';
 
-import {
-  type MessagingWebhookService,
-  type InboundParams,
-  type StatusParams,
-} from './messaging.service';
+import { MessagingWebhookService, InboundParams, StatusParams } from './messaging.service';
 import { TwilioSignatureGuard } from './twilio-signature.guard';
 
 @Controller('webhooks/twilio/messaging')

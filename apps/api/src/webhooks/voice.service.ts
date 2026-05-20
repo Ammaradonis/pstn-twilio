@@ -1,10 +1,10 @@
 import { Injectable, Logger } from '@nestjs/common';
-import { CallDirection, type Call, WebhookProvider } from '@prisma/client';
+import { CallDirection, Call, WebhookProvider } from '@prisma/client';
 import twilio from 'twilio';
 
-import { type PrismaService } from '../prisma/prisma.service';
-import { type RealtimeService } from '../realtime/realtime.service';
-import { type TwilioService } from '../twilio/twilio.service';
+import { PrismaService } from '../prisma/prisma.service';
+import { RealtimeService } from '../realtime/realtime.service';
+import { TwilioService } from '../twilio/twilio.service';
 
 import { mapTwilioCallStatus } from './voice-status.mapper';
 

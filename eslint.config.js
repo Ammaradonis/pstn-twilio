@@ -43,10 +43,10 @@ export default [
         { argsIgnorePattern: '^_', varsIgnorePattern: '^_' },
       ],
       '@typescript-eslint/no-explicit-any': 'warn',
-      '@typescript-eslint/consistent-type-imports': [
-        'warn',
-        { prefer: 'type-imports', fixStyle: 'inline-type-imports' },
-      ],
+      // NestJS DI relies on `Reflect.getMetadata('design:paramtypes', ...)` for
+      // constructor injection. Marking class imports as type-only erases them from
+      // emitted JS, so the metadata becomes `Object` and Nest can't resolve.
+      '@typescript-eslint/consistent-type-imports': 'off',
       'no-console': ['warn', { allow: ['warn', 'error', 'info'] }],
       'import/order': [
         'warn',

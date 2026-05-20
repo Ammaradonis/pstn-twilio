@@ -6,7 +6,7 @@ import {
   Logger,
   NotFoundException,
 } from '@nestjs/common';
-import { type PhoneNumber, UserRole, WhatsAppCompatibilityStatus } from '@prisma/client';
+import { PhoneNumber, UserRole, WhatsAppCompatibilityStatus } from '@prisma/client';
 import type {
   AvailableNumberDto,
   NumberSearchInput,
@@ -14,9 +14,9 @@ import type {
   PurchaseNumberInput,
 } from '@pstn-twilio/shared';
 
-import { type AuditService } from '../audit/audit.service';
-import { type PrismaService } from '../prisma/prisma.service';
-import { type TwilioService } from '../twilio/twilio.service';
+import { AuditService } from '../audit/audit.service';
+import { PrismaService } from '../prisma/prisma.service';
+import { TwilioService } from '../twilio/twilio.service';
 
 import {
   inferAreaCode,

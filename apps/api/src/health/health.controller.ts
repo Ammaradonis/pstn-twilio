@@ -1,9 +1,9 @@
 import { Controller, Get } from '@nestjs/common';
 import type { HealthStatusDto } from '@pstn-twilio/shared';
 
-import { type PrismaService } from '../prisma/prisma.service';
-import { type RedisService } from '../redis/redis.service';
-import { type TwilioService } from '../twilio/twilio.service';
+import { PrismaService } from '../prisma/prisma.service';
+import { RedisService } from '../redis/redis.service';
+import { TwilioService } from '../twilio/twilio.service';
 
 @Controller('health')
 export class HealthController {

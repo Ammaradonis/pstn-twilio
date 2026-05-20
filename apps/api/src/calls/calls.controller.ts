@@ -9,14 +9,14 @@ import {
   Req,
   UseGuards,
 } from '@nestjs/common';
-import { CallDirection, CallStatus, type UserRole } from '@prisma/client';
+import { CallDirection, CallStatus, UserRole } from '@prisma/client';
 import type { Request } from 'express';
 import { z } from 'zod';
 
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { ZodValidationPipe } from '../common/zod.pipe';
 
-import { type CallsService } from './calls.service';
+import { CallsService } from './calls.service';
 
 const listQuerySchema = z.object({
   cursor: z.string().min(1).optional(),

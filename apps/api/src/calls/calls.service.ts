@@ -5,13 +5,13 @@ import {
   Logger,
   NotFoundException,
 } from '@nestjs/common';
-import { type CallDirection, CallStatus, type PhoneNumber, UserRole } from '@prisma/client';
+import { CallDirection, CallStatus, PhoneNumber, UserRole } from '@prisma/client';
 import type { CallDto, PaginatedDto } from '@pstn-twilio/shared';
 
-import { type AuditService } from '../audit/audit.service';
-import { type PrismaService } from '../prisma/prisma.service';
-import { type RealtimeService } from '../realtime/realtime.service';
-import { type TwilioService } from '../twilio/twilio.service';
+import { AuditService } from '../audit/audit.service';
+import { PrismaService } from '../prisma/prisma.service';
+import { RealtimeService } from '../realtime/realtime.service';
+import { TwilioService } from '../twilio/twilio.service';
 
 import { decodeCursor, encodeCursor, mapCall } from './calls.mapper';
 

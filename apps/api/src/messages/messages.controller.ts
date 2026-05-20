@@ -10,7 +10,7 @@ import {
   UseGuards,
 } from '@nestjs/common';
 import { Throttle } from '@nestjs/throttler';
-import { MessageDirection, type UserRole } from '@prisma/client';
+import { MessageDirection, UserRole } from '@prisma/client';
 import { sendMessageSchema } from '@pstn-twilio/shared';
 import type { Request } from 'express';
 import { z } from 'zod';
@@ -18,7 +18,7 @@ import { z } from 'zod';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { ZodValidationPipe } from '../common/zod.pipe';
 
-import { type MessagesService } from './messages.service';
+import { MessagesService } from './messages.service';
 
 const listQuerySchema = z.object({
   cursor: z.string().min(1).optional(),

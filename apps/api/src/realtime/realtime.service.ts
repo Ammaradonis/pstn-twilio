@@ -1,13 +1,13 @@
 import { Injectable } from '@nestjs/common';
 import {
   WS_EVENTS,
-  type WsCallEvent,
-  type WsNumberEvent,
-  type WsSmsEvent,
-  type WsTwilioWebhookErrorEvent,
+  WsCallEvent,
+  WsNumberEvent,
+  WsSmsEvent,
+  WsTwilioWebhookErrorEvent,
 } from '@pstn-twilio/shared';
 
-import { type RealtimeGateway } from './realtime.gateway';
+import { RealtimeGateway } from './realtime.gateway';
 
 @Injectable()
 export class RealtimeService {

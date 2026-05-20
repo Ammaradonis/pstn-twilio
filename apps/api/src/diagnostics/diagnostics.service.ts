@@ -1,11 +1,11 @@
 import { Injectable, Logger } from '@nestjs/common';
-import { type ConfigService } from '@nestjs/config';
+import { ConfigService } from '@nestjs/config';
 import { WebhookProvider } from '@prisma/client';
 
 import { APP_INFO } from '../common/app-info';
-import { type PrismaService } from '../prisma/prisma.service';
-import { type RedisService } from '../redis/redis.service';
-import { type TwilioService } from '../twilio/twilio.service';
+import { PrismaService } from '../prisma/prisma.service';
+import { RedisService } from '../redis/redis.service';
+import { TwilioService } from '../twilio/twilio.service';
 
 export type CheckStatus = 'ok' | 'down' | 'degraded';
 

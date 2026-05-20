@@ -1,4 +1,4 @@
-import { type SmsMessage } from '@prisma/client';
+import { SmsMessage } from '@prisma/client';
 import type { PaginatedDto, SmsMessageDto } from '@pstn-twilio/shared';
 
 export function mapMessage(row: SmsMessage): SmsMessageDto {

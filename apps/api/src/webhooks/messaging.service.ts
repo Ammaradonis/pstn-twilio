@@ -1,8 +1,8 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { MessageDirection, MessageStatus, WebhookProvider } from '@prisma/client';
 
-import { type PrismaService } from '../prisma/prisma.service';
-import { type RealtimeService } from '../realtime/realtime.service';
+import { PrismaService } from '../prisma/prisma.service';
+import { RealtimeService } from '../realtime/realtime.service';
 
 import { mapTwilioStatusToEnum } from './status.mapper';
 

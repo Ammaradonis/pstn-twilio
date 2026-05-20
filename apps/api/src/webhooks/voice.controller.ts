@@ -2,10 +2,10 @@ import { Body, Controller, Header, HttpCode, Logger, Post, UseGuards } from '@ne
 
 import { TwilioSignatureGuard } from './twilio-signature.guard';
 import {
-  type CallStatusParams,
-  type InboundVoiceParams,
-  type OutboundVoiceParams,
-  type VoiceWebhookService,
+  CallStatusParams,
+  InboundVoiceParams,
+  OutboundVoiceParams,
+  VoiceWebhookService,
 } from './voice.service';
 
 @Controller('webhooks/twilio/voice')

@@ -1,6 +1,6 @@
 import { Body, Controller, Get, HttpCode, Post, Query, Req, UseGuards } from '@nestjs/common';
 import { Throttle } from '@nestjs/throttler';
-import { type UserRole } from '@prisma/client';
+import { UserRole } from '@prisma/client';
 import { prepareOutboundCallSchema, voiceTokenRequestSchema } from '@pstn-twilio/shared';
 import type { Request } from 'express';
 import { z } from 'zod';
@@ -8,7 +8,7 @@ import { z } from 'zod';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { ZodValidationPipe } from '../common/zod.pipe';
 
-import { type VoiceService } from './voice.service';
+import { VoiceService } from './voice.service';
 
 const identityQuerySchema = z.object({
   numberId: z.string().uuid().optional(),

@@ -1,7 +1,7 @@
-import { type CanActivate, type ExecutionContext, Injectable, Logger } from '@nestjs/common';
+import { CanActivate, ExecutionContext, Injectable, Logger } from '@nestjs/common';
 import type { Request } from 'express';
 
-import { type TwilioService } from '../twilio/twilio.service';
+import { TwilioService } from '../twilio/twilio.service';
 
 @Injectable()
 export class TwilioSignatureGuard implements CanActivate {

@@ -1,9 +1,9 @@
 import { Body, Controller, Get, HttpCode, Post, Req, UseGuards } from '@nestjs/common';
-import { type ConfigService } from '@nestjs/config';
+import { ConfigService } from '@nestjs/config';
 import type { UserRole } from '@prisma/client';
-import { type Request } from 'express';
+import { Request } from 'express';
 
-import { type AuthService } from './auth.service';
+import { AuthService } from './auth.service';
 import { JwtAuthGuard } from './jwt-auth.guard';
 
 type AuthenticatedRequest = Request & {

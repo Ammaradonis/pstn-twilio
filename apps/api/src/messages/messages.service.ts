@@ -6,19 +6,13 @@ import {
   Logger,
   NotFoundException,
 } from '@nestjs/common';
-import {
-  MessageDirection,
-  MessageStatus,
-  type PhoneNumber,
-  type SmsMessage,
-  UserRole,
-} from '@prisma/client';
+import { MessageDirection, MessageStatus, PhoneNumber, SmsMessage, UserRole } from '@prisma/client';
 import type { PaginatedDto, SendMessageInput, SmsMessageDto } from '@pstn-twilio/shared';
 
-import { type AuditService } from '../audit/audit.service';
-import { type PrismaService } from '../prisma/prisma.service';
-import { type RealtimeService } from '../realtime/realtime.service';
-import { type TwilioService } from '../twilio/twilio.service';
+import { AuditService } from '../audit/audit.service';
+import { PrismaService } from '../prisma/prisma.service';
+import { RealtimeService } from '../realtime/realtime.service';
+import { TwilioService } from '../twilio/twilio.service';
 
 import { decodeCursor, encodeCursor, mapMessage } from './messages.mapper';
 

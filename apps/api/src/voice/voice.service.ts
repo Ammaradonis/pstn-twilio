@@ -9,9 +9,9 @@ import { UserRole } from '@prisma/client';
 import type { VoiceTokenDto } from '@pstn-twilio/shared';
 import twilio from 'twilio';
 
-import { type AuditService } from '../audit/audit.service';
-import { type PrismaService } from '../prisma/prisma.service';
-import { type TwilioService } from '../twilio/twilio.service';
+import { AuditService } from '../audit/audit.service';
+import { PrismaService } from '../prisma/prisma.service';
+import { TwilioService } from '../twilio/twilio.service';
 
 const TOKEN_TTL_SECONDS = 60 * 60; // 1 hour
 

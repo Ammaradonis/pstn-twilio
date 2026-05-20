@@ -21,7 +21,7 @@ import { Roles } from '../auth/roles.decorator';
 import { RolesGuard } from '../auth/roles.guard';
 import { ZodValidationPipe } from '../common/zod.pipe';
 
-import { type NumbersService } from './numbers.service';
+import { NumbersService } from './numbers.service';
 
 const updateNumberSchema = z.object({
   friendlyName: z.string().min(1).max(64).optional(),
