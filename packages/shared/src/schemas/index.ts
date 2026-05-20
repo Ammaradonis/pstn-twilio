@@ -14,6 +14,16 @@ export const isoCountrySchema = z
 
 export const numberTypeSchema = z.enum(['LOCAL', 'MOBILE', 'TOLL_FREE', 'UNKNOWN']);
 
+// Query-string booleans arrive as 'true' | 'false' strings. z.coerce.boolean()
+// would mis-coerce 'false' to true (Boolean('false') === true), so we preprocess.
+const queryBoolean = z.preprocess((v) => {
+  if (typeof v === 'string') {
+    if (v === 'true' || v === '1') return true;
+    if (v === 'false' || v === '0' || v === '') return false;
+  }
+  return v;
+}, z.boolean());
+
 export const numberSearchSchema = z.object({
   country: isoCountrySchema,
   type: z.enum(['local', 'mobile', 'toll_free']).default('local'),
@@ -29,10 +39,10 @@ export const numberSearchSchema = z.object({
   inRegion: z.string().max(50).optional(),
   inLocality: z.string().max(100).optional(),
   inPostalCode: z.string().max(20).optional(),
-  smsEnabled: z.boolean().optional(),
-  voiceEnabled: z.boolean().optional(),
-  mmsEnabled: z.boolean().optional(),
-  excludeAddressRequired: z.boolean().default(true),
+  smsEnabled: queryBoolean.optional(),
+  voiceEnabled: queryBoolean.optional(),
+  mmsEnabled: queryBoolean.optional(),
+  excludeAddressRequired: queryBoolean.default(true),
   pageSize: z.coerce.number().int().min(1).max(50).default(20),
 });
 

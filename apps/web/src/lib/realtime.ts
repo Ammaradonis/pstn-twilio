@@ -6,12 +6,16 @@ import { env } from './env';
 let socketInstance: Socket | null = null;
 
 export function getSocket(): Socket {
-  if (socketInstance && socketInstance.connected) return socketInstance;
-  const token = getToken();
+  if (socketInstance) return socketInstance;
   socketInstance = io(env.VITE_WS_URL, {
     transports: ['websocket', 'polling'],
     autoConnect: true,
-    auth: token ? { token } : undefined,
+    // Lazy auth: re-read the token on every connection attempt, so reconnects
+    // pick up a token that was set after the socket was first created.
+    auth: (cb) => {
+      const token = getToken();
+      cb(token ? { token } : {});
+    },
     reconnection: true,
     reconnectionAttempts: Infinity,
     reconnectionDelay: 1000,
