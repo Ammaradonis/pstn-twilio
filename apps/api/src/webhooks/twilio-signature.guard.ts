@@ -17,7 +17,12 @@ export class TwilioSignatureGuard implements CanActivate {
 
     const valid = this.twilio.validateSignature(signature ?? undefined, url, params);
     if (!valid) {
-      this.logger.warn(`Rejected unsigned Twilio webhook: ${url}`);
+      this.logger.warn(`Rejected Twilio webhook signature verification: ${url}`);
+      this.logger.warn(`Received X-Twilio-Signature: ${signature}`);
+      const token = this.twilio.authToken ?? '';
+      this.logger.warn(
+        `Configured TWILIO_AUTH_TOKEN length: ${token.length}, prefix: ${token ? token.slice(0, 4) : ''}...`,
+      );
       return false;
     }
     return true;
