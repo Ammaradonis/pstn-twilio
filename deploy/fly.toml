@@ -14,7 +14,7 @@ kill_signal = "SIGTERM"
 kill_timeout = "10s"
 
 [build]
-  dockerfile = "deploy/api.Dockerfile"
+  dockerfile = "api.Dockerfile"
 
 [env]
   NODE_ENV = "production"

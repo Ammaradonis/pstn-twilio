@@ -24,25 +24,27 @@ export const ownerUser = {
 
 export const sampleNumber = {
   id: 'n1',
-  userId: 'u1',
-  twilioAccountSid: 'ACtest',
   twilioIncomingPhoneNumberSid: 'PNtest',
   phoneNumberE164: '+15551234567',
   friendlyName: 'Demo Number',
   country: 'US',
+  region: 'CA',
+  locality: 'San Francisco',
+  postalCode: null,
   areaCode: '555',
   numberType: 'local',
-  capabilitiesVoice: true,
-  capabilitiesSms: true,
-  capabilitiesMms: false,
+  capabilities: {
+    voice: true,
+    sms: true,
+    mms: false,
+  },
   whatsappCompatibilityStatus: 'NOT_GUARANTEED',
   voiceWebhookUrl: 'https://example.test/webhooks/twilio/voice/inbound',
   smsWebhookUrl: 'https://example.test/webhooks/twilio/messaging/inbound',
   statusCallbackUrl: 'https://example.test/webhooks/twilio/voice/status',
   active: true,
-  tags: {},
   purchasedAt: new Date('2024-01-02T00:00:00Z').toISOString(),
-  releasedAt: null,
+  updatedAt: new Date('2024-01-02T00:00:00Z').toISOString(),
 };
 
 function defaultState(): MockState {
@@ -58,8 +60,9 @@ function defaultState(): MockState {
           from: '+15558675309',
           to: '+15551234567',
           body: 'hi from the past',
-          providerMessageSid: 'SM1',
-          numSegments: 1,
+          twilioMessageSid: 'SM1',
+          numMedia: 0,
+          mediaUrls: [],
           errorCode: null,
           errorMessage: null,
           createdAt: new Date('2024-01-03T00:00:00Z').toISOString(),
@@ -182,8 +185,9 @@ export async function installApiMocks(page: Page, state: MockState): Promise<voi
         from: (state.numbers[0] as { phoneNumberE164: string }).phoneNumberE164,
         to: body.to,
         body: body.body,
-        providerMessageSid: `SM${items.length + 1}`,
-        numSegments: 1,
+        twilioMessageSid: `SM${items.length + 1}`,
+        numMedia: 0,
+        mediaUrls: [],
         errorCode: null,
         errorMessage: null,
         createdAt: new Date().toISOString(),
@@ -253,11 +257,14 @@ export async function installApiMocks(page: Page, state: MockState): Promise<voi
 }
 
 export const test = base.extend<{ state: MockState }>({
-  state: async ({ page }, runFixture) => {
-    const state = defaultState();
-    await installApiMocks(page, state);
-    await runFixture(state);
-  },
+  state: [
+    async ({ page }, runFixture) => {
+      const state = defaultState();
+      await installApiMocks(page, state);
+      await runFixture(state);
+    },
+    { auto: true },
+  ],
 });
 
 export { expect };

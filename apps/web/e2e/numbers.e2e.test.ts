@@ -16,11 +16,12 @@ test.describe('Numbers', () => {
       .first()
       .click();
     await expect(page).toHaveURL(/\/numbers$/);
-    await expect(page.getByText('Demo Number')).toBeVisible();
-    await expect(page.getByText('+1 (555) 123-4567')).toBeVisible();
+    await expect(page.getByRole('cell', { name: 'Demo Number' })).toBeVisible();
+    await expect(page.getByRole('link', { name: '+1 (555) 123-4567' })).toBeVisible();
 
-    await page.getByRole('link', { name: /demo number/i }).click();
+    await page.getByRole('link', { name: '+1 (555) 123-4567' }).click();
     await expect(page).toHaveURL(/\/numbers\/n1$/);
-    await expect(page.getByRole('heading', { name: /demo number/i })).toBeVisible();
+    await expect(page.getByRole('heading', { name: '+1 (555) 123-4567' })).toBeVisible();
+    await expect(page.locator('main p').filter({ hasText: 'Demo Number' })).toBeVisible();
   });
 });

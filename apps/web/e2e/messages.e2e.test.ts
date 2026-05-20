@@ -15,8 +15,8 @@ test.describe('Messages', () => {
     await expect(page.getByText('+1 (555) 867-5309')).toBeVisible();
 
     // compose
-    await page.getByLabel(/to/i).fill('+15558675309');
-    await page.getByLabel(/message/i).fill('reply from the test');
+    await page.getByPlaceholder('+15551234567').fill('+15558675309');
+    await page.getByPlaceholder(/message body/i).fill('reply from the test');
     await page.getByRole('button', { name: /send/i }).click();
 
     // optimistic update via mock

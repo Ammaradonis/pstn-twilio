@@ -6,6 +6,28 @@ import helmet from 'helmet';
 
 import { AppModule } from './app.module';
 
+function parseOrigins(value?: string): string[] {
+  return (
+    value
+      ?.split(',')
+      .map((origin) => origin.trim().replace(/\/+$/, ''))
+      .filter(Boolean) ?? []
+  );
+}
+
+function corsOrigins(config: ConfigService): string[] {
+  return Array.from(
+    new Set([
+      ...parseOrigins(config.get<string>('CORS_ORIGINS')),
+      ...parseOrigins(config.get<string>('WEB_APP_URL')),
+      'http://localhost:5173',
+      'http://127.0.0.1:5173',
+      'https://webfitalchemist.online',
+      'https://app.webfitalchemist.online',
+    ]),
+  );
+}
+
 async function bootstrap() {
   const app = await NestFactory.create(AppModule, {
     logger: ['error', 'warn', 'log'],
@@ -15,8 +37,15 @@ async function bootstrap() {
 
   app.use(helmet());
   app.use(cookieParser());
+  const allowedOrigins = corsOrigins(config);
   app.enableCors({
-    origin: config.get('CORS_ORIGINS')?.split(',') || ['http://localhost:5173'],
+    origin: (origin, callback) => {
+      if (!origin || allowedOrigins.includes(origin.replace(/\/+$/, ''))) {
+        callback(null, true);
+        return;
+      }
+      callback(null, false);
+    },
     credentials: true,
   });
 

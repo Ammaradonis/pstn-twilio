@@ -23,7 +23,7 @@ test.describe('Authentication', () => {
     await page.getByRole('button', { name: /sign in/i }).click();
     await expect(page).toHaveURL(/\/dashboard$/);
     await expect(page.getByRole('heading', { name: /dashboard/i })).toBeVisible();
-    await expect(page.getByText(/active numbers/i)).toBeVisible();
+    await expect(page.getByText('Active numbers', { exact: true })).toBeVisible();
   });
 
   test('signs out and returns to /login', async ({ page }) => {

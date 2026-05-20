@@ -28,8 +28,8 @@
     "@nestjs/platform-socket.io": "^10.4.15",
     "@nestjs/throttler": "^6.3.0",
     "@nestjs/websockets": "^10.4.15",
-    "@pstn-twilio/shared": "workspace:*",
     "@prisma/client": "^6.2.1",
+    "@pstn-twilio/shared": "workspace:*",
     "argon2": "^0.41.1",
     "class-transformer": "^0.5.1",
     "class-validator": "^0.14.1",
@@ -42,6 +42,7 @@
     "pino": "^9.6.0",
     "pino-http": "^10.4.0",
     "pino-pretty": "^13.0.0",
+    "prisma": "^6.2.1",
     "reflect-metadata": "^0.2.2",
     "rxjs": "^7.8.1",
     "socket.io": "^4.8.1",
@@ -57,13 +58,13 @@
     "@types/node": "^22.10.5",
     "@types/passport-jwt": "^4.0.1",
     "@types/supertest": "^6.0.2",
-    "prisma": "^6.2.1",
     "supertest": "^7.0.0",
     "ts-loader": "^9.5.2",
     "tsconfig-paths": "^4.2.0",
     "typescript": "^5.7.3",
     "vite-tsconfig-paths": "^5.1.4",
-    "vitest": "^2.1.8"
+    "vitest": "^2.1.8",
+    "webpack-node-externals": "^3.0.0"
   },
   "prisma": {
     "seed": "tsx prisma/seed.ts"

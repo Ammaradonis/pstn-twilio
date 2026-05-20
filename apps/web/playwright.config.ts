@@ -1,5 +1,8 @@
 import { defineConfig, devices } from '@playwright/test';
 
+const previewPort = Number(process.env.E2E_PORT ?? 4174);
+const previewUrl = `http://127.0.0.1:${previewPort}`;
+
 /**
  * The Phase 10 E2E suite hits a real Vite preview server but mocks every API
  * response with `page.route(...)` so the suite is hermetic — no Twilio, no
@@ -14,7 +17,7 @@ export default defineConfig({
   workers: process.env.CI ? 1 : undefined,
   reporter: process.env.CI ? [['github'], ['html', { open: 'never' }]] : 'html',
   use: {
-    baseURL: process.env.E2E_BASE_URL ?? 'http://localhost:4173',
+    baseURL: process.env.E2E_BASE_URL ?? previewUrl,
     trace: 'on-first-retry',
     screenshot: 'only-on-failure',
   },
@@ -22,9 +25,9 @@ export default defineConfig({
   webServer: process.env.E2E_BASE_URL
     ? undefined
     : {
-        command: 'pnpm preview',
-        port: 4173,
-        reuseExistingServer: !process.env.CI,
+        command: `pnpm exec vite preview --host 127.0.0.1 --port ${previewPort}`,
+        url: previewUrl,
+        reuseExistingServer: false,
         timeout: 120_000,
       },
 });
