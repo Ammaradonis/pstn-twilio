@@ -91,6 +91,20 @@ export default [
     },
   },
 
+  // Ad-hoc Node.js helper scripts (CommonJS or plain Node ESM)
+  {
+    files: ['scripts/**/*.{js,cjs}'],
+    languageOptions: {
+      ecmaVersion: 2022,
+      sourceType: 'commonjs',
+      globals: globals.node,
+    },
+    rules: {
+      '@typescript-eslint/no-require-imports': 'off',
+      'no-console': 'off',
+    },
+  },
+
   {
     files: ['apps/api/prisma/**/*.ts', 'scripts/**/*.ts'],
     rules: {

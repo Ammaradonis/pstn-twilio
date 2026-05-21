@@ -95,12 +95,20 @@ export class TwilioService {
 
   async validateCredentials(): Promise<boolean> {
     try {
+      // First try to fetch the Account details (requires Master API Key or Auth Token)
       const account = await this.client.api.v2010.accounts(this.accountSid).fetch();
       return account.status === 'active';
     } catch (err) {
-      const message = err instanceof Error ? err.message : 'unknown';
-      this.logger.warn(`Twilio credential check failed: ${message}`);
-      return false;
+      // If the account fetch failed because it is a Standard API Key (Authenticate / 20003),
+      // fallback to checking a subresource (e.g. incomingPhoneNumbers)
+      try {
+        await this.client.incomingPhoneNumbers.list({ limit: 1 });
+        return true;
+      } catch (subErr) {
+        const message = subErr instanceof Error ? subErr.message : 'unknown';
+        this.logger.warn(`Twilio credential check failed: ${message}`);
+        return false;
+      }
     }
   }
 }

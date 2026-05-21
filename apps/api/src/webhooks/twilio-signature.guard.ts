@@ -15,6 +15,10 @@ export class TwilioSignatureGuard implements CanActivate {
     const params = (req.body ?? {}) as Record<string, unknown>;
     const url = this.buildWebhookUrl(req);
 
+    this.logger.log(
+      `Twilio Webhook: method=${req.method}, contentType=${req.header('content-type')}, bodyKeys=[${Object.keys(params).join(', ')}], url=${url}`,
+    );
+
     const valid = this.twilio.validateSignature(signature ?? undefined, url, params);
     if (!valid) {
       this.logger.warn(`Rejected Twilio webhook signature verification: ${url}`);
@@ -29,6 +33,18 @@ export class TwilioSignatureGuard implements CanActivate {
   }
 
   private buildWebhookUrl(req: Request): string {
+    // If behind a proxy, X-Forwarded-Proto and X-Forwarded-Host contain the original protocol and host
+    const headers = req.headers ?? {};
+    const proto = (headers['x-forwarded-proto'] as string) ?? req.protocol ?? 'https';
+    const host = (headers['x-forwarded-host'] as string) ?? headers['host'] ?? '';
+
+    if (host) {
+      const cleanProto = proto.split(',')[0].trim();
+      const cleanHost = host.split(',')[0].trim();
+      const path = req.originalUrl ?? req.url ?? '';
+      return `${cleanProto}://${cleanHost}${path}`;
+    }
+
     const base = this.twilio.webhookBaseUrl;
     const path = req.originalUrl ?? req.url ?? '';
     return `${base}${path}`;
