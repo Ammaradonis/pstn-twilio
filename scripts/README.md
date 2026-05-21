@@ -14,23 +14,28 @@ app's database. Use it to:
 - (re)configure every number's webhook URLs so they hit `PUBLIC_BASE_URL`,
 - verify that every number's Twilio config matches the DB.
 
+The real script lives at `apps/api/scripts/twilio-sync.ts` because it depends
+on `@prisma/client` and `twilio`, which are workspace-scoped to the api
+package. The file under `scripts/` here is a thin re-export kept for
+backwards compatibility with existing docs/CI references.
+
 ### Usage
 
 ```bash
 # read-only inventory of Twilio numbers and DB rows
-pnpm tsx scripts/twilio-sync.ts list
+pnpm --filter @pstn-twilio/api exec tsx --env-file=../../.env scripts/twilio-sync.ts list
 
 # import all Twilio numbers into the DB, owned by <USER_ID>
-pnpm tsx scripts/twilio-sync.ts import --owner=<USER_ID>
+pnpm --filter @pstn-twilio/api exec tsx --env-file=../../.env scripts/twilio-sync.ts import --owner=<USER_ID>
 
 # overwrite the webhook URLs on Twilio so they point at PUBLIC_BASE_URL
-pnpm tsx scripts/twilio-sync.ts configure
+pnpm --filter @pstn-twilio/api exec tsx --env-file=../../.env scripts/twilio-sync.ts configure
 
 # diff DB vs Twilio (exits non-zero if mismatches found)
-pnpm tsx scripts/twilio-sync.ts verify
+pnpm --filter @pstn-twilio/api exec tsx --env-file=../../.env scripts/twilio-sync.ts verify
 
 # import + configure + verify in one go
-pnpm tsx scripts/twilio-sync.ts all --owner=<USER_ID>
+pnpm --filter @pstn-twilio/api exec tsx --env-file=../../.env scripts/twilio-sync.ts all --owner=<USER_ID>
 ```
 
 Pass `--dry-run` to `import` / `configure` / `all` to print the actions
