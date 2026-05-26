@@ -10,6 +10,7 @@ export default defineConfig({
       '@': resolve(__dirname, 'src'),
       '@pstn-twilio/shared': resolve(__dirname, '../../packages/shared/src/index.ts'),
     },
+    extensions: ['.ts', '.tsx', '.mts', '.mjs', '.js', '.jsx', '.json'],
   },
   server: {
     port: 5173,
