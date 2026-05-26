@@ -4,6 +4,7 @@ import {
   e164Schema,
   isoCountrySchema,
   numberSearchSchema,
+  prepareOutboundCallSchema,
   purchaseNumberSchema,
   sendMessageSchema,
 } from './index';
@@ -57,5 +58,19 @@ describe('sendMessageSchema', () => {
     const long = 'x'.repeat(1601);
     expect(sendMessageSchema.safeParse({ to: '+14155552671', body: long }).success).toBe(false);
     expect(sendMessageSchema.safeParse({ to: '+14155552671', body: 'hi' }).success).toBe(true);
+  });
+});
+
+describe('prepareOutboundCallSchema', () => {
+  it('normalizes pasted U.S. phone numbers for outbound calls', () => {
+    const parsed = prepareOutboundCallSchema.parse({
+      selectedNumberId: '00000000-0000-4000-8000-000000000000',
+      destinationNumber: `Services: Jiu-Jitsu
+1215 Colusa Ave Unit Q, Yuba City, CA 95991, United States
++1 530-441-9961
+Reviews`,
+    });
+
+    expect(parsed.destinationNumber).toBe('+15304419961');
   });
 });

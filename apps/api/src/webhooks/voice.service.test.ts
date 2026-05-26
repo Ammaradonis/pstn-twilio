@@ -222,6 +222,64 @@ describe('VoiceWebhookService.handleOutbound', () => {
     expect(xml).toContain('<Number>+15551111111</Number>');
     expect(realtime.callStatusUpdated).toHaveBeenCalled();
   });
+
+  it('normalizes formatted U.S. destinations before dialing Twilio', async () => {
+    const phoneNumber = {
+      id: 'pn1',
+      userId: 'u1',
+      phoneNumberE164: '+15552222222',
+      active: true,
+      capabilitiesVoice: true,
+    };
+    const created = {
+      id: 'c1',
+      phoneNumberId: 'pn1',
+      twilioCallSid: 'CA1',
+      direction: CallDirection.OUTBOUND,
+      fromE164: 'user_u1_number_pn1',
+      toE164: '+15304419961',
+      selectedCallerId: '+15552222222',
+      destinationE164: '+15304419961',
+      status: CallStatus.INITIATED,
+      durationSeconds: null,
+      startedAt: new Date('2026-05-19T00:00:00Z'),
+      answeredAt: null,
+      endedAt: null,
+      createdAt: new Date('2026-05-19T00:00:00Z'),
+    };
+    const prisma = {
+      webhookEvent: {
+        findUnique: vi.fn().mockResolvedValue(null),
+        create: vi.fn().mockResolvedValue({}),
+      },
+      phoneNumber: { findUnique: vi.fn().mockResolvedValue(phoneNumber) },
+      call: {
+        findUnique: vi.fn().mockResolvedValue(null),
+        create: vi.fn().mockResolvedValue(created),
+        update: vi.fn(),
+      },
+    };
+    const { service } = buildService({ prisma });
+
+    const xml = await service.handleOutbound(
+      {
+        CallSid: 'CA1',
+        selectedNumberId: 'pn1',
+        destinationNumber: '+1 530-441-9961',
+      },
+      'user_u1_number_pn1',
+    );
+
+    expect(prisma.call.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          toE164: '+15304419961',
+          destinationE164: '+15304419961',
+        }),
+      }),
+    );
+    expect(xml).toContain('<Number>+15304419961</Number>');
+  });
 });
 
 describe('VoiceWebhookService.handleStatus', () => {

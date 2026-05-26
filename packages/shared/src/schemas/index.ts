@@ -1,11 +1,18 @@
 import { z } from 'zod';
 
+import { normalizeDialablePhoneNumber } from '../phone';
+
 /**
  * E.164: + followed by 1-15 digits, leading non-zero per ITU recommendation.
  */
 export const e164Schema = z
   .string()
   .regex(/^\+[1-9]\d{1,14}$/, 'Must be E.164 (e.g. +14155552671)');
+
+const dialablePhoneNumberSchema = z.preprocess((value) => {
+  if (typeof value !== 'string') return value;
+  return normalizeDialablePhoneNumber(value) ?? value;
+}, e164Schema);
 
 export const isoCountrySchema = z
   .string()
@@ -59,7 +66,7 @@ export const sendMessageSchema = z.object({
 
 export const prepareOutboundCallSchema = z.object({
   selectedNumberId: z.string().uuid(),
-  destinationNumber: e164Schema,
+  destinationNumber: dialablePhoneNumberSchema,
   callContextId: z.string().uuid().optional(),
 });
 

@@ -133,6 +133,20 @@ describe('VoiceService.prepareOutbound', () => {
     });
   });
 
+  it('normalizes formatted U.S. destinations before returning call params', async () => {
+    const prisma = {
+      phoneNumber: { findUnique: vi.fn().mockResolvedValue(phoneNumber) },
+      voiceIdentity: { upsert: vi.fn() },
+    };
+    const { service } = buildService({ prisma });
+    const result = await service.prepareOutbound(
+      { userId: 'u1', role: UserRole.OWNER },
+      { selectedNumberId: 'pn1', destinationNumber: '+1 530-441-9961' },
+    );
+
+    expect(result.destinationNumber).toBe('+15304419961');
+  });
+
   it('forbids non-OWNER actor that does not own the number', async () => {
     const prisma = {
       phoneNumber: {

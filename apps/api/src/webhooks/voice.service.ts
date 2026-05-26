@@ -1,5 +1,6 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { CallDirection, Call, WebhookProvider } from '@prisma/client';
+import { normalizeDialablePhoneNumber } from '@pstn-twilio/shared';
 import twilio from 'twilio';
 
 import { PrismaService } from '../prisma/prisma.service';
@@ -109,12 +110,13 @@ export class VoiceWebhookService {
     await this.recordWebhookEvent(`voice:outbound:${callSid}`, 'voice.outbound', callSid, params);
 
     const selectedNumberId = params.selectedNumberId;
-    const destinationNumber = params.destinationNumber;
-    if (!selectedNumberId || !destinationNumber) {
+    const rawDestinationNumber = params.destinationNumber;
+    if (!selectedNumberId || !rawDestinationNumber) {
       this.logger.warn('Outbound voice webhook missing selectedNumberId/destinationNumber');
       return hangupTwiml('Missing call parameters.');
     }
-    if (!/^\+[1-9]\d{1,14}$/.test(destinationNumber)) {
+    const destinationNumber = normalizeDialablePhoneNumber(rawDestinationNumber);
+    if (!destinationNumber) {
       return hangupTwiml('Destination must be a valid phone number.');
     }
 

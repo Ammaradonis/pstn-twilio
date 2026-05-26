@@ -6,7 +6,7 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import { UserRole } from '@prisma/client';
-import type { VoiceTokenDto } from '@pstn-twilio/shared';
+import { normalizeDialablePhoneNumber, type VoiceTokenDto } from '@pstn-twilio/shared';
 import twilio from 'twilio';
 
 import { AuditService } from '../audit/audit.service';
@@ -101,13 +101,14 @@ export class VoiceService {
     if (!phoneNumber.active) {
       throw new BadRequestException('Selected number is inactive');
     }
-    if (!/^\+[1-9]\d{1,14}$/.test(input.destinationNumber)) {
+    const destinationNumber = normalizeDialablePhoneNumber(input.destinationNumber);
+    if (!destinationNumber) {
       throw new BadRequestException('Destination must be E.164');
     }
     return {
       selectedNumberId: phoneNumber.id,
       selectedCallerId: phoneNumber.phoneNumberE164,
-      destinationNumber: input.destinationNumber,
+      destinationNumber,
       identity: this.twilio.voiceIdentity(actor.userId, phoneNumber.id),
     };
   }

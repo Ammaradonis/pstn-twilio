@@ -1,10 +1,10 @@
+import { normalizeDialablePhoneNumber } from '@pstn-twilio/shared';
 import { useEffect, useMemo, useState } from 'react';
 import { useParams } from 'react-router-dom';
 
 import { useVoiceDevice } from '../hooks/use-voice-device';
 import { api } from '../lib/api-client';
 
-const E164_RE = /^\+[1-9]\d{1,14}$/;
 const DIGITS = ['1', '2', '3', '4', '5', '6', '7', '8', '9', '*', '0', '#'] as const;
 
 function StatusPill({ label, ok }: { label: string; ok: boolean }) {
@@ -27,6 +27,10 @@ export function DialPage() {
   const [pageError, setPageError] = useState<string | null>(null);
   const voice = useVoiceDevice();
 
+  function setDestinationFromInput(value: string) {
+    setDestination(normalizeDialablePhoneNumber(value) ?? value.trim());
+  }
+
   useEffect(() => {
     void voice.init(numberId);
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -48,13 +52,17 @@ export function DialPage() {
     };
   }, [numberId]);
 
-  const valid = useMemo(() => E164_RE.test(destination), [destination]);
+  const normalizedDestination = useMemo(
+    () => normalizeDialablePhoneNumber(destination),
+    [destination],
+  );
+  const valid = normalizedDestination !== null;
 
   async function handleCall() {
     setPageError(null);
     if (!numberId) return;
-    if (!valid) {
-      setPageError('Destination must be E.164 (e.g. +14155552671).');
+    if (!normalizedDestination) {
+      setPageError('Enter a valid U.S. phone number, such as +1 530-441-9961.');
       return;
     }
     if (!voice.registered) {
@@ -63,7 +71,7 @@ export function DialPage() {
     }
     setSubmitting(true);
     try {
-      const prep = await api.voice.prepareOutbound(numberId, destination);
+      const prep = await api.voice.prepareOutbound(numberId, normalizedDestination);
       voice.makeCall(prep.selectedNumberId, prep.destinationNumber);
     } catch (err) {
       setPageError(err instanceof Error ? err.message : String(err));
@@ -125,15 +133,21 @@ export function DialPage() {
         <label className="text-sm text-slate-700">Destination (E.164)</label>
         <input
           value={destination}
-          onChange={(e) => setDestination(e.target.value.trim())}
-          placeholder="+14155552671"
+          onChange={(e) => setDestinationFromInput(e.target.value)}
+          onPaste={(e) => {
+            const normalized = normalizeDialablePhoneNumber(e.clipboardData.getData('text'));
+            if (!normalized) return;
+            e.preventDefault();
+            setDestination(normalized);
+          }}
+          placeholder="+1 530-441-9961"
           inputMode="tel"
           className="mt-1 w-full rounded border border-slate-300 px-2 py-1 font-mono text-sm focus:border-slate-500 focus:outline-none"
         />
         {destination.length > 0 && !valid && (
           <p className="mt-1 text-xs text-rose-700">
-            Enter an E.164 number with leading <span className="font-mono">+</span> and country
-            code.
+            Enter a U.S. phone number such as <span className="font-mono">+1 530-441-9961</span> or{' '}
+            <span className="font-mono">530-441-9961</span>.
           </p>
         )}
 
@@ -142,7 +156,9 @@ export function DialPage() {
             <button
               key={d}
               type="button"
-              onClick={() => setDestination((prev) => prev + d)}
+              onClick={() =>
+                setDestination((prev) => normalizeDialablePhoneNumber(prev + d) ?? prev + d)
+              }
               className="rounded border border-slate-200 px-3 py-2 text-base hover:bg-slate-50"
             >
               {d}
