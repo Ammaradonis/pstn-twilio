@@ -8,6 +8,7 @@ describe('normalizeDialablePhoneNumber', () => {
     ['530-441-9961', '+15304419961'],
     ['(530) 441-9961', '+15304419961'],
     ['530.441.9961', '+15304419961'],
+    ['530/441/9961', '+15304419961'],
     ['530 441 9961', '+15304419961'],
     ['15304419961', '+15304419961'],
     ['+15304419961', '+15304419961'],
@@ -24,6 +25,12 @@ Map of Ground-Up Brazilian Jiu-Jitsu Academy, LLC
 +1 530-441-9961
 Reviews
 Reviews aren't verified`;
+
+    expect(normalizeDialablePhoneNumber(pasted)).toBe('+15304419961');
+  });
+
+  it('extracts an incorrectly formatted phone number from noisy clipboard text', () => {
+    const pasted = 'Call now!!! phone +1/530/441/9961, ask for front desk';
 
     expect(normalizeDialablePhoneNumber(pasted)).toBe('+15304419961');
   });

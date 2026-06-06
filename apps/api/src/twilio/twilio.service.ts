@@ -119,22 +119,23 @@ export class TwilioService {
 
   async validateCredentials(): Promise<boolean> {
     try {
-      // Auth Token can always fetch account details; use it for a reliable status check.
       const authClient = twilio(this.accountSid, this.authToken);
       const account = await authClient.api.v2010.accounts(this.accountSid).fetch();
-      return account.status === 'active';
-    } catch {
-      // Fallback: API key with explicit account path (SDK v5 shorthand mis-routes with API keys).
-      try {
-        await this.client.api.v2010
-          .accounts(this.accountSid)
-          .incomingPhoneNumbers.list({ limit: 1 });
-        return true;
-      } catch (subErr) {
-        const message = subErr instanceof Error ? subErr.message : 'unknown';
-        this.logger.warn(`Twilio credential check failed: ${message}`);
+      if (account.status !== 'active') {
+        this.logger.warn(`Twilio account is not active: ${account.status}`);
         return false;
       }
+
+      // Voice Access Tokens are signed with the API key, not the Auth Token.
+      // Validate that path explicitly so /health/twilio catches 20101-causing
+      // API key or TwiML App drift before the browser tries to register.
+      await this.client.api.v2010.accounts(this.accountSid).incomingPhoneNumbers.list({ limit: 1 });
+      await this.client.applications(this.twimlAppSid).fetch();
+      return true;
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'unknown';
+      this.logger.warn(`Twilio credential check failed: ${message}`);
+      return false;
     }
   }
 }

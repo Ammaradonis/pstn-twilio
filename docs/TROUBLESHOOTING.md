@@ -17,6 +17,7 @@ Symptom → diagnosis → fix. For ambient runbook detail see
    on purpose. Reactivate via the UI (`/numbers/:id` → reactivate) or set
    `user_id`.
 2. **Check the webhook reached us**
+
    ```sql
    SELECT created_at, event_type, signature_valid, twilio_sid
    FROM webhook_events
@@ -29,6 +30,7 @@ Symptom → diagnosis → fix. For ambient runbook detail see
      in the Twilio Console; rerun `pnpm tsx scripts/twilio-sync.ts configure`.
    - `signature_valid=false` → the `TWILIO_WEBHOOK_BASE_URL` env var does
      not match the actual public URL. Update and redeploy.
+
 3. **Check the browser is registered**: open `/numbers/:id/answer` and look
    at the readiness pills. If `registered=false`, the Twilio Device never
    came online — the user likely denied microphone permission or the Voice
@@ -36,6 +38,38 @@ Symptom → diagnosis → fix. For ambient runbook detail see
 4. **Check Twilio's view**: Twilio Console → _Monitor → Debugger_ will show
    the response we returned. If we returned `<Hangup/>` TwiML, line up the
    reason in the API logs (`req_id` in the response headers).
+
+### Browser shows Twilio `20101` / invalid access token
+
+Twilio rejected the Voice Access Token used by the browser SDK. The token must
+be signed with `TWILIO_API_KEY_SECRET`, have `iss=TWILIO_API_KEY_SID`, and
+`sub=TWILIO_ACCOUNT_SID`.
+
+- Run `/api/health/twilio` or `/api/diagnostics`; the API now validates the
+  Auth Token, API key, and `TWILIO_TWIML_APP_SID` instead of checking only the
+  Auth Token.
+- Compare the API server clock with Twilio's `Date` response header. The token
+  issuer backdates `iat` by five minutes to tolerate small skew, but larger
+  drift still requires fixing the host clock.
+- Confirm the frontend is calling the intended API. Local dev should use
+  `VITE_API_BASE_URL=http://localhost:3000/api`; production should use
+  `https://api.webfitalchemist.online/api`.
+
+### Browser shows Twilio `31005` / connection error
+
+Twilio's Voice SDK reports `31005` when its WebSocket connection to Twilio
+signaling closes unexpectedly. The frontend keeps a single registered
+`Device` alive across route changes, refreshes the token before expiry, and
+automatically re-registers after `31005` or token-related signaling errors.
+
+- Check `/api/health/twilio`; it validates the Auth Token, API key, and TwiML
+  App path used by browser Voice tokens.
+- If it repeats after automatic re-registration, test the local network against
+  Twilio Voice SDK connectivity requirements and inspect the browser console
+  for the more precise SDK error code.
+- Do not keep multiple dial/answer tabs open for different numbers in the same
+  browser profile; the current UI intentionally keeps one active Device
+  identity registered at a time.
 
 ### Outbound call drops immediately
 

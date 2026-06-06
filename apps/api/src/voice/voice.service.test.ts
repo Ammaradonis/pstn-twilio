@@ -1,3 +1,5 @@
+import { createHmac } from 'node:crypto';
+
 import { BadRequestException, ForbiddenException, NotFoundException } from '@nestjs/common';
 import { UserRole } from '@prisma/client';
 import { describe, expect, it, vi } from 'vitest';
@@ -21,6 +23,12 @@ function buildService(overrides: { prisma?: any; twilio?: any; audit?: any } = {
   return { service: new VoiceService(prisma, twilio, audit), prisma, twilio, audit };
 }
 
+function decodeJwtPart<T>(token: string, index: number): T {
+  const part = token.split('.')[index];
+  if (!part) throw new Error(`Missing JWT part ${index}`);
+  return JSON.parse(Buffer.from(part, 'base64url').toString('utf8')) as T;
+}
+
 describe('VoiceService.issueToken', () => {
   it('issues a JWT with VoiceGrant for a user without a numberId', async () => {
     const { service, prisma, audit } = buildService();
@@ -35,6 +43,60 @@ describe('VoiceService.issueToken', () => {
     expect(audit.log).toHaveBeenCalledWith(
       expect.objectContaining({ action: 'voice.token_issued', entityId: 'user_u1' }),
     );
+  });
+
+  it('backdates iat and signs a Twilio Voice JWT to tolerate small clock skew', async () => {
+    const now = new Date('2026-06-06T21:05:00.000Z');
+    vi.useFakeTimers();
+    vi.setSystemTime(now);
+    try {
+      const { service, twilio } = buildService();
+      const result = await service.issueToken({ userId: 'u1', role: UserRole.OWNER });
+      const header = decodeJwtPart<{
+        alg: string;
+        typ: string;
+        cty: string;
+      }>(result.token, 0);
+      const payload = decodeJwtPart<{
+        iss: string;
+        sub: string;
+        iat: number;
+        exp: number;
+        grants: {
+          identity: string;
+          voice: {
+            incoming: { allow: boolean };
+            outgoing: { application_sid: string };
+          };
+        };
+      }>(result.token, 1);
+      const [encodedHeader, encodedPayload, signature] = result.token.split('.');
+
+      expect(header).toEqual({
+        alg: 'HS256',
+        typ: 'JWT',
+        cty: 'twilio-fpa;v=1',
+      });
+      expect(payload.iss).toBe(twilio.apiKeySid);
+      expect(payload.sub).toBe(twilio.accountSid);
+      expect(payload.iat).toBe(Math.floor(now.getTime() / 1000) - 300);
+      expect(payload.exp).toBe(payload.iat + 3600);
+      expect(result.expiresAt).toBe(new Date(payload.exp * 1000).toISOString());
+      expect(payload.grants).toEqual({
+        identity: 'user_u1',
+        voice: {
+          incoming: { allow: true },
+          outgoing: { application_sid: twilio.twimlAppSid },
+        },
+      });
+      expect(signature).toBe(
+        createHmac('sha256', twilio.apiKeySecret)
+          .update(`${encodedHeader}.${encodedPayload}`)
+          .digest('base64url'),
+      );
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it('asserts ownership when a numberId is supplied', async () => {
@@ -170,5 +232,7 @@ describe('VoiceService.getDeviceConfig', () => {
     const config = service.getDeviceConfig();
     expect(config.codecPreferences).toContain('opus');
     expect(config.closeProtection).toBe(true);
+    expect(config.enableImprovedSignalingErrorPrecision).toBe(true);
+    expect(config.tokenRefreshMs).toBe(60_000);
   });
 });

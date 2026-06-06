@@ -1,10 +1,12 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 
 import { api } from '../lib/api-client';
 
 type ConnectionState = 'idle' | 'pending' | 'ringing' | 'open' | 'closed';
 
-type VoiceEventHandler = (...args: never[]) => void | Promise<void>;
+type VoiceEventHandler<TArgs extends unknown[] = unknown[]> = (
+  ...args: TArgs
+) => void | Promise<void>;
 
 type VoiceCall = {
   parameters?: Record<string, string | undefined>;
@@ -17,7 +19,10 @@ type VoiceCall = {
 };
 
 type VoiceDevice = {
-  on: (event: string, handler: VoiceEventHandler) => void;
+  on: {
+    (event: 'incoming', handler: VoiceEventHandler<[VoiceCall]>): void;
+    (event: string, handler: VoiceEventHandler): void;
+  };
   register?: () => Promise<void> | void;
   destroy?: () => void;
   disconnectAll?: () => void;
@@ -29,18 +34,24 @@ type VoiceDevice = {
 
 type VoiceDeviceConstructor = new (token: string, options: unknown) => VoiceDevice;
 
-function isPromiseLike<T>(value: T | Promise<T>): value is Promise<T> {
-  return typeof (value as Promise<T>).then === 'function';
-}
+type VoiceSdkError = Error & {
+  code?: number;
+  description?: string;
+  explanation?: string;
+  twilioError?: {
+    code?: number;
+    description?: string;
+    explanation?: string;
+    message?: string;
+  };
+};
 
 type IncomingCall = {
   connection: VoiceCall;
   from?: string;
 };
 
-interface UseVoiceDevice {
-  init: (numberId?: string) => Promise<{ identity: string; expiresAt: string } | null>;
-  destroy: () => void;
+type VoiceRuntimeState = {
   ready: boolean;
   registered: boolean;
   incoming: IncomingCall | null;
@@ -49,16 +60,66 @@ interface UseVoiceDevice {
   identity: string | null;
   error: string | null;
   isMuted: boolean;
+};
+
+interface UseVoiceDevice extends VoiceRuntimeState {
+  init: (numberId?: string) => Promise<{ identity: string; expiresAt: string } | null>;
+  destroy: () => void;
   micPermission: 'unknown' | 'granted' | 'denied' | 'prompt';
   browserSupported: boolean;
   accept: () => void;
   reject: () => void;
   hangup: () => void;
   toggleMute: () => void;
-  makeCall: (
-    selectedNumberId: string,
-    destinationNumber: string,
-  ) => VoiceCall | Promise<VoiceCall> | null;
+  makeCall: (selectedNumberId: string, destinationNumber: string) => Promise<VoiceCall | null>;
+}
+
+const INITIAL_RUNTIME_STATE: VoiceRuntimeState = {
+  ready: false,
+  registered: false,
+  incoming: null,
+  active: false,
+  connectionState: 'idle',
+  identity: null,
+  error: null,
+  isMuted: false,
+};
+
+const RECONNECTABLE_ERROR_CODES = new Set([20101, 31005, 31203, 31204, 31205, 31207]);
+const REGISTER_WAIT_MS = 15_000;
+
+const subscribers = new Set<() => void>();
+
+const runtime: {
+  state: VoiceRuntimeState;
+  device: VoiceDevice | null;
+  call: VoiceCall | null;
+  lastNumberId: string | undefined;
+  expiresAt: string | null;
+  tokenRefreshTimer: ReturnType<typeof setTimeout> | null;
+  reconnectTimer: ReturnType<typeof setTimeout> | null;
+  currentInit: Promise<{ identity: string; expiresAt: string } | null> | null;
+  currentInitNumberId: string | undefined;
+  intentionallyDestroyed: boolean;
+  registering: boolean;
+  reconnectAttempt: number;
+} = {
+  state: INITIAL_RUNTIME_STATE,
+  device: null,
+  call: null,
+  lastNumberId: undefined,
+  expiresAt: null,
+  tokenRefreshTimer: null,
+  reconnectTimer: null,
+  currentInit: null,
+  currentInitNumberId: undefined,
+  intentionallyDestroyed: false,
+  registering: false,
+  reconnectAttempt: 0,
+};
+
+function isPromiseLike<T>(value: T | Promise<T>): value is Promise<T> {
+  return typeof (value as Promise<T>).then === 'function';
 }
 
 function isBrowserSupported(): boolean {
@@ -68,22 +129,437 @@ function isBrowserSupported(): boolean {
   return true;
 }
 
-export function useVoiceDevice(): UseVoiceDevice {
-  const deviceRef = useRef<VoiceDevice | null>(null);
-  const callRef = useRef<VoiceCall | null>(null);
-  const tokenRefreshTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const lastNumberIdRef = useRef<string | undefined>(undefined);
+function subscribe(listener: () => void): () => void {
+  subscribers.add(listener);
+  return () => subscribers.delete(listener);
+}
 
-  const [ready, setReady] = useState(false);
-  const [registered, setRegistered] = useState(false);
-  const [incoming, setIncoming] = useState<IncomingCall | null>(null);
-  const [active, setActive] = useState(false);
-  const [connectionState, setConnectionState] = useState<ConnectionState>('idle');
-  const [identity, setIdentity] = useState<string | null>(null);
-  const [error, setError] = useState<string | null>(null);
-  const [isMuted, setIsMuted] = useState(false);
+function emit(): void {
+  for (const subscriber of subscribers) subscriber();
+}
+
+function setRuntimeState(patch: Partial<VoiceRuntimeState>): void {
+  runtime.state = { ...runtime.state, ...patch };
+  emit();
+}
+
+function clearTimer(timer: ReturnType<typeof setTimeout> | null): void {
+  if (timer) clearTimeout(timer);
+}
+
+function getVoiceErrorCode(err: unknown): number | undefined {
+  if (!(err instanceof Error)) return undefined;
+  const voiceError = err as VoiceSdkError;
+  return voiceError.twilioError?.code ?? voiceError.code;
+}
+
+function formatVoiceError(err: unknown): string {
+  if (!(err instanceof Error)) return String(err);
+  const voiceError = err as VoiceSdkError;
+  const code = getVoiceErrorCode(err);
+  const explanation =
+    voiceError.twilioError?.explanation ??
+    voiceError.twilioError?.description ??
+    voiceError.twilioError?.message ??
+    voiceError.explanation ??
+    voiceError.description ??
+    voiceError.message;
+
+  if (code === 20101) {
+    return 'Twilio rejected the Voice access token (20101). Refresh the page to request a new token; if it persists, run the Twilio diagnostics check.';
+  }
+  if (code === 31005) {
+    return 'Twilio signaling disconnected (31005). The device is reconnecting automatically.';
+  }
+
+  const details = [typeof code === 'number' ? `Twilio ${code}` : null, explanation].filter(Boolean);
+  return details.length > 0 ? details.join(': ') : voiceError.message;
+}
+
+function disposeCurrentDevice(resetState: boolean): void {
+  runtime.intentionallyDestroyed = true;
+  clearTimer(runtime.tokenRefreshTimer);
+  clearTimer(runtime.reconnectTimer);
+  runtime.tokenRefreshTimer = null;
+  runtime.reconnectTimer = null;
+  runtime.registering = false;
+  runtime.reconnectAttempt = 0;
+  runtime.call = null;
+
+  try {
+    runtime.device?.destroy?.();
+  } catch {
+    /* noop */
+  }
+
+  runtime.device = null;
+  runtime.lastNumberId = undefined;
+  runtime.expiresAt = null;
+  runtime.currentInit = null;
+  runtime.currentInitNumberId = undefined;
+
+  if (resetState) {
+    runtime.state = INITIAL_RUNTIME_STATE;
+    emit();
+  }
+}
+
+async function refreshVoiceToken(numberId: string | undefined): Promise<void> {
+  const device = runtime.device;
+  if (!device) return;
+
+  const next = await api.voice.token(numberId);
+  device.updateToken?.(next.token);
+  runtime.expiresAt = next.expiresAt;
+  setRuntimeState({ identity: next.identity });
+  scheduleTokenRefresh(next.expiresAt, numberId);
+}
+
+function scheduleTokenRefresh(expiresAt: string, numberId: string | undefined): void {
+  clearTimer(runtime.tokenRefreshTimer);
+  const expiresMs = new Date(expiresAt).getTime() - Date.now();
+  const delay = Math.max(5_000, Math.min(expiresMs - 60_000, 50 * 60_000));
+
+  runtime.tokenRefreshTimer = setTimeout(async () => {
+    try {
+      await refreshVoiceToken(numberId);
+    } catch (err) {
+      setRuntimeState({ error: formatVoiceError(err) });
+      scheduleReconnect(numberId);
+    }
+  }, delay);
+}
+
+function scheduleReconnect(numberId: string | undefined): void {
+  if (runtime.intentionallyDestroyed || !runtime.device || runtime.reconnectTimer) return;
+
+  const delay = Math.min(15_000, 1_000 * 2 ** Math.min(runtime.reconnectAttempt, 4));
+  runtime.reconnectAttempt += 1;
+  setRuntimeState({ ready: false, registered: false });
+
+  runtime.reconnectTimer = setTimeout(async () => {
+    runtime.reconnectTimer = null;
+    if (runtime.intentionallyDestroyed || !runtime.device) return;
+
+    try {
+      await refreshVoiceToken(numberId);
+    } catch (err) {
+      setRuntimeState({ error: formatVoiceError(err) });
+      scheduleReconnect(numberId);
+      return;
+    }
+
+    await registerCurrentDevice(numberId);
+    if (!runtime.state.registered) scheduleReconnect(numberId);
+  }, delay);
+}
+
+async function registerCurrentDevice(numberId: string | undefined): Promise<void> {
+  const device = runtime.device;
+  if (!device || runtime.intentionallyDestroyed || runtime.registering) return;
+
+  runtime.registering = true;
+  setRuntimeState({ ready: false });
+  try {
+    await device.register?.();
+  } catch (err) {
+    setRuntimeState({
+      ready: false,
+      registered: false,
+      error: formatVoiceError(err),
+    });
+    scheduleReconnect(numberId);
+  } finally {
+    runtime.registering = false;
+  }
+}
+
+function waitForRegistered(timeoutMs: number): Promise<boolean> {
+  if (runtime.state.registered) return Promise.resolve(true);
+
+  return new Promise((resolve) => {
+    const timer = setTimeout(() => {
+      unsubscribe();
+      resolve(runtime.state.registered);
+    }, timeoutMs);
+    const unsubscribe = subscribe(() => {
+      if (!runtime.state.registered) return;
+      clearTimeout(timer);
+      unsubscribe();
+      resolve(true);
+    });
+  });
+}
+
+async function ensureRegistered(numberId: string): Promise<boolean> {
+  if (!runtime.device || runtime.lastNumberId !== numberId) {
+    await initVoiceDevice(numberId, isBrowserSupported());
+  }
+  if (runtime.state.registered) return true;
+
+  await registerCurrentDevice(numberId);
+  return waitForRegistered(REGISTER_WAIT_MS);
+}
+
+function attachCallListeners(conn: VoiceCall): void {
+  runtime.call = conn;
+  setRuntimeState({
+    active: true,
+    connectionState: 'pending',
+    isMuted: Boolean(conn?.isMuted?.()),
+  });
+
+  conn.on?.('ringing', () => setRuntimeState({ connectionState: 'ringing' }));
+  conn.on?.('accept', () =>
+    setRuntimeState({
+      connectionState: 'open',
+      active: true,
+      error: null,
+    }),
+  );
+  conn.on?.('disconnect', () => {
+    runtime.call = null;
+    setRuntimeState({
+      connectionState: 'closed',
+      active: false,
+      isMuted: false,
+    });
+  });
+  conn.on?.('cancel', () => {
+    runtime.call = null;
+    setRuntimeState({
+      connectionState: 'closed',
+      active: false,
+    });
+  });
+  conn.on?.('reject', () => {
+    runtime.call = null;
+    setRuntimeState({
+      connectionState: 'closed',
+      active: false,
+    });
+  });
+  conn.on?.('error', (err) => {
+    runtime.call = null;
+    setRuntimeState({
+      error: formatVoiceError(err),
+      active: false,
+      connectionState: 'closed',
+    });
+    if (RECONNECTABLE_ERROR_CODES.has(getVoiceErrorCode(err) ?? 0)) {
+      scheduleReconnect(runtime.lastNumberId);
+    }
+  });
+}
+
+function attachDeviceListeners(device: VoiceDevice, numberId: string | undefined): void {
+  device.on('registered', () => {
+    if (runtime.device !== device) return;
+    clearTimer(runtime.reconnectTimer);
+    runtime.reconnectTimer = null;
+    runtime.reconnectAttempt = 0;
+    setRuntimeState({
+      ready: true,
+      registered: true,
+      error: null,
+    });
+  });
+
+  device.on('unregistered', () => {
+    if (runtime.device !== device) return;
+    setRuntimeState({ ready: false, registered: false });
+    scheduleReconnect(numberId);
+  });
+
+  device.on('tokenWillExpire', async () => {
+    if (runtime.device !== device) return;
+    try {
+      await refreshVoiceToken(numberId);
+    } catch (err) {
+      setRuntimeState({ error: formatVoiceError(err) });
+      scheduleReconnect(numberId);
+    }
+  });
+
+  device.on('incoming', (conn: VoiceCall) => {
+    if (runtime.device !== device) return;
+    setRuntimeState({
+      incoming: {
+        connection: conn,
+        from: conn.parameters?.From,
+      },
+    });
+    conn.on?.('cancel', () => setRuntimeState({ incoming: null }));
+    conn.on?.('disconnect', () => setRuntimeState({ incoming: null }));
+  });
+
+  device.on('error', (err) => {
+    if (runtime.device !== device) return;
+    const code = getVoiceErrorCode(err);
+    setRuntimeState({ error: formatVoiceError(err) });
+    if (RECONNECTABLE_ERROR_CODES.has(code ?? 0)) {
+      scheduleReconnect(numberId);
+    }
+  });
+}
+
+async function initVoiceDevice(
+  numberId: string | undefined,
+  browserSupported: boolean,
+): Promise<{ identity: string; expiresAt: string } | null> {
+  if (!browserSupported) {
+    setRuntimeState({
+      error: 'This browser does not support WebRTC. Use the latest Chrome, Edge, or Firefox.',
+    });
+    return null;
+  }
+
+  if (runtime.device && runtime.lastNumberId === numberId) {
+    if (!runtime.state.registered) void registerCurrentDevice(numberId);
+    return runtime.state.identity && runtime.expiresAt
+      ? { identity: runtime.state.identity, expiresAt: runtime.expiresAt }
+      : null;
+  }
+
+  if (runtime.currentInit && runtime.currentInitNumberId === numberId) {
+    return runtime.currentInit;
+  }
+
+  runtime.currentInitNumberId = numberId;
+  runtime.currentInit = (async () => {
+    if (runtime.device) disposeCurrentDevice(true);
+    runtime.intentionallyDestroyed = false;
+    setRuntimeState({
+      ready: false,
+      registered: false,
+      incoming: null,
+      active: false,
+      connectionState: 'idle',
+      error: null,
+    });
+
+    try {
+      const tokenResp = await api.voice.token(numberId);
+      const sdk = (await import('@twilio/voice-sdk')) as unknown as {
+        Device?: VoiceDeviceConstructor;
+        default?: VoiceDeviceConstructor;
+      };
+      const Device = sdk.Device ?? sdk.default;
+      if (!Device) throw new Error('Twilio Voice SDK Device export was not found');
+
+      const config = await api.voice.deviceConfig();
+      const device = new Device(tokenResp.token, config);
+      runtime.device = device;
+      runtime.lastNumberId = numberId;
+      runtime.expiresAt = tokenResp.expiresAt;
+      runtime.intentionallyDestroyed = false;
+      attachDeviceListeners(device, numberId);
+      setRuntimeState({ identity: tokenResp.identity });
+      scheduleTokenRefresh(tokenResp.expiresAt, numberId);
+      await registerCurrentDevice(numberId);
+      await waitForRegistered(REGISTER_WAIT_MS);
+      return { identity: tokenResp.identity, expiresAt: tokenResp.expiresAt };
+    } catch (err) {
+      setRuntimeState({ error: formatVoiceError(err) });
+      scheduleReconnect(numberId);
+      return null;
+    } finally {
+      runtime.currentInit = null;
+      runtime.currentInitNumberId = undefined;
+    }
+  })();
+
+  return runtime.currentInit;
+}
+
+async function makeVoiceCall(
+  selectedNumberId: string,
+  destinationNumber: string,
+): Promise<VoiceCall | null> {
+  const registered = await ensureRegistered(selectedNumberId);
+  const device = runtime.device;
+  if (!registered || !device) {
+    setRuntimeState({
+      error: 'Voice device could not register with Twilio. It will keep retrying automatically.',
+    });
+    scheduleReconnect(selectedNumberId);
+    return null;
+  }
+
+  try {
+    const result = device.connect({
+      params: { selectedNumberId, destinationNumber },
+    });
+    const conn = isPromiseLike(result) ? await result : result;
+    attachCallListeners(conn);
+    return conn;
+  } catch (err) {
+    setRuntimeState({ error: formatVoiceError(err) });
+    if (RECONNECTABLE_ERROR_CODES.has(getVoiceErrorCode(err) ?? 0)) {
+      scheduleReconnect(selectedNumberId);
+    }
+    return null;
+  }
+}
+
+function acceptIncomingCall(): void {
+  const conn = runtime.state.incoming?.connection;
+  if (!conn) return;
+  try {
+    attachCallListeners(conn);
+    conn.accept?.();
+    setRuntimeState({ incoming: null });
+  } catch (err) {
+    setRuntimeState({ error: formatVoiceError(err) });
+  }
+}
+
+function rejectIncomingCall(): void {
+  const conn = runtime.state.incoming?.connection;
+  if (!conn) return;
+  try {
+    conn.reject?.();
+  } catch (err) {
+    setRuntimeState({ error: formatVoiceError(err) });
+  } finally {
+    setRuntimeState({ incoming: null });
+  }
+}
+
+function hangupCall(): void {
+  try {
+    runtime.call?.disconnect?.();
+    runtime.device?.disconnectAll?.();
+  } catch (err) {
+    setRuntimeState({ error: formatVoiceError(err) });
+  } finally {
+    runtime.call = null;
+    setRuntimeState({
+      active: false,
+      isMuted: false,
+      connectionState: 'closed',
+    });
+  }
+}
+
+function toggleMute(): void {
+  const conn = runtime.call;
+  if (!conn) return;
+  try {
+    const next = !conn.isMuted?.();
+    conn.mute?.(next);
+    setRuntimeState({ isMuted: next });
+  } catch (err) {
+    setRuntimeState({ error: formatVoiceError(err) });
+  }
+}
+
+export function useVoiceDevice(): UseVoiceDevice {
+  const [snapshot, setSnapshot] = useState<VoiceRuntimeState>(runtime.state);
   const [micPermission, setMicPermission] = useState<UseVoiceDevice['micPermission']>('unknown');
   const [browserSupported] = useState<boolean>(isBrowserSupported);
+
+  useEffect(() => subscribe(() => setSnapshot(runtime.state)), []);
 
   useEffect(() => {
     if (typeof navigator === 'undefined' || !navigator.permissions?.query) return;
@@ -105,229 +581,23 @@ export function useVoiceDevice(): UseVoiceDevice {
     };
   }, []);
 
-  const destroy = useCallback(() => {
-    if (tokenRefreshTimerRef.current) {
-      clearTimeout(tokenRefreshTimerRef.current);
-      tokenRefreshTimerRef.current = null;
-    }
-    try {
-      deviceRef.current?.destroy?.();
-    } catch {
-      /* noop */
-    }
-    deviceRef.current = null;
-    callRef.current = null;
-    setReady(false);
-    setRegistered(false);
-    setActive(false);
-    setIncoming(null);
-    setIdentity(null);
-    setConnectionState('idle');
-    setIsMuted(false);
-  }, []);
-
-  useEffect(() => destroy, [destroy]);
-
-  const attachCallListeners = useCallback((conn: VoiceCall) => {
-    callRef.current = conn;
-    setActive(true);
-    setConnectionState('pending');
-    setIsMuted(Boolean(conn?.isMuted?.()));
-
-    conn.on?.('ringing', () => setConnectionState('ringing'));
-    conn.on?.('accept', () => {
-      setConnectionState('open');
-      setActive(true);
-    });
-    conn.on?.('disconnect', () => {
-      setConnectionState('closed');
-      setActive(false);
-      setIsMuted(false);
-      callRef.current = null;
-    });
-    conn.on?.('cancel', () => {
-      setConnectionState('closed');
-      setActive(false);
-      callRef.current = null;
-    });
-    conn.on?.('reject', () => {
-      setConnectionState('closed');
-      setActive(false);
-      callRef.current = null;
-    });
-    conn.on?.('error', (e: Error) => setError(e?.message ?? String(e)));
-  }, []);
-
-  const scheduleTokenRefresh = useCallback((expiresAt: string, numberId?: string) => {
-    if (tokenRefreshTimerRef.current) clearTimeout(tokenRefreshTimerRef.current);
-    const expiresMs = new Date(expiresAt).getTime() - Date.now();
-    // refresh 60s before expiry, but never less than 5s and never more than 50min
-    const delay = Math.max(5_000, Math.min(expiresMs - 60_000, 50 * 60_000));
-    tokenRefreshTimerRef.current = setTimeout(async () => {
-      try {
-        const next = await api.voice.token(numberId);
-        deviceRef.current?.updateToken?.(next.token);
-        scheduleTokenRefresh(next.expiresAt, numberId);
-      } catch (err) {
-        setError(err instanceof Error ? err.message : String(err));
-      }
-    }, delay);
-  }, []);
-
   const init = useCallback(
-    async (numberId?: string) => {
-      if (!browserSupported) {
-        setError('This browser does not support WebRTC. Use the latest Chrome, Edge, or Firefox.');
-        return null;
-      }
-      if (deviceRef.current && lastNumberIdRef.current === numberId) {
-        return identity ? { identity, expiresAt: '' } : null;
-      }
-      try {
-        destroy();
-        const tokenResp = await api.voice.token(numberId);
-        const sdk = (await import('@twilio/voice-sdk')) as unknown as {
-          Device?: VoiceDeviceConstructor;
-          default?: VoiceDeviceConstructor;
-        };
-        const Device = sdk.Device ?? sdk.default;
-        if (!Device) throw new Error('Twilio Voice SDK Device export was not found');
-        const config = await api.voice.deviceConfig();
-        const device = new Device(tokenResp.token, config);
-        deviceRef.current = device;
-        lastNumberIdRef.current = numberId;
-        setIdentity(tokenResp.identity);
-
-        device.on('registered', () => {
-          setRegistered(true);
-          setReady(true);
-        });
-        device.on('unregistered', () => setRegistered(false));
-        device.on('tokenWillExpire', async () => {
-          try {
-            const next = await api.voice.token(numberId);
-            device.updateToken?.(next.token);
-            scheduleTokenRefresh(next.expiresAt, numberId);
-          } catch (err) {
-            setError(err instanceof Error ? err.message : String(err));
-          }
-        });
-        device.on('incoming', (conn: VoiceCall) => {
-          setIncoming({
-            connection: conn,
-            from: (conn.parameters?.From as string) ?? undefined,
-          });
-          conn.on?.('cancel', () => setIncoming(null));
-          conn.on?.('disconnect', () => setIncoming(null));
-        });
-        device.on('error', (e: Error) => setError(e?.message ?? String(e)));
-
-        await device.register?.();
-        scheduleTokenRefresh(tokenResp.expiresAt, numberId);
-        return { identity: tokenResp.identity, expiresAt: tokenResp.expiresAt };
-      } catch (err) {
-        const msg = err instanceof Error ? err.message : String(err);
-        setError(msg);
-        return null;
-      }
-    },
-    [browserSupported, destroy, identity, scheduleTokenRefresh],
+    (numberId?: string) => initVoiceDevice(numberId, browserSupported),
+    [browserSupported],
   );
 
-  const accept = useCallback(() => {
-    const conn = incoming?.connection;
-    if (!conn) return;
-    try {
-      attachCallListeners(conn);
-      conn.accept?.();
-      setIncoming(null);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : String(err));
-    }
-  }, [incoming, attachCallListeners]);
-
-  const reject = useCallback(() => {
-    const conn = incoming?.connection;
-    if (!conn) return;
-    try {
-      conn.reject?.();
-    } catch (err) {
-      setError(err instanceof Error ? err.message : String(err));
-    } finally {
-      setIncoming(null);
-    }
-  }, [incoming]);
-
-  const makeCall = useCallback(
-    (selectedNumberId: string, destinationNumber: string) => {
-      const device = deviceRef.current;
-      if (!device) {
-        setError('Voice device is not initialized');
-        return null;
-      }
-      try {
-        const result = device.connect({
-          params: { selectedNumberId, destinationNumber },
-        });
-        if (isPromiseLike(result)) {
-          result
-            .then((conn) => attachCallListeners(conn))
-            .catch((err) => setError(err instanceof Error ? err.message : String(err)));
-        } else if (result) {
-          attachCallListeners(result);
-        }
-        return result;
-      } catch (err) {
-        setError(err instanceof Error ? err.message : String(err));
-        return null;
-      }
-    },
-    [attachCallListeners],
-  );
-
-  const hangup = useCallback(() => {
-    try {
-      callRef.current?.disconnect?.();
-      deviceRef.current?.disconnectAll?.();
-    } catch (err) {
-      setError(err instanceof Error ? err.message : String(err));
-    } finally {
-      setActive(false);
-      setIsMuted(false);
-      setConnectionState('closed');
-      callRef.current = null;
-    }
-  }, []);
-
-  const toggleMute = useCallback(() => {
-    const conn = callRef.current;
-    if (!conn) return;
-    try {
-      const next = !conn.isMuted?.();
-      conn.mute?.(next);
-      setIsMuted(next);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : String(err));
-    }
-  }, []);
+  const destroy = useCallback(() => disposeCurrentDevice(true), []);
 
   return {
+    ...snapshot,
     init,
     destroy,
-    ready,
-    registered,
-    incoming,
-    active,
-    connectionState,
-    identity,
-    error,
-    isMuted,
     micPermission,
     browserSupported,
-    accept,
-    reject,
-    hangup,
+    accept: acceptIncomingCall,
+    reject: rejectIncomingCall,
+    hangup: hangupCall,
     toggleMute,
-    makeCall,
+    makeCall: makeVoiceCall,
   };
 }

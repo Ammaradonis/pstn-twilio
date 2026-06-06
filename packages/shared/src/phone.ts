@@ -28,7 +28,7 @@ export function normalizeDialablePhoneNumber(value: string): string | null {
   if (E164_RE.test(input)) return input;
 
   const usPhoneCandidateRe =
-    /(?:^|[^\d+])((?:\+?1[\s.-]*)?(?:\([2-9]\d{2}\)|[2-9]\d{2})[\s.-]*[2-9]\d{2}[\s.-]*\d{4}(?:\s*(?:ext\.?|extension|x)\s*\d{1,6})?)(?=$|[^\d])/gi;
+    /(?:^|[^\d+])((?:\+?1[\s./-]*)?(?:\([2-9]\d{2}\)|[2-9]\d{2})[\s./-]*[2-9]\d{2}[\s./-]*\d{4}(?:\s*(?:ext\.?|extension|x)\s*\d{1,6})?)(?=$|[^\d])/gi;
 
   for (const match of input.matchAll(usPhoneCandidateRe)) {
     const candidate = match[1];

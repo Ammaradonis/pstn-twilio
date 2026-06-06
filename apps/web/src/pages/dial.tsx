@@ -58,25 +58,47 @@ export function DialPage() {
   );
   const valid = normalizedDestination !== null;
 
-  async function handleCall() {
+  async function placeCall(destinationNumber: string | null = normalizedDestination) {
     setPageError(null);
     if (!numberId) return;
-    if (!normalizedDestination) {
+    if (!destinationNumber) {
       setPageError('Enter a valid U.S. phone number, such as +1 530-441-9961.');
-      return;
-    }
-    if (!voice.registered) {
-      setPageError('Voice device is not registered yet. Please wait.');
       return;
     }
     setSubmitting(true);
     try {
-      const prep = await api.voice.prepareOutbound(numberId, normalizedDestination);
-      voice.makeCall(prep.selectedNumberId, prep.destinationNumber);
+      const prep = await api.voice.prepareOutbound(numberId, destinationNumber);
+      await voice.makeCall(prep.selectedNumberId, prep.destinationNumber);
     } catch (err) {
       setPageError(err instanceof Error ? err.message : String(err));
     } finally {
       setSubmitting(false);
+    }
+  }
+
+  async function handleCall() {
+    await placeCall();
+  }
+
+  async function handlePasteAndCall() {
+    setPageError(null);
+    setDestination('');
+    if (!navigator.clipboard?.readText) {
+      setPageError('Clipboard access is unavailable in this browser.');
+      return;
+    }
+
+    try {
+      const pasted = await navigator.clipboard.readText();
+      const normalized = normalizeDialablePhoneNumber(pasted);
+      if (!normalized) {
+        setPageError('Clipboard does not contain a dialable phone number.');
+        return;
+      }
+      setDestination(normalized);
+      await placeCall(normalized);
+    } catch (err) {
+      setPageError(err instanceof Error ? err.message : String(err));
     }
   }
 
@@ -131,19 +153,30 @@ export function DialPage() {
 
       <div className="rounded border border-slate-200 bg-white p-4">
         <label className="text-sm text-slate-700">Destination (E.164)</label>
-        <input
-          value={destination}
-          onChange={(e) => setDestinationFromInput(e.target.value)}
-          onPaste={(e) => {
-            const normalized = normalizeDialablePhoneNumber(e.clipboardData.getData('text'));
-            if (!normalized) return;
-            e.preventDefault();
-            setDestination(normalized);
-          }}
-          placeholder="+1 530-441-9961"
-          inputMode="tel"
-          className="mt-1 w-full rounded border border-slate-300 px-2 py-1 font-mono text-sm focus:border-slate-500 focus:outline-none"
-        />
+        <div className="mt-1 flex gap-2">
+          <input
+            value={destination}
+            onChange={(e) => setDestinationFromInput(e.target.value)}
+            onPaste={(e) => {
+              const normalized = normalizeDialablePhoneNumber(e.clipboardData.getData('text'));
+              if (!normalized) return;
+              e.preventDefault();
+              setDestination(normalized);
+            }}
+            placeholder="+1 530-441-9961"
+            inputMode="tel"
+            className="min-w-0 flex-1 rounded border border-slate-300 px-2 py-1 font-mono text-sm focus:border-slate-500 focus:outline-none"
+          />
+          <button
+            type="button"
+            onClick={handlePasteAndCall}
+            disabled={submitting || voice.active}
+            title="Paste a phone number from the clipboard and call it"
+            className="rounded border border-slate-300 px-3 py-1.5 text-sm font-medium hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-60"
+          >
+            Paste
+          </button>
+        </div>
         {destination.length > 0 && !valid && (
           <p className="mt-1 text-xs text-rose-700">
             Enter a U.S. phone number such as <span className="font-mono">+1 530-441-9961</span> or{' '}

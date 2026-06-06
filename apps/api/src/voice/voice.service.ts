@@ -1,3 +1,5 @@
+import { createHmac } from 'node:crypto';
+
 import {
   BadRequestException,
   ForbiddenException,
@@ -7,13 +9,13 @@ import {
 } from '@nestjs/common';
 import { UserRole } from '@prisma/client';
 import { normalizeDialablePhoneNumber, type VoiceTokenDto } from '@pstn-twilio/shared';
-import twilio from 'twilio';
 
 import { AuditService } from '../audit/audit.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { TwilioService } from '../twilio/twilio.service';
 
 const TOKEN_TTL_SECONDS = 60 * 60; // 1 hour
+const TOKEN_CLOCK_SKEW_SECONDS = 5 * 60;
 
 interface ActorContext {
   userId: string;
@@ -37,22 +39,7 @@ export class VoiceService {
     const identity = this.twilio.voiceIdentity(actor.userId, numberId);
     await this.ensureVoiceIdentity(actor.userId, numberId, identity);
 
-    const AccessToken = twilio.jwt.AccessToken;
-    const VoiceGrant = AccessToken.VoiceGrant;
-
-    const accessToken = new AccessToken(
-      this.twilio.accountSid,
-      this.twilio.apiKeySid,
-      this.twilio.apiKeySecret,
-      { identity, ttl: TOKEN_TTL_SECONDS },
-    );
-    const voiceGrant = new VoiceGrant({
-      outgoingApplicationSid: this.twilio.twimlAppSid,
-      incomingAllow: true,
-    });
-    accessToken.addGrant(voiceGrant);
-
-    const expiresAt = new Date(Date.now() + TOKEN_TTL_SECONDS * 1000).toISOString();
+    const { token, expiresAt } = this.createVoiceAccessToken(identity);
 
     await this.audit.log({
       userId: actor.userId,
@@ -65,7 +52,7 @@ export class VoiceService {
     });
 
     return {
-      token: accessToken.toJwt(),
+      token,
       identity,
       expiresAt,
     };
@@ -82,6 +69,8 @@ export class VoiceService {
       edge: ['ashburn', 'dublin', 'singapore'],
       logLevel: 1,
       closeProtection: true,
+      enableImprovedSignalingErrorPrecision: true,
+      tokenRefreshMs: 60_000,
     };
   }
 
@@ -142,4 +131,47 @@ export class VoiceService {
       this.logger.debug(`Voice identity upsert race for ${identity}: ${(err as Error).message}`);
     }
   }
+
+  private createVoiceAccessToken(identity: string): { token: string; expiresAt: string } {
+    const issuedNow = Math.floor(Date.now() / 1000);
+    const iat = issuedNow - TOKEN_CLOCK_SKEW_SECONDS;
+    const exp = iat + TOKEN_TTL_SECONDS;
+    const payload = {
+      jti: `${this.twilio.apiKeySid}-${iat}`,
+      grants: {
+        identity,
+        voice: {
+          incoming: { allow: true },
+          outgoing: { application_sid: this.twilio.twimlAppSid },
+        },
+      },
+      iat,
+      exp,
+      iss: this.twilio.apiKeySid,
+      sub: this.twilio.accountSid,
+    };
+
+    return {
+      token: signHs256TwilioJwt(payload, this.twilio.apiKeySecret),
+      expiresAt: new Date(exp * 1000).toISOString(),
+    };
+  }
+}
+
+function signHs256TwilioJwt(payload: Record<string, unknown>, secret: string): string {
+  const header = {
+    alg: 'HS256',
+    typ: 'JWT',
+    cty: 'twilio-fpa;v=1',
+  };
+  const encodedHeader = encodeJwtPart(header);
+  const encodedPayload = encodeJwtPart(payload);
+  const signature = createHmac('sha256', secret)
+    .update(`${encodedHeader}.${encodedPayload}`)
+    .digest('base64url');
+  return `${encodedHeader}.${encodedPayload}.${signature}`;
+}
+
+function encodeJwtPart(value: unknown): string {
+  return Buffer.from(JSON.stringify(value)).toString('base64url');
 }
