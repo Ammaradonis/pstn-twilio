@@ -1,3 +1,5 @@
+const path = require('node:path');
+
 // Externalize all bare-specifier imports (third-party packages and Node built-ins)
 // so they're resolved at runtime from /app/node_modules, not bundled. This is required
 // because:
@@ -12,7 +14,7 @@ module.exports = (options) => ({
       // Inline workspace packages and relative/absolute paths
       if (
         request.startsWith('.') ||
-        request.startsWith('/') ||
+        path.isAbsolute(request) ||
         request.startsWith('@pstn-twilio/')
       ) {
         return callback();
