@@ -5,6 +5,7 @@ import {
   CallStatusParams,
   InboundVoiceParams,
   OutboundVoiceParams,
+  RecordingStatusParams,
   VoiceWebhookService,
 } from './voice.service';
 
@@ -53,6 +54,18 @@ export class VoiceWebhookController {
     } catch (err) {
       this.logger.error(
         `Voice status callback failed: ${err instanceof Error ? err.message : 'unknown'}`,
+      );
+    }
+  }
+
+  @Post('recording')
+  @HttpCode(204)
+  async recording(@Body() body: RecordingStatusParams): Promise<void> {
+    try {
+      await this.service.handleRecording(body);
+    } catch (err) {
+      this.logger.error(
+        `Voice recording callback failed: ${err instanceof Error ? err.message : 'unknown'}`,
       );
     }
   }

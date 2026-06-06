@@ -11,8 +11,11 @@ function buildService(overrides: { prisma?: any; twilio?: any; audit?: any; real
     smsMessage: { findMany: vi.fn(), findUnique: vi.fn(), create: vi.fn(), update: vi.fn() },
   };
   const twilio = overrides.twilio ?? {
+    accountSid: 'AC123',
     webhookBaseUrl: 'https://example.com',
-    client: { messages: { create: vi.fn() } },
+    client: {
+      api: { v2010: { accounts: () => ({ messages: { create: vi.fn() } }) } },
+    },
   };
   const audit = overrides.audit ?? { log: vi.fn() };
   const realtime = overrides.realtime ?? {
@@ -92,8 +95,11 @@ describe('MessagesService.send', () => {
     };
     const createTwilio = vi.fn().mockResolvedValue({ sid: 'SM999' });
     const twilio = {
+      accountSid: 'AC123',
       webhookBaseUrl: 'https://example.com',
-      client: { messages: { create: createTwilio } },
+      client: {
+        api: { v2010: { accounts: () => ({ messages: { create: createTwilio } }) } },
+      },
     };
     const audit = { log: vi.fn().mockResolvedValue(undefined) };
     const realtime = { smsSent: vi.fn(), smsStatusUpdated: vi.fn() };
@@ -153,8 +159,17 @@ describe('MessagesService.send', () => {
       },
     };
     const twilio = {
+      accountSid: 'AC123',
       webhookBaseUrl: 'https://example.com',
-      client: { messages: { create: vi.fn().mockRejectedValue(new Error('bad number')) } },
+      client: {
+        api: {
+          v2010: {
+            accounts: () => ({
+              messages: { create: vi.fn().mockRejectedValue(new Error('bad number')) },
+            }),
+          },
+        },
+      },
     };
     const audit = { log: vi.fn() };
     const realtime = { smsSent: vi.fn(), smsStatusUpdated: vi.fn() };

@@ -62,6 +62,12 @@ enum CallStatus {
   CANCELED
 }
 
+enum RecordingStatus {
+  IN_PROGRESS
+  COMPLETED
+  ABSENT
+}
+
 enum WebhookProvider {
   TWILIO
 }
@@ -220,11 +226,36 @@ model Call {
   createdAt         DateTime     @default(now()) @map("created_at")
   updatedAt         DateTime     @updatedAt @map("updated_at")
 
-  phoneNumber PhoneNumber? @relation(fields: [phoneNumberId], references: [id], onDelete: SetNull)
+  phoneNumber PhoneNumber?      @relation(fields: [phoneNumberId], references: [id], onDelete: SetNull)
+  recordings  CallRecording[]
 
   @@index([phoneNumberId, createdAt(sort: Desc)])
   @@index([twilioCallSid])
   @@map("calls")
+}
+
+model CallRecording {
+  id                  String          @id @default(uuid())
+  callId              String?         @map("call_id")
+  twilioCallSid       String          @map("twilio_call_sid")
+  twilioRecordingSid  String          @unique @map("twilio_recording_sid")
+  recordingUrl        String?         @map("recording_url")
+  status              RecordingStatus @default(IN_PROGRESS)
+  durationSeconds     Int?            @map("duration_seconds")
+  channels            Int?
+  source              String?
+  track               String?
+  rawPayload          Json?           @map("raw_payload")
+  startedAt           DateTime?       @map("started_at")
+  createdAt           DateTime        @default(now()) @map("created_at")
+  updatedAt           DateTime        @updatedAt @map("updated_at")
+
+  call Call? @relation(fields: [callId], references: [id], onDelete: SetNull)
+
+  @@index([callId])
+  @@index([twilioCallSid])
+  @@index([twilioRecordingSid])
+  @@map("call_recordings")
 }
 
 model VoiceIdentity {

@@ -111,7 +111,7 @@ export class MessagesService {
 
     let sent;
     try {
-      sent = await this.twilio.client.messages.create({
+      sent = await this.twilio.client.api.v2010.accounts(this.twilio.accountSid).messages.create({
         from: phoneNumber.phoneNumberE164,
         to: input.to,
         body: input.body,

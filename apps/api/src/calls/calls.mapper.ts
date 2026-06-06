@@ -1,7 +1,9 @@
-import type { Call } from '@prisma/client';
-import type { CallDto } from '@pstn-twilio/shared';
+import type { Call, CallRecording } from '@prisma/client';
+import type { CallDto, CallRecordingDto } from '@pstn-twilio/shared';
 
-export function mapCall(row: Call): CallDto {
+type CallWithRecordings = Call & { recordings?: CallRecording[] };
+
+export function mapCall(row: CallWithRecordings): CallDto {
   return {
     id: row.id,
     phoneNumberId: row.phoneNumberId,
@@ -16,6 +18,23 @@ export function mapCall(row: Call): CallDto {
     startedAt: (row.startedAt ?? row.createdAt).toISOString(),
     answeredAt: row.answeredAt?.toISOString() ?? null,
     endedAt: row.endedAt?.toISOString() ?? null,
+    recordings: (row.recordings ?? []).map(mapCallRecording),
+  };
+}
+
+export function mapCallRecording(row: CallRecording): CallRecordingDto {
+  return {
+    id: row.id,
+    twilioCallSid: row.twilioCallSid,
+    twilioRecordingSid: row.twilioRecordingSid,
+    recordingUrl: row.recordingUrl,
+    status: row.status,
+    durationSeconds: row.durationSeconds,
+    channels: row.channels,
+    source: row.source,
+    track: row.track,
+    startedAt: row.startedAt?.toISOString() ?? null,
+    createdAt: row.createdAt.toISOString(),
   };
 }
 

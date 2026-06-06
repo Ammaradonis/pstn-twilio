@@ -1,0 +1,21 @@
+$ node dist/main.js
+node:internal/modules/esm/resolve:1008
+    throw error;
+    ^
+
+Error [ERR_MODULE_NOT_FOUND]: Cannot find module 'C:\Users\FingerWeg\CascadeProjects\pstn-twilio\apps\api\src\app.module' imported from C:\Users\FingerWeg\CascadeProjects\pstn-twilio\apps\api\src\main.ts
+    at finalizeResolution (node:internal/modules/esm/resolve:271:11)
+    at moduleResolve (node:internal/modules/esm/resolve:865:10)
+    at defaultResolve (node:internal/modules/esm/resolve:992:11)
+    at #cachedDefaultResolve (node:internal/modules/esm/loader:694:20)
+    at #resolveAndMaybeBlockOnLoaderThread (node:internal/modules/esm/loader:711:38)
+    at ModuleLoader.resolveSync (node:internal/modules/esm/loader:743:52)
+    at ModuleLoader.getOrCreateModuleJob (node:internal/modules/esm/loader:593:27)
+    at ModuleJobSync.syncLink (node:internal/modules/esm/module_job:163:33)
+    at ModuleJobSync.link (node:internal/modules/esm/module_job:489:17)
+    at new ModuleJobSync (node:internal/modules/esm/module_job:479:26) {
+  code: 'ERR_MODULE_NOT_FOUND',
+  url: 'file:///C:/Users/FingerWeg/CascadeProjects/pstn-twilio/apps/api/src/app.module'
+}
+
+Node.js v26.1.0

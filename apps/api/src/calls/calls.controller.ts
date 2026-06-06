@@ -7,10 +7,11 @@ import {
   Post,
   Query,
   Req,
+  Res,
   UseGuards,
 } from '@nestjs/common';
 import { CallDirection, CallStatus, UserRole } from '@prisma/client';
-import type { Request } from 'express';
+import type { Request, Response } from 'express';
 import { z } from 'zod';
 
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
@@ -80,5 +81,25 @@ export class CallsController {
     @Body(new ZodValidationPipe(noteSchema)) body: z.infer<typeof noteSchema>,
   ) {
     return this.calls.addNote(actorFromRequest(req), callId, body.note);
+  }
+
+  @Get('numbers/:numberId/calls/:callId/recordings/:recordingId/media')
+  async recordingMedia(
+    @Req() req: ActorRequest,
+    @Param('numberId') numberId: string,
+    @Param('callId') callId: string,
+    @Param('recordingId') recordingId: string,
+    @Res() res: Response,
+  ) {
+    const media = await this.calls.getRecordingMedia(
+      actorFromRequest(req),
+      numberId,
+      callId,
+      recordingId,
+    );
+    res.setHeader('Content-Type', media.contentType);
+    res.setHeader('Content-Disposition', `inline; filename="${media.filename}"`);
+    res.setHeader('Cache-Control', 'private, no-store');
+    res.send(media.body);
   }
 }

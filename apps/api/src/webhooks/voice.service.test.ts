@@ -1,4 +1,4 @@
-import { CallDirection, CallStatus, WebhookProvider } from '@prisma/client';
+import { CallDirection, CallStatus, RecordingStatus, WebhookProvider } from '@prisma/client';
 import { describe, expect, it, vi } from 'vitest';
 
 import { VoiceWebhookService } from './voice.service';
@@ -14,6 +14,10 @@ function buildService(overrides: { prisma?: any; twilio?: any; realtime?: any } 
       findUnique: vi.fn().mockResolvedValue(null),
       create: vi.fn(),
       update: vi.fn(),
+    },
+    callRecording: {
+      findUnique: vi.fn().mockResolvedValue(null),
+      upsert: vi.fn(),
     },
   };
   const twilio = overrides.twilio ?? {
@@ -122,6 +126,11 @@ describe('VoiceWebhookService.handleInbound', () => {
       expect.objectContaining({ numberId: 'pn1' }),
     );
     expect(xml).toContain('<Dial');
+    expect(xml).toContain('record="record-from-answer-dual"');
+    expect(xml).toContain(
+      'recordingStatusCallback="https://example.com/webhooks/twilio/voice/recording"',
+    );
+    expect(xml).toContain('recordingStatusCallbackEvent="in-progress completed absent"');
     expect(xml).toContain('<Client');
     expect(xml).toContain('user_u1_number_pn1');
     expect(xml).toContain('statusCallback="https://example.com/webhooks/twilio/voice/status"');
@@ -219,6 +228,10 @@ describe('VoiceWebhookService.handleOutbound', () => {
       'user_u1_number_pn1',
     );
     expect(xml).toContain('callerId="+15552222222"');
+    expect(xml).toContain('record="record-from-answer-dual"');
+    expect(xml).toContain(
+      'recordingStatusCallback="https://example.com/webhooks/twilio/voice/recording"',
+    );
     expect(xml).toContain('<Number>+15551111111</Number>');
     expect(realtime.callStatusUpdated).toHaveBeenCalled();
   });
@@ -364,6 +377,175 @@ describe('VoiceWebhookService.handleStatus', () => {
     const updateData = prisma.call.update.mock.calls[0][0].data;
     expect(updateData.endedAt).toBeInstanceOf(Date);
     expect(realtime.callStatusUpdated).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe('VoiceWebhookService.handleRecording', () => {
+  it('skips when CallSid, RecordingSid, or RecordingStatus is missing', async () => {
+    const { service, prisma } = buildService();
+    await service.handleRecording({});
+    expect(prisma.webhookEvent.create).not.toHaveBeenCalled();
+    expect(prisma.callRecording.upsert).not.toHaveBeenCalled();
+  });
+
+  it('upserts recording metadata, links it to the call, and emits an updated call', async () => {
+    const existingCall = {
+      id: 'c1',
+      phoneNumberId: 'pn1',
+      twilioCallSid: 'CA1',
+      direction: CallDirection.OUTBOUND,
+      fromE164: '+15552222222',
+      toE164: '+15551111111',
+      selectedCallerId: '+15552222222',
+      destinationE164: '+15551111111',
+      status: CallStatus.COMPLETED,
+      durationSeconds: 42,
+      startedAt: new Date('2026-05-19T00:00:00Z'),
+      answeredAt: new Date('2026-05-19T00:00:01Z'),
+      endedAt: new Date('2026-05-19T00:00:42Z'),
+      createdAt: new Date('2026-05-19T00:00:00Z'),
+    };
+    const recording = {
+      id: 'rec-db-1',
+      callId: 'c1',
+      twilioCallSid: 'CA1',
+      twilioRecordingSid: 'RE1',
+      recordingUrl: 'https://api.twilio.com/2010-04-01/Accounts/AC1/Recordings/RE1',
+      status: RecordingStatus.COMPLETED,
+      durationSeconds: 42,
+      channels: 2,
+      source: 'DialVerb',
+      track: 'both',
+      rawPayload: null,
+      startedAt: null,
+      createdAt: new Date('2026-05-19T00:00:43Z'),
+      updatedAt: new Date('2026-05-19T00:00:43Z'),
+    };
+    const updatedCall = { ...existingCall, recordings: [recording] };
+    const prisma = {
+      webhookEvent: {
+        findUnique: vi.fn().mockResolvedValue(null),
+        create: vi.fn().mockResolvedValue({}),
+      },
+      phoneNumber: { findUnique: vi.fn() },
+      call: {
+        findUnique: vi.fn().mockResolvedValueOnce(existingCall).mockResolvedValueOnce(updatedCall),
+        create: vi.fn(),
+        update: vi.fn(),
+      },
+      callRecording: {
+        findUnique: vi.fn().mockResolvedValue(null),
+        upsert: vi.fn().mockResolvedValue(recording),
+      },
+    };
+    const { service, realtime } = buildService({ prisma });
+
+    await service.handleRecording({
+      CallSid: 'CA1',
+      RecordingSid: 'RE1',
+      RecordingUrl: 'https://api.twilio.com/2010-04-01/Accounts/AC1/Recordings/RE1',
+      RecordingStatus: 'completed',
+      RecordingDuration: '42',
+      RecordingChannels: '2',
+      RecordingSource: 'DialVerb',
+      RecordingTrack: 'both',
+    });
+
+    expect(prisma.webhookEvent.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          provider: WebhookProvider.TWILIO,
+          eventType: 'voice.recording',
+          twilioSid: 'RE1',
+        }),
+      }),
+    );
+    expect(prisma.callRecording.upsert).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: { twilioRecordingSid: 'RE1' },
+        create: expect.objectContaining({
+          callId: 'c1',
+          twilioCallSid: 'CA1',
+          twilioRecordingSid: 'RE1',
+          recordingUrl: 'https://api.twilio.com/2010-04-01/Accounts/AC1/Recordings/RE1',
+          status: RecordingStatus.COMPLETED,
+          durationSeconds: 42,
+          channels: 2,
+          source: 'DialVerb',
+          track: 'both',
+        }),
+      }),
+    );
+    expect(realtime.callStatusUpdated).toHaveBeenCalledWith(
+      expect.objectContaining({
+        numberId: 'pn1',
+        call: expect.objectContaining({
+          id: 'c1',
+          recordings: expect.arrayContaining([
+            expect.objectContaining({
+              twilioRecordingSid: 'RE1',
+              status: RecordingStatus.COMPLETED,
+              durationSeconds: 42,
+            }),
+          ]),
+        }),
+      }),
+    );
+  });
+
+  it('stores recording metadata even when the matching call has not arrived yet', async () => {
+    const recording = {
+      id: 'rec-db-1',
+      callId: null,
+      twilioCallSid: 'CA-child',
+      twilioRecordingSid: 'RE1',
+      recordingUrl: null,
+      status: RecordingStatus.IN_PROGRESS,
+      durationSeconds: null,
+      channels: null,
+      source: null,
+      track: null,
+      rawPayload: null,
+      startedAt: new Date('2026-05-19T00:00:01Z'),
+      createdAt: new Date('2026-05-19T00:00:01Z'),
+      updatedAt: new Date('2026-05-19T00:00:01Z'),
+    };
+    const prisma = {
+      webhookEvent: {
+        findUnique: vi.fn().mockResolvedValue(null),
+        create: vi.fn().mockResolvedValue({}),
+      },
+      phoneNumber: { findUnique: vi.fn() },
+      call: {
+        findUnique: vi.fn().mockResolvedValue(null),
+        create: vi.fn(),
+        update: vi.fn(),
+      },
+      callRecording: {
+        findUnique: vi.fn().mockResolvedValue(null),
+        upsert: vi.fn().mockResolvedValue(recording),
+      },
+    };
+    const { service, realtime } = buildService({ prisma });
+
+    await service.handleRecording({
+      CallSid: 'CA-child',
+      RecordingSid: 'RE1',
+      RecordingStatus: 'in-progress',
+    });
+
+    expect(prisma.callRecording.upsert).toHaveBeenCalledWith(
+      expect.objectContaining({
+        create: expect.objectContaining({
+          callId: null,
+          twilioCallSid: 'CA-child',
+          twilioRecordingSid: 'RE1',
+          status: RecordingStatus.IN_PROGRESS,
+        }),
+      }),
+    );
+    expect(prisma.callRecording.upsert.mock.calls[0][0].create.startedAt).toBeInstanceOf(Date);
+    expect(realtime.callStatusUpdated).not.toHaveBeenCalled();
   });
 });
 

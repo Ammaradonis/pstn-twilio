@@ -15,7 +15,7 @@ export class TwilioSignatureGuard implements CanActivate {
     const params = (req.body ?? {}) as Record<string, unknown>;
     const url = this.buildWebhookUrl(req);
 
-    this.logger.log(
+    this.logger.debug(
       `Twilio Webhook: method=${req.method}, contentType=${req.header('content-type')}, bodyKeys=[${Object.keys(params).join(', ')}], url=${url}`,
     );
 

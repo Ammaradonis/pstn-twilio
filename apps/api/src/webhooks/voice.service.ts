@@ -1,5 +1,11 @@
 import { Injectable, Logger } from '@nestjs/common';
-import { CallDirection, Call, WebhookProvider } from '@prisma/client';
+import {
+  CallDirection,
+  Call,
+  CallRecording,
+  RecordingStatus,
+  WebhookProvider,
+} from '@prisma/client';
 import { normalizeDialablePhoneNumber } from '@pstn-twilio/shared';
 import twilio from 'twilio';
 
@@ -43,6 +49,38 @@ export interface CallStatusParams {
   ErrorMessage?: string;
   [key: string]: string | undefined;
 }
+
+export interface RecordingStatusParams {
+  AccountSid?: string;
+  CallSid?: string;
+  ParentCallSid?: string;
+  RecordingSid?: string;
+  RecordingUrl?: string;
+  RecordingStatus?: string;
+  RecordingDuration?: string;
+  RecordingChannels?: string;
+  RecordingSource?: string;
+  RecordingTrack?: string;
+  Timestamp?: string;
+  ErrorCode?: string;
+  ErrorMessage?: string;
+  [key: string]: string | undefined;
+}
+
+type CallWithRecordings = Call & { recordings?: CallRecording[] };
+
+const RECORDING_CALLBACK_EVENTS = ['in-progress', 'completed', 'absent'] as const;
+const CALL_WITH_RECORDINGS_INCLUDE = {
+  recordings: { orderBy: { createdAt: 'desc' as const } },
+};
+type DialRecordingAttributes = {
+  record: 'record-from-answer-dual';
+  recordingStatusCallback: string;
+  recordingStatusCallbackMethod: 'POST';
+  recordingStatusCallbackEvent: Array<(typeof RECORDING_CALLBACK_EVENTS)[number]>;
+  recordingTrack: 'both';
+  trim: 'do-not-trim';
+};
 
 @Injectable()
 export class VoiceWebhookService {
@@ -93,7 +131,11 @@ export class VoiceWebhookService {
 
     const identity = this.twilio.voiceIdentity(phoneNumber.userId, phoneNumber.id);
     const response = new twilio.twiml.VoiceResponse();
-    const dial = response.dial({ answerOnBridge: true, timeout: 30 });
+    const dial = response.dial({
+      answerOnBridge: true,
+      timeout: 30,
+      ...this.recordingDialAttributes(),
+    });
     dial.client(
       {
         statusCallback: `${this.twilio.webhookBaseUrl}/webhooks/twilio/voice/status`,
@@ -158,6 +200,7 @@ export class VoiceWebhookService {
     const dial = response.dial({
       callerId: phoneNumber.phoneNumberE164,
       answerOnBridge: true,
+      ...this.recordingDialAttributes(),
     });
     dial.number(destinationNumber);
     return response.toString();
@@ -218,6 +261,70 @@ export class VoiceWebhookService {
     });
   }
 
+  async handleRecording(params: RecordingStatusParams): Promise<void> {
+    const callSid = params.CallSid;
+    const recordingSid = params.RecordingSid;
+    const statusRaw = params.RecordingStatus;
+    if (!callSid || !recordingSid || !statusRaw) return;
+
+    const dedupeKey = `voice:recording:${recordingSid}:${statusRaw}`;
+    if (await this.alreadyProcessed(dedupeKey)) return;
+    await this.recordWebhookEvent(dedupeKey, 'voice.recording', recordingSid, params);
+
+    const call = await this.findCallForRecording(params);
+    const existingRecording = await this.prisma.callRecording.findUnique({
+      where: { twilioRecordingSid: recordingSid },
+    });
+    const status = mapRecordingStatus(statusRaw);
+    const duration = parseDuration(params.RecordingDuration);
+    const channels = parseDuration(params.RecordingChannels);
+    const startedAt =
+      existingRecording?.startedAt ??
+      (status === RecordingStatus.IN_PROGRESS ? new Date() : undefined);
+
+    await this.prisma.callRecording.upsert({
+      where: { twilioRecordingSid: recordingSid },
+      update: {
+        callId: call?.id ?? existingRecording?.callId ?? null,
+        twilioCallSid: callSid,
+        recordingUrl: params.RecordingUrl ?? existingRecording?.recordingUrl ?? null,
+        status,
+        durationSeconds: duration ?? existingRecording?.durationSeconds ?? null,
+        channels: channels ?? existingRecording?.channels ?? null,
+        source: params.RecordingSource ?? existingRecording?.source ?? null,
+        track: params.RecordingTrack ?? existingRecording?.track ?? null,
+        rawPayload: params as never,
+        startedAt,
+      },
+      create: {
+        callId: call?.id ?? null,
+        twilioCallSid: callSid,
+        twilioRecordingSid: recordingSid,
+        recordingUrl: params.RecordingUrl ?? null,
+        status,
+        durationSeconds: duration,
+        channels,
+        source: params.RecordingSource ?? null,
+        track: params.RecordingTrack ?? null,
+        rawPayload: params as never,
+        startedAt,
+      },
+    });
+
+    if (!call) return;
+
+    const updatedCall = await this.prisma.call.findUnique({
+      where: { id: call.id },
+      include: CALL_WITH_RECORDINGS_INCLUDE,
+    });
+    if (!updatedCall) return;
+
+    this.realtime.callStatusUpdated({
+      numberId: updatedCall.phoneNumberId,
+      call: toCallDto(updatedCall),
+    });
+  }
+
   handleFallback(): string {
     const response = new twilio.twiml.VoiceResponse();
     response.say(
@@ -226,6 +333,29 @@ export class VoiceWebhookService {
     );
     response.hangup();
     return response.toString();
+  }
+
+  private recordingDialAttributes(): DialRecordingAttributes {
+    return {
+      record: 'record-from-answer-dual',
+      recordingStatusCallback: `${this.twilio.webhookBaseUrl}/webhooks/twilio/voice/recording`,
+      recordingStatusCallbackMethod: 'POST',
+      recordingStatusCallbackEvent: [...RECORDING_CALLBACK_EVENTS],
+      recordingTrack: 'both',
+      trim: 'do-not-trim',
+    };
+  }
+
+  private async findCallForRecording(params: RecordingStatusParams): Promise<Call | null> {
+    const callSid = params.CallSid;
+    if (callSid) {
+      const call = await this.prisma.call.findUnique({ where: { twilioCallSid: callSid } });
+      if (call) return call;
+    }
+    if (params.ParentCallSid) {
+      return this.prisma.call.findUnique({ where: { twilioCallSid: params.ParentCallSid } });
+    }
+    return null;
   }
 
   private async upsertCall(input: {
@@ -312,7 +442,19 @@ function parseDuration(value: string | undefined): number | null {
   return Number.isFinite(n) ? n : null;
 }
 
-function toCallDto(call: Call) {
+function mapRecordingStatus(value: string): RecordingStatus {
+  switch (value) {
+    case 'completed':
+      return RecordingStatus.COMPLETED;
+    case 'absent':
+      return RecordingStatus.ABSENT;
+    case 'in-progress':
+    default:
+      return RecordingStatus.IN_PROGRESS;
+  }
+}
+
+function toCallDto(call: CallWithRecordings) {
   return {
     id: call.id,
     phoneNumberId: call.phoneNumberId,
@@ -327,5 +469,22 @@ function toCallDto(call: Call) {
     startedAt: (call.startedAt ?? call.createdAt).toISOString(),
     answeredAt: call.answeredAt?.toISOString() ?? null,
     endedAt: call.endedAt?.toISOString() ?? null,
+    recordings: (call.recordings ?? []).map(toCallRecordingDto),
+  };
+}
+
+function toCallRecordingDto(recording: CallRecording) {
+  return {
+    id: recording.id,
+    twilioCallSid: recording.twilioCallSid,
+    twilioRecordingSid: recording.twilioRecordingSid,
+    recordingUrl: recording.recordingUrl,
+    status: recording.status,
+    durationSeconds: recording.durationSeconds,
+    channels: recording.channels,
+    source: recording.source,
+    track: recording.track,
+    startedAt: recording.startedAt?.toISOString() ?? null,
+    createdAt: recording.createdAt.toISOString(),
   };
 }

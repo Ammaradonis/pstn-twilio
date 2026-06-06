@@ -5,7 +5,7 @@ import {
   Logger,
   NotFoundException,
 } from '@nestjs/common';
-import { CallDirection, CallStatus, PhoneNumber, UserRole } from '@prisma/client';
+import { CallDirection, CallStatus, PhoneNumber, RecordingStatus, UserRole } from '@prisma/client';
 import type { CallDto, PaginatedDto } from '@pstn-twilio/shared';
 
 import { AuditService } from '../audit/audit.service';
@@ -30,11 +30,21 @@ interface ListInput {
   since?: string;
 }
 
+export interface RecordingMediaResult {
+  body: Buffer;
+  contentType: string;
+  filename: string;
+}
+
 const HANGUPPABLE_STATUSES: CallStatus[] = [
   CallStatus.INITIATED,
   CallStatus.RINGING,
   CallStatus.IN_PROGRESS,
 ];
+
+const CALL_RECORDINGS_INCLUDE = {
+  recordings: { orderBy: { createdAt: 'desc' as const } },
+};
 
 @Injectable()
 export class CallsService {
@@ -69,6 +79,7 @@ export class CallsService {
 
     const rows = await this.prisma.call.findMany({
       where,
+      include: CALL_RECORDINGS_INCLUDE,
       orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
       take: input.limit,
     });
@@ -82,7 +93,10 @@ export class CallsService {
 
   async getOne(actor: ActorContext, numberId: string, callId: string): Promise<CallDto> {
     await this.assertOwnership(actor, numberId);
-    const call = await this.prisma.call.findUnique({ where: { id: callId } });
+    const call = await this.prisma.call.findUnique({
+      where: { id: callId },
+      include: CALL_RECORDINGS_INCLUDE,
+    });
     if (!call || call.phoneNumberId !== numberId) {
       throw new NotFoundException(`Call ${callId} not found`);
     }
@@ -90,7 +104,10 @@ export class CallsService {
   }
 
   async hangup(actor: ActorContext, callId: string): Promise<CallDto> {
-    const call = await this.prisma.call.findUnique({ where: { id: callId } });
+    const call = await this.prisma.call.findUnique({
+      where: { id: callId },
+      include: CALL_RECORDINGS_INCLUDE,
+    });
     if (!call) throw new NotFoundException(`Call ${callId} not found`);
     if (call.phoneNumberId) await this.assertOwnership(actor, call.phoneNumberId);
     if (!call.twilioCallSid) throw new BadRequestException('Call has no Twilio SID');
@@ -109,6 +126,7 @@ export class CallsService {
     const updated = await this.prisma.call.update({
       where: { id: callId },
       data: { status: CallStatus.COMPLETED, endedAt: new Date() },
+      include: CALL_RECORDINGS_INCLUDE,
     });
 
     await this.audit.log({
@@ -149,6 +167,46 @@ export class CallsService {
     });
 
     return { callId, note, createdAt: new Date().toISOString() };
+  }
+
+  async getRecordingMedia(
+    actor: ActorContext,
+    numberId: string,
+    callId: string,
+    recordingId: string,
+  ): Promise<RecordingMediaResult> {
+    await this.assertOwnership(actor, numberId);
+    const call = await this.prisma.call.findUnique({
+      where: { id: callId },
+      include: CALL_RECORDINGS_INCLUDE,
+    });
+    if (!call || call.phoneNumberId !== numberId) {
+      throw new NotFoundException(`Call ${callId} not found`);
+    }
+
+    const recording = call.recordings.find((row) => row.id === recordingId);
+    if (!recording) {
+      throw new NotFoundException(`Recording ${recordingId} not found`);
+    }
+    if (recording.status !== RecordingStatus.COMPLETED) {
+      throw new BadRequestException('Recording media is not ready yet');
+    }
+
+    try {
+      const media = await this.twilio.fetchRecordingMedia(recording.twilioRecordingSid);
+      return {
+        ...media,
+        filename: `${recording.twilioRecordingSid}.mp3`,
+      };
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'Twilio recording media fetch failed';
+      this.logger.warn(`Recording media fetch failed: ${message}`);
+      throw new BadRequestException({
+        statusCode: 400,
+        error: 'TwilioRecordingMediaError',
+        message,
+      });
+    }
   }
 
   private async assertOwnership(actor: ActorContext, numberId: string): Promise<PhoneNumber> {

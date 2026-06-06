@@ -1,5 +1,5 @@
 import { BadRequestException, ForbiddenException, NotFoundException } from '@nestjs/common';
-import { CallDirection, CallStatus, UserRole } from '@prisma/client';
+import { CallDirection, CallStatus, RecordingStatus, UserRole } from '@prisma/client';
 import { describe, expect, it, vi } from 'vitest';
 
 import { decodeCursor, encodeCursor } from './calls.mapper';
@@ -12,6 +12,7 @@ function buildService(overrides: { prisma?: any; twilio?: any; audit?: any; real
   };
   const twilio = overrides.twilio ?? {
     client: { calls: vi.fn(() => ({ update: vi.fn().mockResolvedValue({}) })) },
+    fetchRecordingMedia: vi.fn(),
   };
   const audit = overrides.audit ?? { log: vi.fn().mockResolvedValue(undefined) };
   const realtime = overrides.realtime ?? { callStatusUpdated: vi.fn() };
@@ -170,6 +171,79 @@ describe('CallsService.hangup', () => {
     expect(realtime.callStatusUpdated).toHaveBeenCalledTimes(1);
     expect(result.id).toBe('c1');
     expect(result.status).toBe(CallStatus.COMPLETED);
+  });
+});
+
+describe('CallsService.getRecordingMedia', () => {
+  const baseCall = {
+    id: 'c1',
+    phoneNumberId: 'pn1',
+    twilioCallSid: 'CA1',
+    status: CallStatus.COMPLETED,
+    recordings: [
+      {
+        id: 'rec1',
+        twilioCallSid: 'CA1',
+        twilioRecordingSid: 'RE1',
+        status: RecordingStatus.COMPLETED,
+      },
+    ],
+  };
+
+  it('throws NotFound when recording does not belong to the call', async () => {
+    const prisma = {
+      phoneNumber: { findUnique: vi.fn().mockResolvedValue({ id: 'pn1', userId: 'u1' }) },
+      call: { findUnique: vi.fn().mockResolvedValue(baseCall) },
+    };
+    const { service } = buildService({ prisma });
+
+    await expect(
+      service.getRecordingMedia({ userId: 'u1', role: UserRole.OWNER }, 'pn1', 'c1', 'missing'),
+    ).rejects.toBeInstanceOf(NotFoundException);
+  });
+
+  it('rejects recordings that are not completed yet', async () => {
+    const prisma = {
+      phoneNumber: { findUnique: vi.fn().mockResolvedValue({ id: 'pn1', userId: 'u1' }) },
+      call: {
+        findUnique: vi.fn().mockResolvedValue({
+          ...baseCall,
+          recordings: [{ ...baseCall.recordings[0], status: RecordingStatus.IN_PROGRESS }],
+        }),
+      },
+    };
+    const { service } = buildService({ prisma });
+
+    await expect(
+      service.getRecordingMedia({ userId: 'u1', role: UserRole.OWNER }, 'pn1', 'c1', 'rec1'),
+    ).rejects.toBeInstanceOf(BadRequestException);
+  });
+
+  it('fetches completed recording media through Twilio after ownership checks', async () => {
+    const prisma = {
+      phoneNumber: { findUnique: vi.fn().mockResolvedValue({ id: 'pn1', userId: 'u1' }) },
+      call: { findUnique: vi.fn().mockResolvedValue(baseCall) },
+    };
+    const twilio = {
+      client: { calls: vi.fn() },
+      fetchRecordingMedia: vi.fn().mockResolvedValue({
+        body: Buffer.from('mp3-bytes'),
+        contentType: 'audio/mpeg',
+      }),
+    };
+    const { service } = buildService({ prisma, twilio });
+
+    const media = await service.getRecordingMedia(
+      { userId: 'u1', role: UserRole.OWNER },
+      'pn1',
+      'c1',
+      'rec1',
+    );
+
+    expect(twilio.fetchRecordingMedia).toHaveBeenCalledWith('RE1');
+    expect(media.contentType).toBe('audio/mpeg');
+    expect(media.filename).toBe('RE1.mp3');
+    expect(media.body.toString()).toBe('mp3-bytes');
   });
 });
 

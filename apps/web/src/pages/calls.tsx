@@ -1,5 +1,6 @@
+import type { CallDto, CallRecordingDto } from '@pstn-twilio/shared';
 import { useQueryClient, useQuery } from '@tanstack/react-query';
-import { useMemo } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { useParams } from 'react-router-dom';
 
 import { useRealtimeCalls } from '../hooks/use-realtime-calls';
@@ -42,6 +43,7 @@ export function CallsPage() {
                   <th className="px-3 py-2">To</th>
                   <th className="px-3 py-2">Status</th>
                   <th className="px-3 py-2">Duration</th>
+                  <th className="px-3 py-2">Recordings</th>
                   <th className="px-3 py-2">Started</th>
                   <th className="px-3 py-2">Actions</th>
                 </tr>
@@ -54,6 +56,9 @@ export function CallsPage() {
                     <td className="px-3 py-2 font-mono">{c.to}</td>
                     <td className="px-3 py-2">{c.status}</td>
                     <td className="px-3 py-2">{c.durationSeconds ?? '—'}</td>
+                    <td className="px-3 py-2">
+                      <RecordingCell numberId={numberId!} call={c} />
+                    </td>
                     <td className="px-3 py-2">{new Date(c.startedAt).toLocaleString()}</td>
                     <td className="px-3 py-2">
                       <button
@@ -78,5 +83,81 @@ export function CallsPage() {
         )}
       </div>
     </section>
+  );
+}
+
+function RecordingCell({ numberId, call }: { numberId: string; call: CallDto }) {
+  if (call.recordings.length === 0) return <span className="text-slate-400">—</span>;
+
+  return (
+    <div className="flex min-w-48 flex-col gap-2">
+      {call.recordings.map((recording) => (
+        <RecordingAudio
+          key={recording.id}
+          numberId={numberId}
+          callId={call.id}
+          recording={recording}
+        />
+      ))}
+    </div>
+  );
+}
+
+function RecordingAudio({
+  numberId,
+  callId,
+  recording,
+}: {
+  numberId: string;
+  callId: string;
+  recording: CallRecordingDto;
+}) {
+  const [src, setSrc] = useState<string | null>(null);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    return () => {
+      if (src) URL.revokeObjectURL(src);
+    };
+  }, [src]);
+
+  async function loadRecording() {
+    setLoading(true);
+    setError(null);
+    try {
+      const blob = await api.calls.recordingMedia(numberId, callId, recording.id);
+      const url = URL.createObjectURL(blob);
+      setSrc((prev) => {
+        if (prev) URL.revokeObjectURL(prev);
+        return url;
+      });
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Recording unavailable');
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  if (recording.status !== 'COMPLETED') {
+    return <span className="text-xs text-slate-500">{recording.status}</span>;
+  }
+
+  if (src) {
+    return <audio controls preload="metadata" src={src} className="h-8 w-64 max-w-full" />;
+  }
+
+  return (
+    <div className="flex flex-col gap-1">
+      <button
+        type="button"
+        onClick={loadRecording}
+        disabled={loading}
+        className="w-fit rounded border border-slate-300 px-2 py-1 text-xs disabled:cursor-not-allowed disabled:opacity-60"
+      >
+        {loading ? 'Loading…' : 'Play'}
+      </button>
+      {error ? <span className="max-w-48 text-xs text-red-600">{error}</span> : null}
+    </div>
   );
 }

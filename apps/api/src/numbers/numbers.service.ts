@@ -49,7 +49,9 @@ export class NumbersService {
   ) {}
 
   async listCountries(): Promise<Array<{ countryCode: string; country: string; beta: boolean }>> {
-    const countries = await this.twilio.client.availablePhoneNumbers.list();
+    const countries = await this.twilio.client.api.v2010
+      .accounts(this.twilio.accountSid)
+      .availablePhoneNumbers.list();
     return countries.map((c) => ({
       countryCode: c.countryCode,
       country: c.country,
@@ -74,7 +76,9 @@ export class NumbersService {
     if (input.mmsEnabled !== undefined) params.mmsEnabled = input.mmsEnabled;
     if (input.excludeAddressRequired) params.excludeAllAddressRequired = true;
 
-    const countryResource = this.twilio.client.availablePhoneNumbers(input.country);
+    const countryResource = this.twilio.client.api.v2010
+      .accounts(this.twilio.accountSid)
+      .availablePhoneNumbers(input.country);
     let raw: Array<Record<string, unknown>>;
     try {
       if (input.type === 'mobile') {
@@ -135,18 +139,20 @@ export class NumbersService {
 
     let purchased;
     try {
-      purchased = await this.twilio.client.incomingPhoneNumbers.create({
-        phoneNumber: input.phoneNumber,
-        friendlyName: input.friendlyName,
-        voiceUrl: webhooks.voiceUrl,
-        voiceFallbackUrl: webhooks.voiceFallbackUrl,
-        voiceMethod: 'POST',
-        statusCallback: webhooks.statusCallback,
-        statusCallbackMethod: 'POST',
-        smsUrl: webhooks.smsUrl,
-        smsFallbackUrl: webhooks.smsFallbackUrl,
-        smsMethod: 'POST',
-      });
+      purchased = await this.twilio.client.api.v2010
+        .accounts(this.twilio.accountSid)
+        .incomingPhoneNumbers.create({
+          phoneNumber: input.phoneNumber,
+          friendlyName: input.friendlyName,
+          voiceUrl: webhooks.voiceUrl,
+          voiceFallbackUrl: webhooks.voiceFallbackUrl,
+          voiceMethod: 'POST',
+          statusCallback: webhooks.statusCallback,
+          statusCallbackMethod: 'POST',
+          smsUrl: webhooks.smsUrl,
+          smsFallbackUrl: webhooks.smsFallbackUrl,
+          smsMethod: 'POST',
+        });
     } catch (err) {
       const message = err instanceof Error ? err.message : 'Twilio purchase failed';
       this.logger.warn(`Number purchase failed: ${message}`);
@@ -220,7 +226,8 @@ export class NumbersService {
 
     if (input.friendlyName && input.friendlyName !== row.friendlyName) {
       try {
-        await this.twilio.client
+        await this.twilio.client.api.v2010
+          .accounts(this.twilio.accountSid)
           .incomingPhoneNumbers(row.twilioIncomingPhoneNumberSid)
           .update({ friendlyName: input.friendlyName });
       } catch (err) {
@@ -256,16 +263,19 @@ export class NumbersService {
     const webhooks = this.twilio.defaultWebhookUrls();
 
     try {
-      await this.twilio.client.incomingPhoneNumbers(row.twilioIncomingPhoneNumberSid).update({
-        voiceUrl: webhooks.voiceUrl,
-        voiceFallbackUrl: webhooks.voiceFallbackUrl,
-        voiceMethod: 'POST',
-        statusCallback: webhooks.statusCallback,
-        statusCallbackMethod: 'POST',
-        smsUrl: webhooks.smsUrl,
-        smsFallbackUrl: webhooks.smsFallbackUrl,
-        smsMethod: 'POST',
-      });
+      await this.twilio.client.api.v2010
+        .accounts(this.twilio.accountSid)
+        .incomingPhoneNumbers(row.twilioIncomingPhoneNumberSid)
+        .update({
+          voiceUrl: webhooks.voiceUrl,
+          voiceFallbackUrl: webhooks.voiceFallbackUrl,
+          voiceMethod: 'POST',
+          statusCallback: webhooks.statusCallback,
+          statusCallbackMethod: 'POST',
+          smsUrl: webhooks.smsUrl,
+          smsFallbackUrl: webhooks.smsFallbackUrl,
+          smsMethod: 'POST',
+        });
     } catch (err) {
       const message = err instanceof Error ? err.message : 'Twilio webhook update failed';
       throw new BadRequestException({
@@ -302,7 +312,8 @@ export class NumbersService {
 
     let twilioNumber;
     try {
-      twilioNumber = await this.twilio.client
+      twilioNumber = await this.twilio.client.api.v2010
+        .accounts(this.twilio.accountSid)
         .incomingPhoneNumbers(row.twilioIncomingPhoneNumberSid)
         .fetch();
     } catch (err) {
@@ -348,7 +359,10 @@ export class NumbersService {
     }
 
     try {
-      await this.twilio.client.incomingPhoneNumbers(row.twilioIncomingPhoneNumberSid).remove();
+      await this.twilio.client.api.v2010
+        .accounts(this.twilio.accountSid)
+        .incomingPhoneNumbers(row.twilioIncomingPhoneNumberSid)
+        .remove();
     } catch (err) {
       const message = err instanceof Error ? err.message : 'Twilio release failed';
       throw new BadRequestException({

@@ -92,6 +92,33 @@ async function request<T>(path: string, opts: RequestOptions = {}): Promise<T> {
   return (await res.json()) as T;
 }
 
+async function requestBlob(path: string): Promise<Blob> {
+  const headers: Record<string, string> = { Accept: 'audio/mpeg' };
+  const token = getToken();
+  if (token) headers.Authorization = `Bearer ${token}`;
+
+  const res = await fetch(`${BASE_URL}${path}`, {
+    method: 'GET',
+    credentials: 'include',
+    headers,
+  });
+
+  if (!res.ok) {
+    let message = `GET ${path} failed: ${res.status}`;
+    try {
+      const payload = await res.json();
+      const m = (payload as { message?: unknown })?.message;
+      if (typeof m === 'string') message = m;
+      else if (Array.isArray(m) && typeof m[0] === 'string') message = m[0];
+    } catch {
+      // empty/non-json body — keep default message
+    }
+    throw new ApiError(res.status, message);
+  }
+
+  return res.blob();
+}
+
 export interface CountryOption {
   countryCode: string;
   country: string;
@@ -179,6 +206,8 @@ export const api = {
     get: (numberId: string, callId: string) =>
       request<CallDto>(`/numbers/${numberId}/calls/${callId}`),
     hangup: (callId: string) => request<CallDto>(`/calls/${callId}/hangup`, { method: 'POST' }),
+    recordingMedia: (numberId: string, callId: string, recordingId: string) =>
+      requestBlob(`/numbers/${numberId}/calls/${callId}/recordings/${recordingId}/media`),
     addNote: (callId: string, note: string) =>
       request<{ callId: string; note: string; createdAt: string }>(`/calls/${callId}/notes`, {
         method: 'POST',

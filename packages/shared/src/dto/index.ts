@@ -5,6 +5,7 @@ import type {
   MessageStatus,
   NumberType,
   PhoneNumberCapabilities,
+  RecordingStatus,
   UserRole,
   WhatsAppCompatibilityStatus,
 } from '../types/index';
@@ -81,6 +82,21 @@ export interface CallDto {
   startedAt: string;
   answeredAt: string | null;
   endedAt: string | null;
+  recordings: CallRecordingDto[];
+}
+
+export interface CallRecordingDto {
+  id: string;
+  twilioCallSid: string;
+  twilioRecordingSid: string;
+  recordingUrl: string | null;
+  status: RecordingStatus;
+  durationSeconds: number | null;
+  channels: number | null;
+  source: string | null;
+  track: string | null;
+  startedAt: string | null;
+  createdAt: string;
 }
 
 export interface VoiceTokenDto {

@@ -21,6 +21,8 @@ export type CallStatus =
   | 'NO_ANSWER'
   | 'CANCELED';
 
+export type RecordingStatus = 'IN_PROGRESS' | 'COMPLETED' | 'ABSENT';
+
 export type MessageDirection = 'INBOUND' | 'OUTBOUND';
 
 export type MessageStatus = 'RECEIVED' | 'QUEUED' | 'SENT' | 'DELIVERED' | 'FAILED' | 'UNDELIVERED';

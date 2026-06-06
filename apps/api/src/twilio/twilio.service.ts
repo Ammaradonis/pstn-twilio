@@ -2,6 +2,11 @@ import { Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import twilio, { type Twilio, validateRequest } from 'twilio';
 
+export interface TwilioRecordingMedia {
+  body: Buffer;
+  contentType: string;
+}
+
 @Injectable()
 export class TwilioService {
   private readonly logger = new Logger(TwilioService.name);
@@ -91,6 +96,25 @@ export class TwilioService {
       smsUrl: `${base}/webhooks/twilio/messaging/inbound`,
       smsFallbackUrl: `${base}/webhooks/twilio/messaging/inbound`,
     };
+  }
+
+  async fetchRecordingMedia(recordingSid: string): Promise<TwilioRecordingMedia> {
+    const auth = Buffer.from(`${this.accountSid}:${this.authToken}`, 'ascii').toString('base64');
+    const response = await fetch(`${this.recordingMediaBaseUrl(recordingSid)}.mp3`, {
+      headers: { Authorization: `Basic ${auth}` },
+    });
+    if (!response.ok) {
+      throw new Error(`Twilio recording media request failed: ${response.status}`);
+    }
+    const body = Buffer.from(await response.arrayBuffer());
+    return {
+      body,
+      contentType: response.headers.get('content-type') ?? 'audio/mpeg',
+    };
+  }
+
+  private recordingMediaBaseUrl(recordingSid: string): string {
+    return `https://api.twilio.com/2010-04-01/Accounts/${this.accountSid}/Recordings/${recordingSid}`;
   }
 
   async validateCredentials(): Promise<boolean> {

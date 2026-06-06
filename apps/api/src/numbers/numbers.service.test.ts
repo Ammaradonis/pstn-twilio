@@ -126,7 +126,13 @@ describe('NumbersService.purchase', () => {
         smsUrl: 'https://example.com/webhooks/twilio/messaging/inbound',
         smsFallbackUrl: 'https://example.com/webhooks/twilio/messaging/inbound',
       }),
-      client: { incomingPhoneNumbers: { create: createTwilio } } as any,
+      client: {
+        api: {
+          v2010: {
+            accounts: () => ({ incomingPhoneNumbers: { create: createTwilio } }),
+          },
+        },
+      } as any,
     };
     const audit = { log: vi.fn().mockResolvedValue(undefined) };
     const service = buildService({ prisma, twilio, audit });

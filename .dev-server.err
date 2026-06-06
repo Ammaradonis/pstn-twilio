@@ -1,0 +1,1 @@
+$ pnpm run --parallel --filter "./apps/*" dev
