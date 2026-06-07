@@ -21,6 +21,7 @@ import { env } from './env';
 
 const BASE_URL = env.VITE_API_BASE_URL;
 const TOKEN_STORAGE_KEY = 'pstn-twilio.token';
+export const AUTH_EXPIRED_EVENT = 'pstn-twilio.auth-expired';
 
 export function getToken(): string | null {
   if (typeof window === 'undefined') return null;
@@ -33,6 +34,14 @@ export function setToken(token: string | null): void {
     window.localStorage.setItem(TOKEN_STORAGE_KEY, token);
   } else {
     window.localStorage.removeItem(TOKEN_STORAGE_KEY);
+  }
+}
+
+function handleAuthFailure(status: number): void {
+  if (status !== 401) return;
+  setToken(null);
+  if (typeof window !== 'undefined') {
+    window.dispatchEvent(new CustomEvent(AUTH_EXPIRED_EVENT));
   }
 }
 
@@ -88,6 +97,7 @@ async function request<T>(path: string, opts: RequestOptions = {}): Promise<T> {
     } catch {
       // empty/non-json body — keep default message
     }
+    handleAuthFailure(res.status);
     throw new ApiError(res.status, message, payload);
   }
 
@@ -116,6 +126,7 @@ async function requestBlob(path: string): Promise<Blob> {
     } catch {
       // empty/non-json body — keep default message
     }
+    handleAuthFailure(res.status);
     throw new ApiError(res.status, message);
   }
 

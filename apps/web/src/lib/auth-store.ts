@@ -2,7 +2,7 @@ import type { UserDto } from '@pstn-twilio/shared';
 import { create } from 'zustand';
 import { persist, createJSONStorage } from 'zustand/middleware';
 
-import { setToken } from './api-client';
+import { AUTH_EXPIRED_EVENT, setToken } from './api-client';
 import { closeSocket, refreshSocketAuth } from './realtime';
 
 interface AuthState {
@@ -52,3 +52,10 @@ export const useAuthStore = create<AuthState>()(
     },
   ),
 );
+
+if (typeof window !== 'undefined') {
+  window.addEventListener(AUTH_EXPIRED_EVENT, () => {
+    const { token, logout } = useAuthStore.getState();
+    if (token) logout();
+  });
+}

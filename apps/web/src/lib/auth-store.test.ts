@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it } from 'vitest';
 
-import { getToken } from './api-client';
+import { AUTH_EXPIRED_EVENT, getToken } from './api-client';
 import { useAuthStore } from './auth-store';
 
 const sampleUser = {
@@ -41,6 +41,18 @@ describe('useAuthStore', () => {
   it('logout clears the token from localStorage and resets the store', () => {
     useAuthStore.getState().setSession('jwt-abc', sampleUser);
     useAuthStore.getState().logout();
+    const state = useAuthStore.getState();
+    expect(state.token).toBeNull();
+    expect(state.user).toBeNull();
+    expect(state.status).toBe('unauthenticated');
+    expect(getToken()).toBeNull();
+  });
+
+  it('clears the session when the API client reports an expired auth token', () => {
+    useAuthStore.getState().setSession('jwt-abc', sampleUser);
+
+    window.dispatchEvent(new CustomEvent(AUTH_EXPIRED_EVENT));
+
     const state = useAuthStore.getState();
     expect(state.token).toBeNull();
     expect(state.user).toBeNull();
