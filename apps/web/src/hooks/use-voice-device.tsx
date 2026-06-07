@@ -64,6 +64,7 @@ type VoiceRuntimeState = {
   identity: string | null;
   error: string | null;
   isMuted: boolean;
+  canSendDigits: boolean;
 };
 
 interface UseVoiceDevice extends VoiceRuntimeState {
@@ -88,6 +89,7 @@ const INITIAL_RUNTIME_STATE: VoiceRuntimeState = {
   identity: null,
   error: null,
   isMuted: false,
+  canSendDigits: false,
 };
 
 const RECONNECTABLE_ERROR_CODES = new Set([20101, 31005, 31203, 31204, 31205, 31207, 53001]);
@@ -146,6 +148,10 @@ function emit(): void {
 function setRuntimeState(patch: Partial<VoiceRuntimeState>): void {
   runtime.state = { ...runtime.state, ...patch };
   emit();
+}
+
+function callCanSendDigits(call: VoiceCall | null): boolean {
+  return typeof call?.sendDigits === 'function';
 }
 
 function clearTimer(timer: ReturnType<typeof setTimeout> | null): void {
@@ -384,6 +390,7 @@ function attachCallListeners(conn: VoiceCall): void {
     active: true,
     connectionState: 'pending',
     isMuted: Boolean(conn?.isMuted?.()),
+    canSendDigits: callCanSendDigits(conn),
   });
 
   conn.on?.('ringing', () => setRuntimeState({ connectionState: 'ringing' }));
@@ -392,6 +399,7 @@ function attachCallListeners(conn: VoiceCall): void {
       connectionState: 'open',
       active: true,
       error: null,
+      canSendDigits: callCanSendDigits(conn),
     }),
   );
   conn.on?.('disconnect', () => {
@@ -400,6 +408,7 @@ function attachCallListeners(conn: VoiceCall): void {
       connectionState: 'closed',
       active: false,
       isMuted: false,
+      canSendDigits: false,
     });
   });
   conn.on?.('cancel', () => {
@@ -407,6 +416,7 @@ function attachCallListeners(conn: VoiceCall): void {
     setRuntimeState({
       connectionState: 'closed',
       active: false,
+      canSendDigits: false,
     });
   });
   conn.on?.('reject', () => {
@@ -414,6 +424,7 @@ function attachCallListeners(conn: VoiceCall): void {
     setRuntimeState({
       connectionState: 'closed',
       active: false,
+      canSendDigits: false,
     });
   });
   conn.on?.('error', (err) => {
@@ -422,6 +433,7 @@ function attachCallListeners(conn: VoiceCall): void {
       error: formatVoiceError(err),
       active: false,
       connectionState: 'closed',
+      canSendDigits: false,
     });
     if (RECONNECTABLE_ERROR_CODES.has(getVoiceErrorCode(err) ?? 0)) {
       scheduleReconnect(runtime.lastNumberId);
@@ -625,6 +637,7 @@ function hangupCall(): void {
       active: false,
       isMuted: false,
       connectionState: 'closed',
+      canSendDigits: false,
     });
   }
 }
@@ -651,13 +664,16 @@ function sendDtmfDigits(digits: string): void {
 
   const conn = runtime.call;
   if (!conn?.sendDigits) {
-    setRuntimeState({ error: 'No active call is available for DTMF tones.' });
+    setRuntimeState({
+      error: 'No active call is available for DTMF tones.',
+      canSendDigits: false,
+    });
     return;
   }
 
   try {
     conn.sendDigits(normalized);
-    setRuntimeState({ error: null });
+    setRuntimeState({ error: null, canSendDigits: true });
   } catch (err) {
     setRuntimeState({ error: formatVoiceError(err) });
   }

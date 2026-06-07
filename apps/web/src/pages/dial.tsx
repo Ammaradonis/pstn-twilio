@@ -1,5 +1,5 @@
 import { normalizeDialablePhoneNumber } from '@pstn-twilio/shared';
-import { useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useParams } from 'react-router-dom';
 
 import { useVoiceDevice } from '../hooks/use-voice-device';
@@ -25,8 +25,9 @@ export function DialPage() {
   const [callerId, setCallerId] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const [pageError, setPageError] = useState<string | null>(null);
+  const [sentTones, setSentTones] = useState('');
   const voice = useVoiceDevice();
-  const voiceActive = voice.active;
+  const inCallMode = voice.active || voice.canSendDigits;
   const sendDtmfDigits = voice.sendDigits;
 
   function setDestinationFromInput(value: string) {
@@ -45,9 +46,17 @@ export function DialPage() {
     setDestination((prev) => normalizeDialablePhoneNumber(prev + key) ?? prev + key);
   }
 
+  const sendDialpadTone = useCallback(
+    (key: string) => {
+      sendDtmfDigits(key);
+      setSentTones((prev) => `${prev}${key}`.slice(-24));
+    },
+    [sendDtmfDigits],
+  );
+
   function handleDialpadKey(key: (typeof DIALPAD_KEYS)[number]) {
-    if (voice.active) {
-      if (key !== '+') sendDtmfDigits(key);
+    if (inCallMode) {
+      if (key !== '+') sendDialpadTone(key);
       return;
     }
 
@@ -60,18 +69,23 @@ export function DialPage() {
   }, [numberId]);
 
   useEffect(() => {
-    if (!voiceActive) return;
+    if (inCallMode) return;
+    setSentTones('');
+  }, [inCallMode]);
+
+  useEffect(() => {
+    if (!inCallMode) return;
 
     function handleKeyDown(event: KeyboardEvent) {
       if (event.altKey || event.ctrlKey || event.metaKey) return;
       if (!/^[0-9*#]$/.test(event.key)) return;
       event.preventDefault();
-      sendDtmfDigits(event.key);
+      sendDialpadTone(event.key);
     }
 
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [sendDtmfDigits, voiceActive]);
+  }, [inCallMode, sendDialpadTone]);
 
   useEffect(() => {
     if (!numberId) return;
@@ -204,13 +218,13 @@ export function DialPage() {
             }}
             placeholder="+1 530-441-9961"
             inputMode="tel"
-            readOnly={voice.active}
+            readOnly={inCallMode}
             className="min-w-0 flex-1 rounded border border-slate-300 px-2 py-1 font-mono text-sm focus:border-slate-500 focus:outline-none read-only:bg-slate-50"
           />
           <button
             type="button"
             onClick={handlePasteAndCall}
-            disabled={submitting || voice.active}
+            disabled={submitting || inCallMode}
             title="Paste a phone number from the clipboard and call it"
             className="rounded border border-slate-300 px-3 py-1.5 text-sm font-medium hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-60"
           >
@@ -230,7 +244,7 @@ export function DialPage() {
               key={d}
               type="button"
               onClick={() => handleDialpadKey(d)}
-              disabled={voice.active && d === '+'}
+              disabled={inCallMode && d === '+'}
               className={`rounded border border-slate-200 px-3 py-2 text-base hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50 ${
                 d === '+' ? 'col-start-2' : ''
               }`}
@@ -239,32 +253,37 @@ export function DialPage() {
             </button>
           ))}
         </div>
+        {sentTones && (
+          <p className="mt-2 text-xs text-slate-500">
+            Tones: <span className="font-mono">{sentTones}</span>
+          </p>
+        )}
 
         <div className="mt-4 flex flex-wrap gap-2">
           <button
             onClick={handleCall}
-            disabled={!valid || submitting || voice.active}
+            disabled={!valid || submitting || inCallMode}
             className="rounded bg-emerald-600 px-3 py-1.5 text-sm font-semibold text-white hover:bg-emerald-700 disabled:cursor-not-allowed disabled:opacity-60"
           >
-            {voice.active ? 'In call' : submitting ? 'Calling…' : 'Call'}
+            {inCallMode ? 'In call' : submitting ? 'Calling…' : 'Call'}
           </button>
           <button
             onClick={() => voice.toggleMute()}
-            disabled={!voice.active}
+            disabled={!inCallMode}
             className="rounded border border-slate-300 px-3 py-1.5 text-sm disabled:opacity-60"
           >
             {voice.isMuted ? 'Unmute' : 'Mute'}
           </button>
           <button
             onClick={handleHangup}
-            disabled={!voice.active}
+            disabled={!inCallMode}
             className="rounded bg-rose-600 px-3 py-1.5 text-sm font-semibold text-white hover:bg-rose-700 disabled:opacity-60"
           >
             Hangup
           </button>
           <button
             onClick={() => setDestination('')}
-            disabled={destination.length === 0 || voice.active}
+            disabled={destination.length === 0 || inCallMode}
             className="ml-auto rounded border border-slate-300 px-3 py-1.5 text-sm disabled:opacity-60"
           >
             Clear
