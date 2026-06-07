@@ -1,7 +1,7 @@
 import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-import { api } from '../lib/api-client';
+import { api, ApiError } from '../lib/api-client';
 
 import { DialPage } from './dial';
 
@@ -37,16 +37,30 @@ vi.mock('../hooks/use-voice-device', () => ({
   useVoiceDevice: () => voiceMock.current,
 }));
 
-vi.mock('../lib/api-client', () => ({
-  api: {
-    calls: {
-      lastDial: vi.fn().mockResolvedValue(null),
+vi.mock('../lib/api-client', () => {
+  class MockApiError extends Error {
+    constructor(
+      readonly status: number,
+      message: string,
+      readonly payload?: unknown,
+    ) {
+      super(message);
+      this.name = 'ApiError';
+    }
+  }
+
+  return {
+    ApiError: MockApiError,
+    api: {
+      calls: {
+        lastDial: vi.fn().mockResolvedValue(null),
+      },
+      numbers: {
+        get: vi.fn(() => new Promise(() => {})),
+      },
     },
-    numbers: {
-      get: vi.fn(() => new Promise(() => {})),
-    },
-  },
-}));
+  };
+});
 
 function resetVoiceMock() {
   voiceMock.current = {
@@ -114,6 +128,23 @@ describe('DialPage dialpad', () => {
     expect(voiceMock.current.sendDigits).toHaveBeenCalledWith('9');
     expect(screen.getByText(/Tones:/)).toHaveTextContent('89');
     expect(screen.getByRole('button', { name: '+' })).toBeDisabled();
+  });
+
+  it('continues dialing when the optional last-dial lookup route is missing', async () => {
+    vi.mocked(api.calls.lastDial).mockRejectedValue(
+      new ApiError(404, 'Cannot GET /api/numbers/pn1/last-dial'),
+    );
+    render(<DialPage />);
+
+    fireEvent.change(screen.getByLabelText(/destination/i), {
+      target: { value: '+12547024877' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'Call' }));
+
+    await waitFor(() =>
+      expect(voiceMock.current.makeCall).toHaveBeenCalledWith('pn1', '+12547024877'),
+    );
+    expect(screen.queryByText(/Cannot GET/)).not.toBeInTheDocument();
   });
 
   it('does not initiate a repeated outbound call when the user chooses no', async () => {

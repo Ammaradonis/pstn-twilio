@@ -3,10 +3,14 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useParams } from 'react-router-dom';
 
 import { useVoiceDevice } from '../hooks/use-voice-device';
-import { api } from '../lib/api-client';
+import { api, ApiError } from '../lib/api-client';
 import { formatDate, formatPhone } from '../lib/format';
 
 const DIALPAD_KEYS = ['1', '2', '3', '4', '5', '6', '7', '8', '9', '*', '0', '#', '+'] as const;
+
+function isMissingLastDialEndpointError(err: unknown): boolean {
+  return err instanceof ApiError && err.status === 404;
+}
 
 function StatusPill({ label, ok }: { label: string; ok: boolean }) {
   return (
@@ -124,7 +128,12 @@ export function DialPage() {
     setSubmitting(true);
     try {
       if (!opts.skipRepeatWarning) {
-        const lastDial = await api.calls.lastDial(numberId, destinationNumber);
+        let lastDial: LastDialDto | null = null;
+        try {
+          lastDial = await api.calls.lastDial(numberId, destinationNumber);
+        } catch (err) {
+          if (!isMissingLastDialEndpointError(err)) throw err;
+        }
         if (lastDial) {
           setRepeatDialWarning(lastDial);
           return;
