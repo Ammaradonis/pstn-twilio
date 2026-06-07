@@ -13,6 +13,7 @@ The web bundle is a static SPA, so Cloudflare Pages is the simplest target.
    - `VITE_API_BASE_URL = https://api.webfitalchemist.online/api`
    - `VITE_WS_URL       = wss://api.webfitalchemist.online`
    - `VITE_APP_NAME     = pstn-twilio`
+   - `VITE_REPEAT_DIAL_WARNING_ENABLED = false`
 7. **Copy these files into the deploy** (Cloudflare Pages picks them up
    automatically when they appear at the repository root **or** under
    `apps/web/public/` — copy them at build time):

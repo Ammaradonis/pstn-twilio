@@ -135,6 +135,7 @@ Production env (Cloudflare Pages → Settings → Environment variables → Prod
 VITE_API_BASE_URL = https://api.webfitalchemist.online/api
 VITE_WS_URL       = wss://api.webfitalchemist.online
 VITE_APP_NAME     = pstn-twilio
+VITE_REPEAT_DIAL_WARNING_ENABLED = false
 ```
 
 `apps/web/public/_headers` and `apps/web/public/_redirects` ship the security

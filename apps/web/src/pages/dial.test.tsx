@@ -2,6 +2,7 @@ import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { api, ApiError } from '../lib/api-client';
+import { env } from '../lib/env';
 
 import { DialPage } from './dial';
 
@@ -62,6 +63,12 @@ vi.mock('../lib/api-client', () => {
   };
 });
 
+vi.mock('../lib/env', () => ({
+  env: {
+    VITE_REPEAT_DIAL_WARNING_ENABLED: false,
+  },
+}));
+
 function resetVoiceMock() {
   voiceMock.current = {
     ready: true,
@@ -89,6 +96,7 @@ function resetVoiceMock() {
 describe('DialPage dialpad', () => {
   beforeEach(() => {
     resetVoiceMock();
+    env.VITE_REPEAT_DIAL_WARNING_ENABLED = false;
     vi.mocked(api.calls.lastDial).mockClear();
     vi.mocked(api.calls.lastDial).mockResolvedValue(null);
   });
@@ -131,6 +139,7 @@ describe('DialPage dialpad', () => {
   });
 
   it('continues dialing when the optional last-dial lookup route is missing', async () => {
+    env.VITE_REPEAT_DIAL_WARNING_ENABLED = true;
     vi.mocked(api.calls.lastDial).mockRejectedValue(
       new ApiError(404, 'Cannot GET /api/numbers/pn1/last-dial'),
     );
@@ -147,7 +156,22 @@ describe('DialPage dialpad', () => {
     expect(screen.queryByText(/Cannot GET/)).not.toBeInTheDocument();
   });
 
+  it('skips the optional last-dial lookup unless repeat warnings are enabled', async () => {
+    render(<DialPage />);
+
+    fireEvent.change(screen.getByLabelText(/destination/i), {
+      target: { value: '+12547024877' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'Call' }));
+
+    await waitFor(() =>
+      expect(voiceMock.current.makeCall).toHaveBeenCalledWith('pn1', '+12547024877'),
+    );
+    expect(api.calls.lastDial).not.toHaveBeenCalled();
+  });
+
   it('does not initiate a repeated outbound call when the user chooses no', async () => {
+    env.VITE_REPEAT_DIAL_WARNING_ENABLED = true;
     vi.mocked(api.calls.lastDial).mockResolvedValue({
       callId: 'c1',
       destinationNumber: '+15304419961',
@@ -170,6 +194,7 @@ describe('DialPage dialpad', () => {
   });
 
   it('initiates a repeated outbound call when the user chooses yes', async () => {
+    env.VITE_REPEAT_DIAL_WARNING_ENABLED = true;
     vi.mocked(api.calls.lastDial).mockResolvedValue({
       callId: 'c1',
       destinationNumber: '+15304419961',

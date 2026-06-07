@@ -4,6 +4,7 @@ import { useParams } from 'react-router-dom';
 
 import { useVoiceDevice } from '../hooks/use-voice-device';
 import { api, ApiError } from '../lib/api-client';
+import { env } from '../lib/env';
 import { formatDate, formatPhone } from '../lib/format';
 
 const DIALPAD_KEYS = ['1', '2', '3', '4', '5', '6', '7', '8', '9', '*', '0', '#', '+'] as const;
@@ -127,7 +128,7 @@ export function DialPage() {
     }
     setSubmitting(true);
     try {
-      if (!opts.skipRepeatWarning) {
+      if (env.VITE_REPEAT_DIAL_WARNING_ENABLED && !opts.skipRepeatWarning) {
         let lastDial: LastDialDto | null = null;
         try {
           lastDial = await api.calls.lastDial(numberId, destinationNumber);
