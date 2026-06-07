@@ -69,7 +69,7 @@ export class CallsController {
     return this.calls.list(actorFromRequest(req), numberId, query);
   }
 
-  @Get('numbers/:numberId/calls/last-dial')
+  @Get('numbers/:numberId/last-dial')
   findLastDial(
     @Req() req: ActorRequest,
     @Param('numberId') numberId: string,

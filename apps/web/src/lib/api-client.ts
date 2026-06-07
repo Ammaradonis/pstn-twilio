@@ -209,7 +209,7 @@ export const api = {
     get: (numberId: string, callId: string) =>
       request<CallDto>(`/numbers/${numberId}/calls/${callId}`),
     lastDial: (numberId: string, destination: string) =>
-      request<LastDialDto | null>(`/numbers/${numberId}/calls/last-dial`, {
+      request<LastDialDto | null>(`/numbers/${numberId}/last-dial`, {
         query: { destination },
       }),
     hangup: (callId: string) => request<CallDto>(`/calls/${callId}/hangup`, { method: 'POST' }),

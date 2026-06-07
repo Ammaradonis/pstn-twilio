@@ -71,14 +71,14 @@ flags `voiceEnabled`/`smsEnabled`/`mmsEnabled`, `pageSize`, and a discriminator
 
 ## Calls
 
-| Method | Path                                     | Body / Query                              | Returns                                                                                            |
-| ------ | ---------------------------------------- | ----------------------------------------- | -------------------------------------------------------------------------------------------------- |
-| GET    | `/api/numbers/:numberId/calls`           | `?cursor&limit&status`                    | `{ items: CallDto[], total, nextCursor? }`                                                         |
-| GET    | `/api/numbers/:numberId/calls/last-dial` | `?destination`                            | `LastDialDto \| null`                                                                              |
-| GET    | `/api/numbers/:numberId/calls/:callId`   | —                                         | `CallDto`                                                                                          |
-| POST   | `/api/calls/prepare-outbound`            | `{ selectedNumberId, destinationNumber }` | `{ outboundIntentId, identity, selectedNumberId, selectedCallerId, destinationNumber, expiresAt }` |
-| POST   | `/api/calls/:callId/hangup`              | —                                         | `CallDto`                                                                                          |
-| POST   | `/api/calls/:callId/notes`               | `{ note }`                                | `CallDto`                                                                                          |
+| Method | Path                                   | Body / Query                              | Returns                                                                                            |
+| ------ | -------------------------------------- | ----------------------------------------- | -------------------------------------------------------------------------------------------------- |
+| GET    | `/api/numbers/:numberId/calls`         | `?cursor&limit&status`                    | `{ items: CallDto[], total, nextCursor? }`                                                         |
+| GET    | `/api/numbers/:numberId/last-dial`     | `?destination`                            | `LastDialDto \| null`                                                                              |
+| GET    | `/api/numbers/:numberId/calls/:callId` | —                                         | `CallDto`                                                                                          |
+| POST   | `/api/calls/prepare-outbound`          | `{ selectedNumberId, destinationNumber }` | `{ outboundIntentId, identity, selectedNumberId, selectedCallerId, destinationNumber, expiresAt }` |
+| POST   | `/api/calls/:callId/hangup`            | —                                         | `CallDto`                                                                                          |
+| POST   | `/api/calls/:callId/notes`             | `{ note }`                                | `CallDto`                                                                                          |
 
 ## Voice (browser softphone)
 
