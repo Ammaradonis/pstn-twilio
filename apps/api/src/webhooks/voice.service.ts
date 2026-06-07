@@ -4,6 +4,8 @@ import {
   Call,
   CallRecording,
   CallStatus,
+  OutboundCallIntent,
+  PhoneNumber,
   RecordingStatus,
   WebhookProvider,
 } from '@prisma/client';
@@ -31,6 +33,7 @@ export interface OutboundVoiceParams {
   To?: string;
   selectedNumberId?: string;
   destinationNumber?: string;
+  outboundIntentId?: string;
   [key: string]: string | undefined;
 }
 
@@ -78,6 +81,7 @@ export interface VoicemailParams {
 }
 
 type CallWithRecordings = Call & { recordings?: CallRecording[] };
+type OutboundCallIntentWithNumber = OutboundCallIntent & { phoneNumber: PhoneNumber };
 
 const RECORDING_CALLBACK_EVENTS = ['in-progress', 'completed', 'absent'] as const;
 const CALL_WITH_RECORDINGS_INCLUDE = {
@@ -219,30 +223,41 @@ export class VoiceWebhookService {
     const callSid = params.CallSid ?? '';
     const selectedNumberId = params.selectedNumberId;
     const rawDestinationNumber = params.destinationNumber;
-    if (!selectedNumberId || !rawDestinationNumber) {
-      this.logger.warn('Outbound voice webhook missing selectedNumberId/destinationNumber');
+    const outboundIntentId = params.outboundIntentId;
+    if (!callSid) {
+      this.logger.warn('Outbound voice webhook missing CallSid');
+      return hangupTwiml('Missing call context.');
+    }
+    if (!identity) {
+      this.logger.warn(`Outbound voice webhook missing client identity for ${callSid}`);
+      await this.recordOutboundRejection(callSid, 'missing_identity', params);
+      return hangupTwiml('Missing browser identity.');
+    }
+    if (!selectedNumberId || !rawDestinationNumber || !outboundIntentId) {
+      this.logger.warn(
+        'Outbound voice webhook missing selectedNumberId/destinationNumber/outboundIntentId',
+      );
+      await this.recordOutboundRejection(callSid, 'missing_parameters', params);
       return hangupTwiml('Missing call parameters.');
     }
     const destinationNumber = normalizeDialablePhoneNumber(rawDestinationNumber);
     if (!destinationNumber) {
+      await this.recordOutboundRejection(callSid, 'invalid_destination', params);
       return hangupTwiml('Destination must be a valid phone number.');
     }
 
-    const phoneNumber = await this.prisma.phoneNumber.findUnique({
-      where: { id: selectedNumberId },
+    const intent = await this.consumeOutboundIntent({
+      outboundIntentId,
+      callSid,
+      identity,
+      selectedNumberId,
+      destinationNumber,
     });
-    if (!phoneNumber || !phoneNumber.active || !phoneNumber.capabilitiesVoice) {
-      return hangupTwiml('Selected number cannot place calls.');
+    if (!intent) {
+      await this.recordOutboundRejection(callSid, 'invalid_or_expired_intent', params);
+      return hangupTwiml('Call authorization expired. Please prepare the call again.');
     }
-    if (identity && phoneNumber.userId) {
-      const expected = this.twilio.voiceIdentity(phoneNumber.userId, phoneNumber.id);
-      if (identity !== expected) {
-        this.logger.warn(
-          `Outbound call from identity ${identity} for number owned by another identity (${expected})`,
-        );
-        return hangupTwiml('You are not authorized to call from this number.');
-      }
-    }
+    const phoneNumber = intent.phoneNumber;
 
     void this.persistOutboundStart({
       twilioCallSid: callSid,
@@ -263,7 +278,14 @@ export class VoiceWebhookService {
       answerOnBridge: true,
       ...this.recordingDialAttributes(),
     });
-    dial.number(destinationNumber);
+    dial.number(
+      {
+        statusCallback: `${this.twilio.webhookBaseUrl}/webhooks/twilio/voice/status`,
+        statusCallbackMethod: 'POST',
+        statusCallbackEvent: ['initiated', 'ringing', 'answered', 'completed'],
+      },
+      destinationNumber,
+    );
     return response.toString();
   }
 
@@ -276,9 +298,14 @@ export class VoiceWebhookService {
     if (await this.alreadyProcessed(dedupeKey)) return;
     await this.recordWebhookEvent(dedupeKey, 'voice.status', callSid, params);
 
-    const existing = await this.prisma.call.findUnique({ where: { twilioCallSid: callSid } });
+    const existing =
+      (await this.prisma.call.findUnique({ where: { twilioCallSid: callSid } })) ??
+      (params.ParentCallSid
+        ? await this.prisma.call.findUnique({ where: { twilioCallSid: params.ParentCallSid } })
+        : null);
     const newStatus = mapTwilioCallStatus(statusRaw);
     const duration = parseDuration(params.CallDuration ?? params.Duration);
+    const existingMatchesCallbackCall = existing?.twilioCallSid === callSid;
 
     const updateData: Record<string, unknown> = {
       status: newStatus,
@@ -287,7 +314,9 @@ export class VoiceWebhookService {
     if (duration !== null) updateData.durationSeconds = duration;
     if (params.Price) updateData.price = params.Price;
     if (params.PriceUnit) updateData.priceUnit = params.PriceUnit;
-    if (params.ParentCallSid) updateData.parentCallSid = params.ParentCallSid;
+    if (params.ParentCallSid && existingMatchesCallbackCall) {
+      updateData.parentCallSid = params.ParentCallSid;
+    }
     if (newStatus === 'IN_PROGRESS' && !existing?.answeredAt) updateData.answeredAt = new Date();
     if (
       newStatus === 'COMPLETED' ||
@@ -300,10 +329,14 @@ export class VoiceWebhookService {
     }
 
     const call = existing
-      ? await this.prisma.call.update({ where: { twilioCallSid: callSid }, data: updateData })
+      ? await this.prisma.call.update({
+          where: { twilioCallSid: existing.twilioCallSid ?? callSid },
+          data: updateData,
+        })
       : await this.prisma.call.create({
           data: {
             twilioCallSid: callSid,
+            parentCallSid: params.ParentCallSid ?? null,
             direction:
               params.Direction?.includes('outbound') === true
                 ? CallDirection.OUTBOUND
@@ -405,6 +438,92 @@ export class VoiceWebhookService {
     );
     response.hangup();
     return response.toString();
+  }
+
+  private async consumeOutboundIntent(input: {
+    outboundIntentId: string;
+    callSid: string;
+    identity: string;
+    selectedNumberId: string;
+    destinationNumber: string;
+  }): Promise<OutboundCallIntentWithNumber | null> {
+    const intent = (await this.prisma.outboundCallIntent.findUnique({
+      where: { id: input.outboundIntentId },
+      include: { phoneNumber: true },
+    })) as OutboundCallIntentWithNumber | null;
+    if (!intent) {
+      this.logger.warn(
+        `Outbound call ${input.callSid} used unknown intent ${input.outboundIntentId}`,
+      );
+      return null;
+    }
+
+    const sameCallRetry = intent.consumedByCallSid === input.callSid;
+    if (intent.consumedAt && !sameCallRetry) {
+      this.logger.warn(
+        `Outbound call ${input.callSid} attempted to reuse consumed intent ${intent.id}`,
+      );
+      return null;
+    }
+
+    const now = new Date();
+    if (!sameCallRetry && intent.expiresAt <= now) {
+      this.logger.warn(`Outbound call ${input.callSid} used expired intent ${intent.id}`);
+      return null;
+    }
+
+    const phoneNumber = intent.phoneNumber;
+    const expectedIdentity = phoneNumber.userId
+      ? this.twilio.voiceIdentity(phoneNumber.userId, phoneNumber.id)
+      : null;
+    if (
+      !phoneNumber.active ||
+      !phoneNumber.capabilitiesVoice ||
+      !phoneNumber.userId ||
+      intent.identity !== input.identity ||
+      expectedIdentity !== input.identity ||
+      intent.phoneNumberId !== input.selectedNumberId ||
+      intent.destinationE164 !== input.destinationNumber ||
+      intent.selectedCallerId !== phoneNumber.phoneNumberE164
+    ) {
+      this.logger.warn(
+        `Outbound call ${input.callSid} failed intent validation for intent ${intent.id}`,
+      );
+      return null;
+    }
+
+    if (sameCallRetry) return intent;
+
+    const consumed = await this.prisma.outboundCallIntent.updateMany({
+      where: {
+        id: intent.id,
+        consumedAt: null,
+        expiresAt: { gt: now },
+      },
+      data: {
+        consumedAt: now,
+        consumedByCallSid: input.callSid,
+      },
+    });
+    if (consumed.count !== 1) {
+      this.logger.warn(`Outbound call ${input.callSid} lost intent consumption race ${intent.id}`);
+      return null;
+    }
+
+    return { ...intent, consumedAt: now, consumedByCallSid: input.callSid };
+  }
+
+  private async recordOutboundRejection(
+    callSid: string,
+    reason: string,
+    payload: Record<string, unknown>,
+  ): Promise<void> {
+    await this.recordWebhookEvent(
+      `voice:outbound-rejected:${callSid}:${reason}`,
+      'voice.outbound.rejected',
+      callSid,
+      { ...payload, rejectionReason: reason },
+    );
   }
 
   private async persistOutboundStart(input: {

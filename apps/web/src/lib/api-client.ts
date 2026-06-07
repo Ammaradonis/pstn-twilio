@@ -5,6 +5,7 @@ import type {
   DiagnosticReportDto,
   HealthStatusDto,
   NumberSearchInput,
+  OutboundCallPreparationDto,
   PaginatedDto,
   PhoneNumberDto,
   PurchaseNumberInput,
@@ -233,12 +234,7 @@ export const api = {
       }),
     deviceConfig: () => request<Record<string, unknown>>('/voice/device-config'),
     prepareOutbound: (selectedNumberId: string, destinationNumber: string) =>
-      request<{
-        selectedNumberId: string;
-        selectedCallerId: string;
-        destinationNumber: string;
-        identity: string;
-      }>('/calls/prepare-outbound', {
+      request<OutboundCallPreparationDto>('/calls/prepare-outbound', {
         method: 'POST',
         body: { selectedNumberId, destinationNumber },
       }),

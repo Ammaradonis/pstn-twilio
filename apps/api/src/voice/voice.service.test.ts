@@ -10,6 +10,12 @@ function buildService(overrides: { prisma?: any; twilio?: any; audit?: any } = {
   const prisma = overrides.prisma ?? {
     phoneNumber: { findUnique: vi.fn() },
     voiceIdentity: { upsert: vi.fn().mockResolvedValue({}) },
+    outboundCallIntent: {
+      create: vi.fn().mockResolvedValue({
+        id: 'intent1',
+        expiresAt: new Date(Date.now() + 120_000),
+      }),
+    },
   };
   const twilio = overrides.twilio ?? {
     accountSid: 'ACxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx',
@@ -185,24 +191,57 @@ describe('VoiceService.prepareOutbound', () => {
     const prisma = {
       phoneNumber: { findUnique: vi.fn().mockResolvedValue(phoneNumber) },
       voiceIdentity: { upsert: vi.fn() },
+      outboundCallIntent: {
+        create: vi.fn().mockResolvedValue({
+          id: 'intent1',
+          expiresAt: new Date(Date.now() + 120_000),
+        }),
+      },
     };
-    const { service } = buildService({ prisma });
+    const { service, audit } = buildService({ prisma });
     const result = await service.prepareOutbound(
       { userId: 'u1', role: UserRole.OWNER },
       { selectedNumberId: 'pn1', destinationNumber: '+15551111111' },
     );
     expect(result).toEqual({
+      outboundIntentId: 'intent1',
       selectedNumberId: 'pn1',
       selectedCallerId: '+15552222222',
       destinationNumber: '+15551111111',
       identity: 'user_u1_number_pn1',
+      expiresAt: expect.any(String),
     });
+    expect(prisma.outboundCallIntent.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          userId: 'u1',
+          phoneNumberId: 'pn1',
+          identity: 'user_u1_number_pn1',
+          destinationE164: '+15551111111',
+          selectedCallerId: '+15552222222',
+          expiresAt: expect.any(Date),
+        }),
+      }),
+    );
+    expect(audit.log).toHaveBeenCalledWith(
+      expect.objectContaining({
+        action: 'voice.outbound_prepared',
+        entityType: 'OutboundCallIntent',
+        entityId: 'intent1',
+      }),
+    );
   });
 
   it('normalizes formatted U.S. destinations before returning call params', async () => {
     const prisma = {
       phoneNumber: { findUnique: vi.fn().mockResolvedValue(phoneNumber) },
       voiceIdentity: { upsert: vi.fn() },
+      outboundCallIntent: {
+        create: vi.fn().mockResolvedValue({
+          id: 'intent1',
+          expiresAt: new Date(Date.now() + 120_000),
+        }),
+      },
     };
     const { service } = buildService({ prisma });
     const result = await service.prepareOutbound(
@@ -211,6 +250,13 @@ describe('VoiceService.prepareOutbound', () => {
     );
 
     expect(result.destinationNumber).toBe('+15304419961');
+    expect(prisma.outboundCallIntent.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          destinationE164: '+15304419961',
+        }),
+      }),
+    );
   });
 
   it('forbids non-OWNER actor that does not own the number', async () => {

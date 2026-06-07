@@ -12,6 +12,7 @@ const voiceSdkMock = vi.hoisted(() => ({
     register: ReturnType<typeof vi.fn>;
     updateToken: ReturnType<typeof vi.fn>;
     destroy: ReturnType<typeof vi.fn>;
+    connect: ReturnType<typeof vi.fn>;
     emit: (event: string, ...args: unknown[]) => void;
   }>,
 }));
@@ -21,6 +22,7 @@ vi.mock('../lib/api-client', () => ({
     voice: {
       token: vi.fn(),
       deviceConfig: vi.fn(),
+      prepareOutbound: vi.fn(),
     },
   },
 }));
@@ -95,6 +97,14 @@ describe('useVoiceDevice', () => {
       expiresAt: new Date(Date.now() + 60 * 60 * 1000).toISOString(),
     });
     vi.mocked(api.voice.deviceConfig).mockResolvedValue({});
+    vi.mocked(api.voice.prepareOutbound).mockResolvedValue({
+      outboundIntentId: 'intent1',
+      selectedNumberId: 'pn1',
+      selectedCallerId: '+15552222222',
+      destinationNumber: '+15551111111',
+      identity: 'user_u1_number_pn1',
+      expiresAt: new Date(Date.now() + 120_000).toISOString(),
+    });
   });
 
   afterEach(() => {
@@ -132,5 +142,34 @@ describe('useVoiceDevice', () => {
     expect(device.register).toHaveBeenCalledTimes(1);
     expect(current!.registered).toBe(true);
     expect(current!.error).toBeNull();
+  });
+
+  it('prepares an outbound intent before connecting the Twilio device', async () => {
+    render(<Harness onChange={(voice) => (current = voice)} />);
+
+    await act(async () => {
+      await current!.init('pn1');
+      await Promise.resolve();
+    });
+
+    const device = voiceSdkMock.instances[0];
+    expect(device).toBeDefined();
+    if (!device) throw new Error('Mock Twilio Device was not created');
+    const call = { on: vi.fn(), isMuted: vi.fn().mockReturnValue(false) };
+    device.connect.mockReturnValue(call);
+
+    await act(async () => {
+      await current!.makeCall('pn1', '+1 555-111-1111');
+      await Promise.resolve();
+    });
+
+    expect(api.voice.prepareOutbound).toHaveBeenCalledWith('pn1', '+1 555-111-1111');
+    expect(device.connect).toHaveBeenCalledWith({
+      params: {
+        selectedNumberId: 'pn1',
+        destinationNumber: '+15551111111',
+        outboundIntentId: 'intent1',
+      },
+    });
   });
 });

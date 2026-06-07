@@ -59,6 +59,7 @@ export class VoiceController {
 
   @Post('calls/prepare-outbound')
   @HttpCode(200)
+  @Throttle({ short: { limit: 30, ttl: 60_000 } })
   prepareOutbound(
     @Req() req: ActorRequest,
     @Body(new ZodValidationPipe(prepareOutboundCallSchema))

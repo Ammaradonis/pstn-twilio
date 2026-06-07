@@ -6,7 +6,11 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import { UserRole } from '@prisma/client';
-import { normalizeDialablePhoneNumber, type VoiceTokenDto } from '@pstn-twilio/shared';
+import {
+  normalizeDialablePhoneNumber,
+  type OutboundCallPreparationDto,
+  type VoiceTokenDto,
+} from '@pstn-twilio/shared';
 import twilio from 'twilio';
 
 import { AuditService } from '../audit/audit.service';
@@ -15,6 +19,7 @@ import { TwilioService } from '../twilio/twilio.service';
 
 const TOKEN_TTL_SECONDS = 60 * 60; // 1 hour
 const TOKEN_CLOCK_SKEW_SECONDS = 5 * 60;
+const OUTBOUND_INTENT_TTL_MS = 2 * 60 * 1000;
 
 interface ActorContext {
   userId: string;
@@ -76,12 +81,7 @@ export class VoiceService {
   async prepareOutbound(
     actor: ActorContext,
     input: { selectedNumberId: string; destinationNumber: string },
-  ): Promise<{
-    selectedNumberId: string;
-    selectedCallerId: string;
-    destinationNumber: string;
-    identity: string;
-  }> {
+  ): Promise<OutboundCallPreparationDto> {
     const phoneNumber = await this.assertOwnership(actor, input.selectedNumberId);
     if (!phoneNumber.capabilitiesVoice) {
       throw new BadRequestException('Selected number does not have voice capability');
@@ -93,11 +93,40 @@ export class VoiceService {
     if (!destinationNumber) {
       throw new BadRequestException('Destination must be E.164');
     }
+    const identity = this.twilio.voiceIdentity(actor.userId, phoneNumber.id);
+    await this.ensureVoiceIdentity(actor.userId, phoneNumber.id, identity);
+
+    const intent = await this.prisma.outboundCallIntent.create({
+      data: {
+        userId: actor.userId,
+        phoneNumberId: phoneNumber.id,
+        identity,
+        destinationE164: destinationNumber,
+        selectedCallerId: phoneNumber.phoneNumberE164,
+        expiresAt: new Date(Date.now() + OUTBOUND_INTENT_TTL_MS),
+      },
+    });
+
+    await this.audit.log({
+      userId: actor.userId,
+      action: 'voice.outbound_prepared',
+      entityType: 'OutboundCallIntent',
+      entityId: intent.id,
+      ipAddress: actor.ipAddress,
+      userAgent: actor.userAgent,
+      metadata: {
+        numberId: phoneNumber.id,
+        destinationNumber,
+      },
+    });
+
     return {
+      outboundIntentId: intent.id,
       selectedNumberId: phoneNumber.id,
       selectedCallerId: phoneNumber.phoneNumberE164,
       destinationNumber,
-      identity: this.twilio.voiceIdentity(actor.userId, phoneNumber.id),
+      identity,
+      expiresAt: intent.expiresAt.toISOString(),
     };
   }
 

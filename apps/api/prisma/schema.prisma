@@ -86,6 +86,7 @@ model User {
   phoneNumbers     PhoneNumber[]
   numberSearches   NumberSearch[]
   voiceIdentities  VoiceIdentity[]
+  outboundCallIntents OutboundCallIntent[]
   auditLogs        AuditLog[]
   updatedSettings  AppSetting[]
 
@@ -155,6 +156,7 @@ model PhoneNumber {
   smsMessages    SmsMessage[]
   calls          Call[]
   voiceIdentities VoiceIdentity[]
+  outboundCallIntents OutboundCallIntent[]
 
   @@index([phoneNumberE164])
   @@index([twilioIncomingPhoneNumberSid])
@@ -272,6 +274,29 @@ model VoiceIdentity {
 
   @@index([userId])
   @@map("voice_identities")
+}
+
+model OutboundCallIntent {
+  id                String    @id @default(uuid())
+  userId            String    @map("user_id")
+  phoneNumberId     String    @map("phone_number_id")
+  identity          String
+  destinationE164   String    @map("destination_e164")
+  selectedCallerId  String    @map("selected_caller_id")
+  expiresAt         DateTime  @map("expires_at")
+  consumedAt        DateTime? @map("consumed_at")
+  consumedByCallSid String?   @map("consumed_by_call_sid")
+  createdAt         DateTime  @default(now()) @map("created_at")
+  updatedAt         DateTime  @updatedAt @map("updated_at")
+
+  user        User        @relation(fields: [userId], references: [id], onDelete: Cascade)
+  phoneNumber PhoneNumber @relation(fields: [phoneNumberId], references: [id], onDelete: Cascade)
+
+  @@index([identity, expiresAt])
+  @@index([phoneNumberId, createdAt(sort: Desc)])
+  @@index([expiresAt])
+  @@index([consumedByCallSid])
+  @@map("outbound_call_intents")
 }
 
 model AuditLog {

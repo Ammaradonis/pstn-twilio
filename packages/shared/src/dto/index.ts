@@ -121,6 +121,15 @@ export interface VoiceTokenDto {
   expiresAt: string;
 }
 
+export interface OutboundCallPreparationDto {
+  outboundIntentId: string;
+  selectedNumberId: string;
+  selectedCallerId: string;
+  destinationNumber: string;
+  identity: string;
+  expiresAt: string;
+}
+
 export interface HealthStatusDto {
   status: 'ok' | 'degraded' | 'down';
   checks: Record<string, { status: 'ok' | 'down'; message?: string }>;

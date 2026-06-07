@@ -31,7 +31,7 @@ type VoiceDevice = {
   disconnectAll?: () => void;
   updateToken?: (token: string) => void;
   connect: (options: {
-    params: { selectedNumberId: string; destinationNumber: string };
+    params: { selectedNumberId: string; destinationNumber: string; outboundIntentId: string };
   }) => VoiceCall | Promise<VoiceCall>;
 };
 
@@ -349,9 +349,28 @@ async function registerCurrentDevice(numberId: string | undefined): Promise<void
   }
 }
 
-async function ensureDeviceForOutbound(numberId: string): Promise<VoiceDevice | null> {
+async function ensureDeviceForOutbound(
+  numberId: string,
+  expectedIdentity: string,
+): Promise<VoiceDevice | null> {
+  if (
+    runtime.device &&
+    runtime.lastNumberId === numberId &&
+    runtime.state.identity &&
+    runtime.state.identity !== expectedIdentity
+  ) {
+    disposeCurrentDevice(true);
+  }
+
   if (!runtime.device || runtime.lastNumberId !== numberId) {
     await initVoiceDevice(numberId, isBrowserSupported());
+  }
+  if (runtime.state.identity !== expectedIdentity) {
+    setRuntimeState({
+      error:
+        'Voice device identity does not match the prepared outbound call. Retrying will request a fresh Twilio token.',
+    });
+    return null;
   }
   return runtime.device;
 }
@@ -530,18 +549,30 @@ async function makeVoiceCall(
   selectedNumberId: string,
   destinationNumber: string,
 ): Promise<VoiceCall | null> {
-  const device = await ensureDeviceForOutbound(selectedNumberId);
+  let prepared;
+  try {
+    prepared = await api.voice.prepareOutbound(selectedNumberId, destinationNumber);
+  } catch (err) {
+    setRuntimeState({ error: err instanceof Error ? err.message : String(err) });
+    return null;
+  }
+
+  const device = await ensureDeviceForOutbound(prepared.selectedNumberId, prepared.identity);
   if (!device) {
     setRuntimeState({
       error: 'Voice device could not initialize with Twilio. It will keep retrying automatically.',
     });
-    scheduleReconnect(selectedNumberId);
+    scheduleReconnect(prepared.selectedNumberId);
     return null;
   }
 
   try {
     const result = device.connect({
-      params: { selectedNumberId, destinationNumber },
+      params: {
+        selectedNumberId: prepared.selectedNumberId,
+        destinationNumber: prepared.destinationNumber,
+        outboundIntentId: prepared.outboundIntentId,
+      },
     });
     const conn = isPromiseLike(result) ? await result : result;
     attachCallListeners(conn);
@@ -549,7 +580,7 @@ async function makeVoiceCall(
   } catch (err) {
     setRuntimeState({ error: formatVoiceError(err) });
     if (RECONNECTABLE_ERROR_CODES.has(getVoiceErrorCode(err) ?? 0)) {
-      scheduleReconnect(selectedNumberId);
+      scheduleReconnect(prepared.selectedNumberId);
     }
     return null;
   }
