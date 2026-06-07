@@ -67,8 +67,7 @@ export function DialPage() {
     }
     setSubmitting(true);
     try {
-      const prep = await api.voice.prepareOutbound(numberId, destinationNumber);
-      await voice.makeCall(prep.selectedNumberId, prep.destinationNumber);
+      await voice.makeCall(numberId, destinationNumber);
     } catch (err) {
       setPageError(err instanceof Error ? err.message : String(err));
     } finally {

@@ -66,7 +66,7 @@ export class VoiceService {
   getDeviceConfig() {
     return {
       codecPreferences: ['opus', 'pcmu'],
-      edge: ['ashburn', 'dublin', 'singapore'],
+      edge: ['frankfurt', 'dublin', 'ashburn'],
       logLevel: 1,
       closeProtection: true,
       enableImprovedSignalingErrorPrecision: true,

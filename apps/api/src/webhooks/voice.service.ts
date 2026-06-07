@@ -3,6 +3,7 @@ import {
   CallDirection,
   Call,
   CallRecording,
+  CallStatus,
   RecordingStatus,
   WebhookProvider,
 } from '@prisma/client';
@@ -81,6 +82,16 @@ type CallWithRecordings = Call & { recordings?: CallRecording[] };
 const RECORDING_CALLBACK_EVENTS = ['in-progress', 'completed', 'absent'] as const;
 const CALL_WITH_RECORDINGS_INCLUDE = {
   recordings: { orderBy: { createdAt: 'desc' as const } },
+};
+const CALL_STATUS_RANK: Record<CallStatus, number> = {
+  [CallStatus.INITIATED]: 1,
+  [CallStatus.RINGING]: 2,
+  [CallStatus.IN_PROGRESS]: 3,
+  [CallStatus.COMPLETED]: 4,
+  [CallStatus.BUSY]: 4,
+  [CallStatus.FAILED]: 4,
+  [CallStatus.NO_ANSWER]: 4,
+  [CallStatus.CANCELED]: 4,
 };
 type DialRecordingAttributes = {
   record: 'record-from-answer-dual';
@@ -206,8 +217,6 @@ export class VoiceWebhookService {
 
   async handleOutbound(params: OutboundVoiceParams, identity: string | undefined): Promise<string> {
     const callSid = params.CallSid ?? '';
-    await this.recordWebhookEvent(`voice:outbound:${callSid}`, 'voice.outbound', callSid, params);
-
     const selectedNumberId = params.selectedNumberId;
     const rawDestinationNumber = params.destinationNumber;
     if (!selectedNumberId || !rawDestinationNumber) {
@@ -235,7 +244,7 @@ export class VoiceWebhookService {
       }
     }
 
-    const call = await this.upsertCall({
+    void this.persistOutboundStart({
       twilioCallSid: callSid,
       phoneNumberId: phoneNumber.id,
       direction: CallDirection.OUTBOUND,
@@ -246,11 +255,6 @@ export class VoiceWebhookService {
       browserIdentity: identity ?? null,
       statusRaw: params.CallStatus ?? 'initiated',
       rawPayload: params,
-    });
-
-    this.realtime.callStatusUpdated({
-      numberId: phoneNumber.id,
-      call: toCallDto(call),
     });
 
     const response = new twilio.twiml.VoiceResponse();
@@ -403,6 +407,39 @@ export class VoiceWebhookService {
     return response.toString();
   }
 
+  private async persistOutboundStart(input: {
+    twilioCallSid: string;
+    phoneNumberId: string;
+    direction: CallDirection;
+    fromE164: string;
+    toE164: string;
+    statusRaw: string;
+    rawPayload: Record<string, unknown>;
+    selectedCallerId?: string;
+    destinationE164?: string;
+    browserIdentity?: string | null;
+  }): Promise<void> {
+    try {
+      await this.recordWebhookEvent(
+        `voice:outbound:${input.twilioCallSid}`,
+        'voice.outbound',
+        input.twilioCallSid,
+        input.rawPayload,
+      );
+      const call = await this.upsertCall(input);
+      this.realtime.callStatusUpdated({
+        numberId: input.phoneNumberId,
+        call: toCallDto(call),
+      });
+    } catch (err) {
+      this.logger.warn(
+        `Outbound call persistence failed for ${input.twilioCallSid}: ${
+          err instanceof Error ? err.message : 'unknown'
+        }`,
+      );
+    }
+  }
+
   private recordingDialAttributes(): DialRecordingAttributes {
     return {
       record: 'record-from-answer-dual',
@@ -443,12 +480,23 @@ export class VoiceWebhookService {
       where: { twilioCallSid: input.twilioCallSid },
     });
     if (existing) {
+      const updateData: Record<string, unknown> = {
+        phoneNumberId: input.phoneNumberId,
+        direction: input.direction,
+        fromE164: input.fromE164,
+        toE164: input.toE164,
+        selectedCallerId: input.selectedCallerId ?? existing.selectedCallerId,
+        destinationE164: input.destinationE164 ?? existing.destinationE164,
+        browserIdentity: input.browserIdentity ?? existing.browserIdentity,
+        rawPayload: input.rawPayload as never,
+        startedAt: existing.startedAt ?? new Date(),
+      };
+      if (CALL_STATUS_RANK[status] >= CALL_STATUS_RANK[existing.status]) {
+        updateData.status = status;
+      }
       return this.prisma.call.update({
         where: { twilioCallSid: input.twilioCallSid },
-        data: {
-          status,
-          rawPayload: input.rawPayload as never,
-        },
+        data: updateData,
       });
     }
     return this.prisma.call.create({

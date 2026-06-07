@@ -32,6 +32,11 @@ function buildService(overrides: { prisma?: any; twilio?: any; realtime?: any } 
   return { service: new VoiceWebhookService(prisma, twilio, realtime), prisma, twilio, realtime };
 }
 
+async function flushAsyncWork(): Promise<void> {
+  await new Promise((resolve) => setTimeout(resolve, 0));
+  await Promise.resolve();
+}
+
 describe('VoiceWebhookService.handleInbound', () => {
   it('returns hangup TwiML when CallSid or To missing', async () => {
     const { service } = buildService();
@@ -264,6 +269,7 @@ describe('VoiceWebhookService.handleOutbound', () => {
       'recordingStatusCallback="https://example.com/webhooks/twilio/voice/recording"',
     );
     expect(xml).toContain('<Number>+15551111111</Number>');
+    await flushAsyncWork();
     expect(realtime.callStatusUpdated).toHaveBeenCalled();
   });
 
@@ -314,6 +320,7 @@ describe('VoiceWebhookService.handleOutbound', () => {
       'user_u1_number_pn1',
     );
 
+    await flushAsyncWork();
     expect(prisma.call.create).toHaveBeenCalledWith(
       expect.objectContaining({
         data: expect.objectContaining({
@@ -323,6 +330,115 @@ describe('VoiceWebhookService.handleOutbound', () => {
       }),
     );
     expect(xml).toContain('<Number>+15304419961</Number>');
+  });
+
+  it('returns outbound TwiML before call persistence completes', async () => {
+    const phoneNumber = {
+      id: 'pn1',
+      userId: 'u1',
+      phoneNumberE164: '+15552222222',
+      active: true,
+      capabilitiesVoice: true,
+    };
+    const prisma = {
+      webhookEvent: {
+        findUnique: vi.fn().mockResolvedValue(null),
+        create: vi.fn().mockResolvedValue({}),
+      },
+      phoneNumber: { findUnique: vi.fn().mockResolvedValue(phoneNumber) },
+      call: {
+        findUnique: vi.fn().mockResolvedValue(null),
+        create: vi.fn().mockReturnValue(new Promise(() => {})),
+        update: vi.fn(),
+      },
+    };
+    const { service, realtime } = buildService({ prisma });
+
+    const xml = await service.handleOutbound(
+      {
+        CallSid: 'CA1',
+        selectedNumberId: 'pn1',
+        destinationNumber: '+15551111111',
+      },
+      'user_u1_number_pn1',
+    );
+
+    expect(xml).toContain('<Dial');
+    expect(xml).toContain('<Number>+15551111111</Number>');
+    expect(realtime.callStatusUpdated).not.toHaveBeenCalled();
+  });
+
+  it('does not downgrade an existing later call status when async start persistence wins late', async () => {
+    const phoneNumber = {
+      id: 'pn1',
+      userId: 'u1',
+      phoneNumberE164: '+15552222222',
+      active: true,
+      capabilitiesVoice: true,
+    };
+    const existing = {
+      id: 'c1',
+      phoneNumberId: null,
+      twilioCallSid: 'CA1',
+      parentCallSid: null,
+      direction: CallDirection.OUTBOUND,
+      fromE164: '',
+      toE164: '',
+      browserIdentity: null,
+      selectedCallerId: null,
+      destinationE164: null,
+      status: CallStatus.IN_PROGRESS,
+      durationSeconds: null,
+      price: null,
+      priceUnit: null,
+      rawPayload: null,
+      startedAt: null,
+      answeredAt: null,
+      endedAt: null,
+      createdAt: new Date('2026-05-19T00:00:00Z'),
+      updatedAt: new Date('2026-05-19T00:00:00Z'),
+    };
+    const prisma = {
+      webhookEvent: {
+        findUnique: vi.fn().mockResolvedValue(null),
+        create: vi.fn().mockResolvedValue({}),
+      },
+      phoneNumber: { findUnique: vi.fn().mockResolvedValue(phoneNumber) },
+      call: {
+        findUnique: vi.fn().mockResolvedValue(existing),
+        create: vi.fn(),
+        update: vi.fn().mockResolvedValue({
+          ...existing,
+          phoneNumberId: 'pn1',
+          fromE164: 'user_u1_number_pn1',
+          toE164: '+15551111111',
+          selectedCallerId: '+15552222222',
+          destinationE164: '+15551111111',
+        }),
+      },
+    };
+    const { service } = buildService({ prisma });
+
+    await service.handleOutbound(
+      {
+        CallSid: 'CA1',
+        selectedNumberId: 'pn1',
+        destinationNumber: '+15551111111',
+      },
+      'user_u1_number_pn1',
+    );
+    await flushAsyncWork();
+
+    expect(prisma.call.update).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          phoneNumberId: 'pn1',
+          selectedCallerId: '+15552222222',
+          destinationE164: '+15551111111',
+        }),
+      }),
+    );
+    expect(prisma.call.update.mock.calls[0][0].data).not.toHaveProperty('status');
   });
 });
 

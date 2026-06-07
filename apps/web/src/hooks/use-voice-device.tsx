@@ -86,7 +86,6 @@ const INITIAL_RUNTIME_STATE: VoiceRuntimeState = {
 };
 
 const RECONNECTABLE_ERROR_CODES = new Set([20101, 31005, 31203, 31204, 31205, 31207]);
-const REGISTER_WAIT_MS = 15_000;
 
 const subscribers = new Set<() => void>();
 
@@ -274,31 +273,11 @@ async function registerCurrentDevice(numberId: string | undefined): Promise<void
   }
 }
 
-function waitForRegistered(timeoutMs: number): Promise<boolean> {
-  if (runtime.state.registered) return Promise.resolve(true);
-
-  return new Promise((resolve) => {
-    const timer = setTimeout(() => {
-      unsubscribe();
-      resolve(runtime.state.registered);
-    }, timeoutMs);
-    const unsubscribe = subscribe(() => {
-      if (!runtime.state.registered) return;
-      clearTimeout(timer);
-      unsubscribe();
-      resolve(true);
-    });
-  });
-}
-
-async function ensureRegistered(numberId: string): Promise<boolean> {
+async function ensureDeviceForOutbound(numberId: string): Promise<VoiceDevice | null> {
   if (!runtime.device || runtime.lastNumberId !== numberId) {
     await initVoiceDevice(numberId, isBrowserSupported());
   }
-  if (runtime.state.registered) return true;
-
-  await registerCurrentDevice(numberId);
-  return waitForRegistered(REGISTER_WAIT_MS);
+  return runtime.device;
 }
 
 function attachCallListeners(conn: VoiceCall): void {
@@ -439,15 +418,17 @@ async function initVoiceDevice(
     });
 
     try {
-      const tokenResp = await api.voice.token(numberId);
-      const sdk = (await import('@twilio/voice-sdk')) as unknown as {
+      const tokenPromise = api.voice.token(numberId);
+      const sdkPromise = import('@twilio/voice-sdk') as Promise<unknown>;
+      const configPromise = api.voice.deviceConfig();
+      const [tokenResp, sdk, config] = await Promise.all([tokenPromise, sdkPromise, configPromise]);
+      const typedSdk = sdk as {
         Device?: VoiceDeviceConstructor;
         default?: VoiceDeviceConstructor;
       };
-      const Device = sdk.Device ?? sdk.default;
+      const Device = typedSdk.Device ?? typedSdk.default;
       if (!Device) throw new Error('Twilio Voice SDK Device export was not found');
 
-      const config = await api.voice.deviceConfig();
       const device = new Device(tokenResp.token, config);
       runtime.device = device;
       runtime.lastNumberId = numberId;
@@ -456,8 +437,7 @@ async function initVoiceDevice(
       attachDeviceListeners(device, numberId);
       setRuntimeState({ identity: tokenResp.identity });
       scheduleTokenRefresh(tokenResp.expiresAt, numberId);
-      await registerCurrentDevice(numberId);
-      await waitForRegistered(REGISTER_WAIT_MS);
+      void registerCurrentDevice(numberId);
       return { identity: tokenResp.identity, expiresAt: tokenResp.expiresAt };
     } catch (err) {
       setRuntimeState({ error: formatVoiceError(err) });
@@ -476,11 +456,10 @@ async function makeVoiceCall(
   selectedNumberId: string,
   destinationNumber: string,
 ): Promise<VoiceCall | null> {
-  const registered = await ensureRegistered(selectedNumberId);
-  const device = runtime.device;
-  if (!registered || !device) {
+  const device = await ensureDeviceForOutbound(selectedNumberId);
+  if (!device) {
     setRuntimeState({
-      error: 'Voice device could not register with Twilio. It will keep retrying automatically.',
+      error: 'Voice device could not initialize with Twilio. It will keep retrying automatically.',
     });
     scheduleReconnect(selectedNumberId);
     return null;
