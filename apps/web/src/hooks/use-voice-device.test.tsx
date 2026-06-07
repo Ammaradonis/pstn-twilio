@@ -17,6 +17,11 @@ const voiceSdkMock = vi.hoisted(() => ({
   }>,
 }));
 
+const mediaMock = vi.hoisted(() => ({
+  stopTrack: vi.fn(),
+  getUserMedia: vi.fn(),
+}));
+
 vi.mock('../lib/api-client', () => ({
   api: {
     voice: {
@@ -89,7 +94,11 @@ describe('useVoiceDevice', () => {
     });
     Object.defineProperty(navigator, 'mediaDevices', {
       configurable: true,
-      value: { getUserMedia: vi.fn() },
+      value: { getUserMedia: mediaMock.getUserMedia },
+    });
+    mediaMock.stopTrack.mockClear();
+    mediaMock.getUserMedia.mockResolvedValue({
+      getTracks: () => [{ stop: mediaMock.stopTrack }],
     });
     vi.mocked(api.voice.token).mockResolvedValue({
       token: 'voice.jwt',
@@ -170,7 +179,54 @@ describe('useVoiceDevice', () => {
         destinationNumber: '+15551111111',
         outboundIntentId: 'intent1',
       },
+      rtcConstraints: { audio: true },
     });
+  });
+
+  it('does not prepare an outbound intent when microphone media cannot start', async () => {
+    mediaMock.getUserMedia.mockRejectedValueOnce(
+      new DOMException('The input device is already in use.', 'NotReadableError'),
+    );
+    render(<Harness onChange={(voice) => (current = voice)} />);
+
+    await act(async () => {
+      await current!.makeCall('pn1', '+1 555-111-1111');
+      await Promise.resolve();
+    });
+
+    expect(api.voice.prepareOutbound).not.toHaveBeenCalled();
+    expect(voiceSdkMock.instances).toHaveLength(0);
+    expect(current!.error).toContain('Microphone is unavailable');
+  });
+
+  it('accepts an inbound call with default microphone constraints', async () => {
+    render(<Harness onChange={(voice) => (current = voice)} />);
+
+    await act(async () => {
+      await current!.init('pn1');
+      await Promise.resolve();
+    });
+
+    const device = voiceSdkMock.instances[0];
+    expect(device).toBeDefined();
+    if (!device) throw new Error('Mock Twilio Device was not created');
+    const call = {
+      on: vi.fn(),
+      isMuted: vi.fn().mockReturnValue(false),
+      accept: vi.fn(),
+      parameters: { From: '+15552223333' },
+    };
+
+    act(() => {
+      device.emit('incoming', call);
+    });
+
+    await act(async () => {
+      await current!.accept();
+    });
+
+    expect(call.accept).toHaveBeenCalledWith({ rtcConstraints: { audio: true } });
+    expect(current!.incoming).toBeNull();
   });
 
   it('sends DTMF digits on the active Twilio call', async () => {
