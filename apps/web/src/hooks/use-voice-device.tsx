@@ -18,11 +18,14 @@ type VoiceCall = {
   disconnect?: () => void;
 };
 
+type VoiceDeviceRegistrationState = 'destroyed' | 'unregistered' | 'registering' | 'registered';
+
 type VoiceDevice = {
   on: {
     (event: 'incoming', handler: VoiceEventHandler<[VoiceCall]>): void;
     (event: string, handler: VoiceEventHandler): void;
   };
+  state?: VoiceDeviceRegistrationState;
   register?: () => Promise<void> | void;
   destroy?: () => void;
   disconnectAll?: () => void;
@@ -85,7 +88,7 @@ const INITIAL_RUNTIME_STATE: VoiceRuntimeState = {
   isMuted: false,
 };
 
-const RECONNECTABLE_ERROR_CODES = new Set([20101, 31005, 31203, 31204, 31205, 31207]);
+const RECONNECTABLE_ERROR_CODES = new Set([20101, 31005, 31203, 31204, 31205, 31207, 53001]);
 
 const subscribers = new Set<() => void>();
 
@@ -170,9 +173,44 @@ function formatVoiceError(err: unknown): string {
   if (code === 31005) {
     return 'Twilio signaling disconnected (31005). The device is reconnecting automatically.';
   }
+  if (code === 53001) {
+    return 'Twilio signaling disconnected (53001). The device is reconnecting automatically.';
+  }
 
   const details = [typeof code === 'number' ? `Twilio ${code}` : null, explanation].filter(Boolean);
   return details.length > 0 ? details.join(': ') : voiceError.message;
+}
+
+function isRegisterStateError(err: unknown): boolean {
+  return (
+    err instanceof Error &&
+    err.message.includes('Attempt to register when device is in state') &&
+    err.message.includes('Must be "unregistered"')
+  );
+}
+
+function getDeviceRegistrationState(
+  device: VoiceDevice | null,
+): VoiceDeviceRegistrationState | undefined {
+  return device?.state;
+}
+
+function markDeviceRegistered(): void {
+  clearTimer(runtime.reconnectTimer);
+  runtime.reconnectTimer = null;
+  runtime.reconnectAttempt = 0;
+  setRuntimeState({
+    ready: true,
+    registered: true,
+    error: null,
+  });
+}
+
+function markDeviceRegistering(): void {
+  setRuntimeState({
+    ready: false,
+    registered: false,
+  });
 }
 
 function disposeCurrentDevice(resetState: boolean): void {
@@ -234,16 +272,28 @@ function scheduleReconnect(numberId: string | undefined): void {
 
   const delay = Math.min(15_000, 1_000 * 2 ** Math.min(runtime.reconnectAttempt, 4));
   runtime.reconnectAttempt += 1;
-  setRuntimeState({ ready: false, registered: false });
+  markDeviceRegistering();
 
   runtime.reconnectTimer = setTimeout(async () => {
     runtime.reconnectTimer = null;
-    if (runtime.intentionallyDestroyed || !runtime.device) return;
+    const device = runtime.device;
+    if (runtime.intentionallyDestroyed || !device) return;
 
     try {
       await refreshVoiceToken(numberId);
     } catch (err) {
       setRuntimeState({ error: formatVoiceError(err) });
+      scheduleReconnect(numberId);
+      return;
+    }
+
+    const state = getDeviceRegistrationState(device);
+    if (state === 'registered') {
+      markDeviceRegistered();
+      return;
+    }
+    if (state === 'registering') {
+      markDeviceRegistering();
       scheduleReconnect(numberId);
       return;
     }
@@ -257,11 +307,37 @@ async function registerCurrentDevice(numberId: string | undefined): Promise<void
   const device = runtime.device;
   if (!device || runtime.intentionallyDestroyed || runtime.registering) return;
 
+  const state = getDeviceRegistrationState(device);
+  if (state === 'registered') {
+    markDeviceRegistered();
+    return;
+  }
+  if (state === 'registering') {
+    markDeviceRegistering();
+    return;
+  }
+  if (state && state !== 'unregistered') return;
+
   runtime.registering = true;
   setRuntimeState({ ready: false });
   try {
     await device.register?.();
   } catch (err) {
+    if (isRegisterStateError(err)) {
+      const nextState = getDeviceRegistrationState(device);
+      if (nextState === 'registered') {
+        markDeviceRegistered();
+        return;
+      }
+      if (nextState === 'registering') {
+        markDeviceRegistering();
+        scheduleReconnect(numberId);
+        return;
+      }
+      markDeviceRegistering();
+      scheduleReconnect(numberId);
+      return;
+    }
     setRuntimeState({
       ready: false,
       registered: false,
@@ -334,14 +410,7 @@ function attachCallListeners(conn: VoiceCall): void {
 function attachDeviceListeners(device: VoiceDevice, numberId: string | undefined): void {
   device.on('registered', () => {
     if (runtime.device !== device) return;
-    clearTimer(runtime.reconnectTimer);
-    runtime.reconnectTimer = null;
-    runtime.reconnectAttempt = 0;
-    setRuntimeState({
-      ready: true,
-      registered: true,
-      error: null,
-    });
+    markDeviceRegistered();
   });
 
   device.on('unregistered', () => {
@@ -394,7 +463,12 @@ async function initVoiceDevice(
   }
 
   if (runtime.device && runtime.lastNumberId === numberId) {
-    if (!runtime.state.registered) void registerCurrentDevice(numberId);
+    const state = getDeviceRegistrationState(runtime.device);
+    if (state === 'registered') {
+      markDeviceRegistered();
+    } else if (state !== 'registering') {
+      void registerCurrentDevice(numberId);
+    }
     return runtime.state.identity && runtime.expiresAt
       ? { identity: runtime.state.identity, expiresAt: runtime.expiresAt }
       : null;

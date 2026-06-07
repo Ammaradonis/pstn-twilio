@@ -45,7 +45,7 @@ describe('VoiceService.issueToken', () => {
     );
   });
 
-  it('backdates iat and signs a Twilio Voice JWT to tolerate small clock skew', async () => {
+  it('uses Twilio AccessToken with VoiceGrant and backdated nbf for clock skew', async () => {
     const now = new Date('2026-06-06T21:05:00.000Z');
     vi.useFakeTimers();
     vi.setSystemTime(now);
@@ -58,8 +58,10 @@ describe('VoiceService.issueToken', () => {
         cty: string;
       }>(result.token, 0);
       const payload = decodeJwtPart<{
+        jti: string;
         iss: string;
         sub: string;
+        nbf: number;
         iat: number;
         exp: number;
         grants: {
@@ -79,7 +81,9 @@ describe('VoiceService.issueToken', () => {
       });
       expect(payload.iss).toBe(twilio.apiKeySid);
       expect(payload.sub).toBe(twilio.accountSid);
-      expect(payload.iat).toBe(Math.floor(now.getTime() / 1000) - 300);
+      expect(payload.jti).toBe(`${twilio.apiKeySid}-${Math.floor(now.getTime() / 1000)}`);
+      expect(payload.nbf).toBe(Math.floor(now.getTime() / 1000) - 300);
+      expect(payload.iat).toBe(Math.floor(now.getTime() / 1000));
       expect(payload.exp).toBe(payload.iat + 3600);
       expect(result.expiresAt).toBe(new Date(payload.exp * 1000).toISOString());
       expect(payload.grants).toEqual({

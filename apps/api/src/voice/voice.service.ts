@@ -1,5 +1,3 @@
-import { createHmac } from 'node:crypto';
-
 import {
   BadRequestException,
   ForbiddenException,
@@ -9,6 +7,7 @@ import {
 } from '@nestjs/common';
 import { UserRole } from '@prisma/client';
 import { normalizeDialablePhoneNumber, type VoiceTokenDto } from '@pstn-twilio/shared';
+import twilio from 'twilio';
 
 import { AuditService } from '../audit/audit.service';
 import { PrismaService } from '../prisma/prisma.service';
@@ -134,44 +133,35 @@ export class VoiceService {
 
   private createVoiceAccessToken(identity: string): { token: string; expiresAt: string } {
     const issuedNow = Math.floor(Date.now() / 1000);
-    const iat = issuedNow - TOKEN_CLOCK_SKEW_SECONDS;
-    const exp = iat + TOKEN_TTL_SECONDS;
-    const payload = {
-      jti: `${this.twilio.apiKeySid}-${iat}`,
-      grants: {
+    const accessToken = new twilio.jwt.AccessToken(
+      this.twilio.accountSid,
+      this.twilio.apiKeySid,
+      this.twilio.apiKeySecret,
+      {
         identity,
-        voice: {
-          incoming: { allow: true },
-          outgoing: { application_sid: this.twilio.twimlAppSid },
-        },
+        ttl: TOKEN_TTL_SECONDS,
+        nbf: issuedNow - TOKEN_CLOCK_SKEW_SECONDS,
       },
-      iat,
-      exp,
-      iss: this.twilio.apiKeySid,
-      sub: this.twilio.accountSid,
-    };
+    );
+    accessToken.addGrant(
+      new twilio.jwt.AccessToken.VoiceGrant({
+        incomingAllow: true,
+        outgoingApplicationSid: this.twilio.twimlAppSid,
+      }),
+    );
 
+    const token = accessToken.toJwt();
+    const payload = decodeJwtPart<{ exp?: number }>(token, 1);
+    const exp = payload.exp ?? issuedNow + TOKEN_TTL_SECONDS;
     return {
-      token: signHs256TwilioJwt(payload, this.twilio.apiKeySecret),
+      token,
       expiresAt: new Date(exp * 1000).toISOString(),
     };
   }
 }
 
-function signHs256TwilioJwt(payload: Record<string, unknown>, secret: string): string {
-  const header = {
-    alg: 'HS256',
-    typ: 'JWT',
-    cty: 'twilio-fpa;v=1',
-  };
-  const encodedHeader = encodeJwtPart(header);
-  const encodedPayload = encodeJwtPart(payload);
-  const signature = createHmac('sha256', secret)
-    .update(`${encodedHeader}.${encodedPayload}`)
-    .digest('base64url');
-  return `${encodedHeader}.${encodedPayload}.${signature}`;
-}
-
-function encodeJwtPart(value: unknown): string {
-  return Buffer.from(JSON.stringify(value)).toString('base64url');
+function decodeJwtPart<T>(token: string, index: number): T {
+  const part = token.split('.')[index];
+  if (!part) throw new Error(`Missing JWT part ${index}`);
+  return JSON.parse(Buffer.from(part, 'base64url').toString('utf8')) as T;
 }
