@@ -85,6 +85,12 @@ export interface CallDto {
   recordings: CallRecordingDto[];
 }
 
+export interface LastDialDto {
+  callId: string;
+  destinationNumber: string;
+  lastDialedAt: string;
+}
+
 export interface CallRecordingDto {
   id: string;
   twilioCallSid: string;

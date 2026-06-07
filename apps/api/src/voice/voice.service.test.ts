@@ -7,8 +7,12 @@ import { describe, expect, it, vi } from 'vitest';
 import { VoiceService } from './voice.service';
 
 function buildService(overrides: { prisma?: any; twilio?: any; audit?: any } = {}) {
+  const incomingNumberFetch = vi.fn().mockResolvedValue({
+    phoneNumber: '+15552222222',
+    capabilities: { voice: true },
+  });
   const prisma = overrides.prisma ?? {
-    phoneNumber: { findUnique: vi.fn() },
+    phoneNumber: { findUnique: vi.fn(), update: vi.fn() },
     voiceIdentity: { upsert: vi.fn().mockResolvedValue({}) },
     outboundCallIntent: {
       create: vi.fn().mockResolvedValue({
@@ -24,6 +28,17 @@ function buildService(overrides: { prisma?: any; twilio?: any; audit?: any } = {
     twimlAppSid: 'APxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx',
     voiceIdentity: (userId: string, numberId?: string | null) =>
       numberId ? `user_${userId}_number_${numberId}` : `user_${userId}`,
+    client: {
+      api: {
+        v2010: {
+          accounts: vi.fn(() => ({
+            incomingPhoneNumbers: vi.fn(() => ({
+              fetch: incomingNumberFetch,
+            })),
+          })),
+        },
+      },
+    },
   };
   const audit = overrides.audit ?? { log: vi.fn().mockResolvedValue(undefined) };
   return { service: new VoiceService(prisma, twilio, audit), prisma, twilio, audit };
@@ -138,6 +153,7 @@ describe('VoiceService.prepareOutbound', () => {
   const phoneNumber = {
     id: 'pn1',
     userId: 'u1',
+    twilioIncomingPhoneNumberSid: 'PNxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx',
     phoneNumberE164: '+15552222222',
     capabilitiesVoice: true,
     active: true,
@@ -185,6 +201,55 @@ describe('VoiceService.prepareOutbound', () => {
         { selectedNumberId: 'pn1', destinationNumber: '5551111111' },
       ),
     ).rejects.toBeInstanceOf(BadRequestException);
+  });
+
+  it('deactivates and rejects a selected caller ID no longer present in Twilio', async () => {
+    const prisma = {
+      phoneNumber: {
+        findUnique: vi.fn().mockResolvedValue(phoneNumber),
+        update: vi.fn().mockResolvedValue({ ...phoneNumber, active: false }),
+      },
+      voiceIdentity: { upsert: vi.fn() },
+      outboundCallIntent: { create: vi.fn() },
+    };
+    const twilio = {
+      accountSid: 'ACxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx',
+      apiKeySid: 'SKxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx',
+      apiKeySecret: 'a-very-long-secret-value-for-test-only',
+      twimlAppSid: 'APxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx',
+      voiceIdentity: (userId: string, numberId?: string | null) =>
+        numberId ? `user_${userId}_number_${numberId}` : `user_${userId}`,
+      client: {
+        api: {
+          v2010: {
+            accounts: vi.fn(() => ({
+              incomingPhoneNumbers: vi.fn(() => ({
+                fetch: vi.fn().mockRejectedValue({ status: 404, code: 20404 }),
+              })),
+            })),
+          },
+        },
+      },
+    };
+    const { service, audit } = buildService({ prisma, twilio });
+
+    await expect(
+      service.prepareOutbound(
+        { userId: 'u1', role: UserRole.OWNER },
+        { selectedNumberId: 'pn1', destinationNumber: '+15551111111' },
+      ),
+    ).rejects.toBeInstanceOf(BadRequestException);
+    expect(prisma.phoneNumber.update).toHaveBeenCalledWith({
+      where: { id: 'pn1' },
+      data: { active: false },
+    });
+    expect(prisma.outboundCallIntent.create).not.toHaveBeenCalled();
+    expect(audit.log).toHaveBeenCalledWith(
+      expect.objectContaining({
+        action: 'number.twilio_missing',
+        entityId: 'pn1',
+      }),
+    );
   });
 
   it('returns selected caller ID + identity for an authorized E.164 destination', async () => {

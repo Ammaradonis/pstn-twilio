@@ -1,9 +1,10 @@
-import { normalizeDialablePhoneNumber } from '@pstn-twilio/shared';
+import { normalizeDialablePhoneNumber, type LastDialDto } from '@pstn-twilio/shared';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useParams } from 'react-router-dom';
 
 import { useVoiceDevice } from '../hooks/use-voice-device';
 import { api } from '../lib/api-client';
+import { formatDate, formatPhone } from '../lib/format';
 
 const DIALPAD_KEYS = ['1', '2', '3', '4', '5', '6', '7', '8', '9', '*', '0', '#', '+'] as const;
 
@@ -26,6 +27,7 @@ export function DialPage() {
   const [submitting, setSubmitting] = useState(false);
   const [pageError, setPageError] = useState<string | null>(null);
   const [sentTones, setSentTones] = useState('');
+  const [repeatDialWarning, setRepeatDialWarning] = useState<LastDialDto | null>(null);
   const voice = useVoiceDevice();
   const inCallMode = voice.active || voice.canSendDigits;
   const sendDtmfDigits = voice.sendDigits;
@@ -109,7 +111,10 @@ export function DialPage() {
   );
   const valid = normalizedDestination !== null;
 
-  async function placeCall(destinationNumber: string | null = normalizedDestination) {
+  async function placeCall(
+    destinationNumber: string | null = normalizedDestination,
+    opts: { skipRepeatWarning?: boolean } = {},
+  ) {
     setPageError(null);
     if (!numberId) return;
     if (!destinationNumber) {
@@ -118,6 +123,13 @@ export function DialPage() {
     }
     setSubmitting(true);
     try {
+      if (!opts.skipRepeatWarning) {
+        const lastDial = await api.calls.lastDial(numberId, destinationNumber);
+        if (lastDial) {
+          setRepeatDialWarning(lastDial);
+          return;
+        }
+      }
       await voice.makeCall(numberId, destinationNumber);
     } catch (err) {
       setPageError(err instanceof Error ? err.message : String(err));
@@ -150,6 +162,17 @@ export function DialPage() {
     } catch (err) {
       setPageError(err instanceof Error ? err.message : String(err));
     }
+  }
+
+  async function confirmRepeatDial() {
+    if (!repeatDialWarning) return;
+    const destinationNumber = repeatDialWarning.destinationNumber;
+    setRepeatDialWarning(null);
+    await placeCall(destinationNumber, { skipRepeatWarning: true });
+  }
+
+  function cancelRepeatDial() {
+    setRepeatDialWarning(null);
   }
 
   function handleHangup() {
@@ -294,6 +317,45 @@ export function DialPage() {
           Live state: <span className="font-mono">{voice.connectionState}</span>
         </p>
       </div>
+
+      {repeatDialWarning && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/40 p-4">
+          <div
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="repeat-dial-title"
+            className="w-full max-w-md rounded border border-amber-300 bg-white p-4 shadow-lg"
+          >
+            <h2 id="repeat-dial-title" className="text-base font-semibold text-slate-900">
+              Warning: number dialed before
+            </h2>
+            <p className="mt-2 text-sm text-slate-700">
+              You last dialed{' '}
+              <span className="font-mono">{formatPhone(repeatDialWarning.destinationNumber)}</span>{' '}
+              on <span className="font-medium">{formatDate(repeatDialWarning.lastDialedAt)}</span>.
+              Do you want to call this number again?
+            </p>
+            <div className="mt-4 flex justify-end gap-2">
+              <button
+                type="button"
+                onClick={cancelRepeatDial}
+                disabled={submitting}
+                className="rounded border border-slate-300 px-3 py-1.5 text-sm font-medium hover:bg-slate-50 disabled:opacity-60"
+              >
+                No
+              </button>
+              <button
+                type="button"
+                onClick={() => void confirmRepeatDial()}
+                disabled={submitting}
+                className="rounded bg-emerald-600 px-3 py-1.5 text-sm font-semibold text-white hover:bg-emerald-700 disabled:opacity-60"
+              >
+                Yes
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </section>
   );
 }

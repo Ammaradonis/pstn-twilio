@@ -182,6 +182,9 @@ function formatVoiceError(err: unknown): string {
   if (code === 31005) {
     return 'Twilio signaling disconnected (31005). The device is reconnecting automatically.';
   }
+  if (code === 31000) {
+    return 'Twilio reported a generic Voice SDK setup error (31000). Run Twilio sync/diagnostics; this usually means the TwiML App Voice URL or outbound webhook response is wrong.';
+  }
   if (code === 53001) {
     return 'Twilio signaling disconnected (53001). The device is reconnecting automatically.';
   }
@@ -564,6 +567,15 @@ async function makeVoiceCall(
   selectedNumberId: string,
   destinationNumber: string,
 ): Promise<VoiceCall | null> {
+  const initialized = await initVoiceDevice(selectedNumberId, isBrowserSupported());
+  if (!initialized) {
+    setRuntimeState({
+      error: 'Voice device could not initialize with Twilio. It will keep retrying automatically.',
+    });
+    scheduleReconnect(selectedNumberId);
+    return null;
+  }
+
   let prepared;
   try {
     prepared = await api.voice.prepareOutbound(selectedNumberId, destinationNumber);

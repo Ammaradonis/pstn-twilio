@@ -1,5 +1,7 @@
-import { fireEvent, render, screen } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
+
+import { api } from '../lib/api-client';
 
 import { DialPage } from './dial';
 
@@ -37,6 +39,9 @@ vi.mock('../hooks/use-voice-device', () => ({
 
 vi.mock('../lib/api-client', () => ({
   api: {
+    calls: {
+      lastDial: vi.fn().mockResolvedValue(null),
+    },
     numbers: {
       get: vi.fn(() => new Promise(() => {})),
     },
@@ -70,6 +75,8 @@ function resetVoiceMock() {
 describe('DialPage dialpad', () => {
   beforeEach(() => {
     resetVoiceMock();
+    vi.mocked(api.calls.lastDial).mockClear();
+    vi.mocked(api.calls.lastDial).mockResolvedValue(null);
   });
 
   it('has a plus key for destination entry before a call', () => {
@@ -107,5 +114,45 @@ describe('DialPage dialpad', () => {
     expect(voiceMock.current.sendDigits).toHaveBeenCalledWith('9');
     expect(screen.getByText(/Tones:/)).toHaveTextContent('89');
     expect(screen.getByRole('button', { name: '+' })).toBeDisabled();
+  });
+
+  it('does not initiate a repeated outbound call when the user chooses no', async () => {
+    vi.mocked(api.calls.lastDial).mockResolvedValue({
+      callId: 'c1',
+      destinationNumber: '+15304419961',
+      lastDialedAt: '2026-06-07T18:31:57.652Z',
+    });
+    render(<DialPage />);
+
+    fireEvent.change(screen.getByLabelText(/destination/i), { target: { value: '5304419961' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Call' }));
+
+    expect(await screen.findByRole('dialog')).toHaveTextContent('Warning: number dialed before');
+    expect(screen.getByRole('dialog')).toHaveTextContent('+1 (530) 441-9961');
+    expect(screen.getByRole('dialog')).toHaveTextContent(
+      new Date('2026-06-07T18:31:57.652Z').toLocaleString(),
+    );
+    fireEvent.click(screen.getByRole('button', { name: 'No' }));
+
+    await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument());
+    expect(voiceMock.current.makeCall).not.toHaveBeenCalled();
+  });
+
+  it('initiates a repeated outbound call when the user chooses yes', async () => {
+    vi.mocked(api.calls.lastDial).mockResolvedValue({
+      callId: 'c1',
+      destinationNumber: '+15304419961',
+      lastDialedAt: '2026-06-07T18:31:57.652Z',
+    });
+    render(<DialPage />);
+
+    fireEvent.change(screen.getByLabelText(/destination/i), { target: { value: '5304419961' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Call' }));
+    fireEvent.click(await screen.findByRole('button', { name: 'Yes' }));
+
+    await waitFor(() =>
+      expect(voiceMock.current.makeCall).toHaveBeenCalledWith('pn1', '+15304419961'),
+    );
+    expect(api.calls.lastDial).toHaveBeenCalledTimes(1);
   });
 });

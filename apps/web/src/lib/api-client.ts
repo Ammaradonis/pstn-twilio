@@ -4,6 +4,7 @@ import type {
   CallDto,
   DiagnosticReportDto,
   HealthStatusDto,
+  LastDialDto,
   NumberSearchInput,
   OutboundCallPreparationDto,
   PaginatedDto,
@@ -207,6 +208,10 @@ export const api = {
       }),
     get: (numberId: string, callId: string) =>
       request<CallDto>(`/numbers/${numberId}/calls/${callId}`),
+    lastDial: (numberId: string, destination: string) =>
+      request<LastDialDto | null>(`/numbers/${numberId}/calls/last-dial`, {
+        query: { destination },
+      }),
     hangup: (callId: string) => request<CallDto>(`/calls/${callId}/hangup`, { method: 'POST' }),
     recordingMedia: (numberId: string, callId: string, recordingId: string) =>
       requestBlob(`/numbers/${numberId}/calls/${callId}/recordings/${recordingId}/media`),
@@ -245,6 +250,8 @@ export const api = {
     settings: () =>
       request<{
         webhooks: {
+          outboundVoiceUrl: string;
+          outboundVoiceFallbackUrl: string;
           voiceUrl: string;
           voiceFallbackUrl: string;
           statusCallback: string;

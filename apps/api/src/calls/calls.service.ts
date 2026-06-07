@@ -6,7 +6,13 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import { CallDirection, CallStatus, PhoneNumber, RecordingStatus, UserRole } from '@prisma/client';
-import type { CallDto, PaginatedDto, VoicemailDto } from '@pstn-twilio/shared';
+import {
+  normalizeDialablePhoneNumber,
+  type CallDto,
+  type LastDialDto,
+  type PaginatedDto,
+  type VoicemailDto,
+} from '@pstn-twilio/shared';
 
 import { AuditService } from '../audit/audit.service';
 import { PrismaService } from '../prisma/prisma.service';
@@ -119,6 +125,34 @@ export class CallsService {
       throw new NotFoundException(`Call ${callId} not found`);
     }
     return mapCall(call);
+  }
+
+  async findLastDial(
+    actor: ActorContext,
+    numberId: string,
+    destinationNumber: string,
+  ): Promise<LastDialDto | null> {
+    const phoneNumber = await this.assertOwnership(actor, numberId);
+    const normalizedDestination = normalizeDialablePhoneNumber(destinationNumber);
+    if (!normalizedDestination) {
+      throw new BadRequestException('Destination must be a valid phone number');
+    }
+
+    const call = await this.prisma.call.findFirst({
+      where: {
+        phoneNumberId: phoneNumber.id,
+        direction: CallDirection.OUTBOUND,
+        destinationE164: normalizedDestination,
+      },
+      orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
+    });
+    if (!call) return null;
+
+    return {
+      callId: call.id,
+      destinationNumber: normalizedDestination,
+      lastDialedAt: (call.startedAt ?? call.createdAt).toISOString(),
+    };
   }
 
   async listVoicemail(input: {

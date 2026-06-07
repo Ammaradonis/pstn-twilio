@@ -61,12 +61,36 @@ function requireEnv(name: string): string {
 function webhookUrls(base: string) {
   const trimmed = base.replace(/\/$/, '');
   return {
+    outboundVoiceUrl: `${trimmed}/webhooks/twilio/voice/outbound`,
+    outboundVoiceFallbackUrl: `${trimmed}/webhooks/twilio/voice/fallback`,
     voiceUrl: `${trimmed}/webhooks/twilio/voice/inbound`,
     voiceFallbackUrl: `${trimmed}/webhooks/twilio/voice/fallback`,
     statusCallback: `${trimmed}/webhooks/twilio/voice/status`,
     smsUrl: `${trimmed}/webhooks/twilio/messaging/inbound`,
     smsFallbackUrl: `${trimmed}/webhooks/twilio/messaging/inbound`,
   };
+}
+
+async function configureTwimlApp(
+  client: ReturnType<typeof twilio>,
+  twimlAppSid: string,
+  webhooks: ReturnType<typeof webhookUrls>,
+  dryRun: boolean,
+) {
+  if (dryRun) {
+    console.log(`would configure TwiML App ${twimlAppSid} voiceUrl=${webhooks.outboundVoiceUrl}`);
+    return;
+  }
+
+  await client.applications(twimlAppSid).update({
+    voiceUrl: webhooks.outboundVoiceUrl,
+    voiceMethod: 'POST',
+    voiceFallbackUrl: webhooks.outboundVoiceFallbackUrl,
+    voiceFallbackMethod: 'POST',
+    statusCallback: webhooks.statusCallback,
+    statusCallbackMethod: 'POST',
+  });
+  console.log(`configured TwiML App ${twimlAppSid}`);
 }
 
 function summarizeCaps(caps: Record<string, boolean | undefined>) {
@@ -170,8 +194,11 @@ async function configureMode(
   prisma: PrismaClient,
   client: ReturnType<typeof twilio>,
   webhooks: ReturnType<typeof webhookUrls>,
+  twimlAppSid: string,
   dryRun: boolean,
 ) {
+  await configureTwimlApp(client, twimlAppSid, webhooks, dryRun);
+
   const rows = await prisma.phoneNumber.findMany({ where: { releasedAt: null, active: true } });
   let updated = 0;
   for (const row of rows) {
@@ -213,6 +240,7 @@ async function verifyMode(
   prisma: PrismaClient,
   client: ReturnType<typeof twilio>,
   webhooks: ReturnType<typeof webhookUrls>,
+  twimlAppSid: string,
 ): Promise<boolean> {
   const [twilioNumbers, dbNumbers] = await Promise.all([
     client.incomingPhoneNumbers.list({ limit: 1000 }),
@@ -221,11 +249,27 @@ async function verifyMode(
   const twilioBySid = new Map(twilioNumbers.map((t) => [t.sid, t]));
   let mismatches = 0;
 
+  const app = await client.applications(twimlAppSid).fetch();
+  if (app.voiceUrl !== webhooks.outboundVoiceUrl) {
+    console.warn(
+      `MISMATCH (twiml-app.voiceUrl): expected=${webhooks.outboundVoiceUrl} twilio=${app.voiceUrl}`,
+    );
+    mismatches += 1;
+  }
+  if (app.voiceMethod?.toUpperCase() !== 'POST') {
+    console.warn(`MISMATCH (twiml-app.voiceMethod): expected=POST twilio=${app.voiceMethod}`);
+    mismatches += 1;
+  }
+
   for (const row of dbNumbers) {
     const t = twilioBySid.get(row.twilioIncomingPhoneNumberSid);
     if (!t) {
-      console.warn(`MISMATCH (missing-on-twilio): db ${row.phoneNumberE164}`);
-      mismatches += 1;
+      if (row.active) {
+        console.warn(`MISMATCH (active-missing-on-twilio): db ${row.phoneNumberE164}`);
+        mismatches += 1;
+      } else {
+        console.log(`inactive DB row missing on Twilio: ${row.phoneNumberE164}`);
+      }
       continue;
     }
     if (t.phoneNumber !== row.phoneNumberE164) {
@@ -296,6 +340,8 @@ async function main() {
       ? twilio(apiKeySid, apiKeySecret, { accountSid })
       : twilio(accountSid, authToken as string);
   const webhooks = webhookUrls(base);
+  const needsTwimlApp = ['configure', 'verify', 'all'].includes(args.mode);
+  const twimlAppSid = needsTwimlApp ? requireEnv('TWILIO_TWIML_APP_SID') : null;
 
   try {
     if (args.mode === 'list') {
@@ -304,15 +350,15 @@ async function main() {
       if (!args.ownerUserId) throw new Error('--owner=<USER_ID> is required for import');
       await importMode(prisma, client, args.ownerUserId, webhooks, accountSid, args.dryRun);
     } else if (args.mode === 'configure') {
-      await configureMode(prisma, client, webhooks, args.dryRun);
+      await configureMode(prisma, client, webhooks, twimlAppSid as string, args.dryRun);
     } else if (args.mode === 'verify') {
-      const ok = await verifyMode(prisma, client, webhooks);
+      const ok = await verifyMode(prisma, client, webhooks, twimlAppSid as string);
       process.exitCode = ok ? 0 : 1;
     } else if (args.mode === 'all') {
       if (!args.ownerUserId) throw new Error('--owner=<USER_ID> is required for all');
       await importMode(prisma, client, args.ownerUserId, webhooks, accountSid, args.dryRun);
-      await configureMode(prisma, client, webhooks, args.dryRun);
-      const ok = await verifyMode(prisma, client, webhooks);
+      await configureMode(prisma, client, webhooks, twimlAppSid as string, args.dryRun);
+      const ok = await verifyMode(prisma, client, webhooks, twimlAppSid as string);
       process.exitCode = ok ? 0 : 1;
     }
   } finally {

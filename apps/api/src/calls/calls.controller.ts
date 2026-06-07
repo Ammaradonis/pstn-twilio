@@ -29,6 +29,10 @@ const listQuerySchema = z.object({
   since: z.string().datetime().optional(),
 });
 
+const lastDialQuerySchema = z.object({
+  destination: z.string().min(1).max(256),
+});
+
 const voicemailListQuerySchema = z.object({
   cursor: z.string().min(1).optional(),
   limit: z.coerce.number().int().min(1).max(100).default(25),
@@ -63,6 +67,16 @@ export class CallsController {
     @Query(new ZodValidationPipe(listQuerySchema)) query: z.infer<typeof listQuerySchema>,
   ) {
     return this.calls.list(actorFromRequest(req), numberId, query);
+  }
+
+  @Get('numbers/:numberId/calls/last-dial')
+  findLastDial(
+    @Req() req: ActorRequest,
+    @Param('numberId') numberId: string,
+    @Query(new ZodValidationPipe(lastDialQuerySchema))
+    query: z.infer<typeof lastDialQuerySchema>,
+  ) {
+    return this.calls.findLastDial(actorFromRequest(req), numberId, query.destination);
   }
 
   @Get('numbers/:numberId/calls/:callId')

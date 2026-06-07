@@ -71,6 +71,28 @@ automatically re-registers after `31005` or token-related signaling errors.
   browser profile; the current UI intentionally keeps one active Device
   identity registered at a time.
 
+### Browser shows Twilio `31000` / general Voice SDK error
+
+Twilio reports `31000` when the browser SDK cannot give a more specific setup
+error. For outbound browser calls, treat it as a TwiML App or outbound webhook
+failure until proven otherwise.
+
+- Run `/api/health/twilio`. It now fails if `TWILIO_TWIML_APP_SID` is not
+  configured with Voice URL
+  `TWILIO_WEBHOOK_BASE_URL/webhooks/twilio/voice/outbound`.
+- From the Twilio settings page, run Twilio sync. That updates the TwiML App's
+  Voice URL, fallback URL, and status callback URL used by `Device.connect()`.
+- If it repeats, check `webhook_events` for recent `voice.outbound` or
+  `voice.outbound.rejected` rows. A rejected row means Twilio reached the API
+  but the prepared outbound intent, selected number, destination, or browser
+  identity did not match.
+- Run `pnpm --dir apps/api exec tsx --env-file=../../.env scripts/twilio-sync.ts verify`.
+  Active DB numbers missing from the Twilio account are no longer allowed to
+  start outbound calls; the API deactivates them on pre-call validation.
+- Check Twilio Console → _Monitor → Debugger_ for the underlying webhook error.
+  Twilio documents `31000` as generic and says the SDK's `twilioError` field or
+  Debugger usually has the useful detail.
+
 ### Outbound call drops immediately
 
 - The TwiML App's Voice URL is wrong. It must be

@@ -36,9 +36,7 @@ export class DiagnosticsController {
   @Post('settings/twilio/sync')
   @Roles(UserRole.OWNER, UserRole.ADMIN)
   async syncTwilio() {
-    // The full per-number sync is exposed under /api/numbers/:id/sync. This
-    // endpoint just validates credentials so the diagnostics page has a
-    // single "test connection" button.
+    await this.twilio.configureTwimlApplication();
     const ok = await this.twilio.validateCredentials();
     return { status: ok ? 'ok' : 'down' };
   }

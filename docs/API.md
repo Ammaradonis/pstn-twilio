@@ -71,13 +71,14 @@ flags `voiceEnabled`/`smsEnabled`/`mmsEnabled`, `pageSize`, and a discriminator
 
 ## Calls
 
-| Method | Path                                   | Body / Query               | Returns                                    |
-| ------ | -------------------------------------- | -------------------------- | ------------------------------------------ |
-| GET    | `/api/numbers/:numberId/calls`         | `?cursor&limit&status`     | `{ items: CallDto[], total, nextCursor? }` |
-| GET    | `/api/numbers/:numberId/calls/:callId` | —                          | `CallDto`                                  |
-| POST   | `/api/calls/prepare-outbound`          | `{ selectedNumberId, to }` | `{ identity, params }`                     |
-| POST   | `/api/calls/:callId/hangup`            | —                          | `CallDto`                                  |
-| POST   | `/api/calls/:callId/notes`             | `{ note }`                 | `CallDto`                                  |
+| Method | Path                                     | Body / Query                              | Returns                                                                                            |
+| ------ | ---------------------------------------- | ----------------------------------------- | -------------------------------------------------------------------------------------------------- |
+| GET    | `/api/numbers/:numberId/calls`           | `?cursor&limit&status`                    | `{ items: CallDto[], total, nextCursor? }`                                                         |
+| GET    | `/api/numbers/:numberId/calls/last-dial` | `?destination`                            | `LastDialDto \| null`                                                                              |
+| GET    | `/api/numbers/:numberId/calls/:callId`   | —                                         | `CallDto`                                                                                          |
+| POST   | `/api/calls/prepare-outbound`            | `{ selectedNumberId, destinationNumber }` | `{ outboundIntentId, identity, selectedNumberId, selectedCallerId, destinationNumber, expiresAt }` |
+| POST   | `/api/calls/:callId/hangup`              | —                                         | `CallDto`                                                                                          |
+| POST   | `/api/calls/:callId/notes`               | `{ note }`                                | `CallDto`                                                                                          |
 
 ## Voice (browser softphone)
 
@@ -112,10 +113,10 @@ The `/api/settings/*` group is intentionally minimal and read-only — the app
 does not let an owner mutate Twilio credentials at runtime. Anything that
 needs to change there belongs in environment variables and a redeploy.
 
-| Method | Path                            | Returns                                                                                                  |
-| ------ | ------------------------------- | -------------------------------------------------------------------------------------------------------- |
-| GET    | `/api/settings`                 | Echoes the public, non-secret settings (cookie domain, CORS origins, default country, webhook base URL). |
-| GET    | `/api/settings/twilio/validate` | Calls `TwilioService.validateCredentials()` and reports `ok` or `down`.                                  |
+| Method | Path                            | Returns                                                                                                              |
+| ------ | ------------------------------- | -------------------------------------------------------------------------------------------------------------------- |
+| GET    | `/api/settings`                 | Echoes the public, non-secret settings (cookie domain, CORS origins, default country, webhook base URL).             |
+| GET    | `/api/settings/twilio/validate` | Calls `TwilioService.validateCredentials()` and reports `ok` or `down`; includes TwiML App outbound Voice URL drift. |
 
 ## WebSocket events
 

@@ -8,7 +8,7 @@ import { CallsService } from './calls.service';
 function buildService(overrides: { prisma?: any; twilio?: any; audit?: any; realtime?: any } = {}) {
   const prisma = overrides.prisma ?? {
     phoneNumber: { findUnique: vi.fn() },
-    call: { findUnique: vi.fn(), findMany: vi.fn(), update: vi.fn() },
+    call: { findUnique: vi.fn(), findMany: vi.fn(), findFirst: vi.fn(), update: vi.fn() },
   };
   const twilio = overrides.twilio ?? {
     client: { calls: vi.fn(() => ({ update: vi.fn().mockResolvedValue({}) })) },
@@ -89,6 +89,68 @@ describe('CallsService.list', () => {
         cursor: '!!!not-base64!!!',
       }),
     ).rejects.toBeInstanceOf(BadRequestException);
+  });
+});
+
+describe('CallsService.findLastDial', () => {
+  it('returns the most recent outbound dial to the normalized destination', async () => {
+    const createdAt = new Date('2026-06-07T18:31:57.652Z');
+    const prisma = {
+      phoneNumber: { findUnique: vi.fn().mockResolvedValue({ id: 'pn1', userId: 'u1' }) },
+      call: {
+        findFirst: vi.fn().mockResolvedValue({
+          id: 'c1',
+          startedAt: null,
+          createdAt,
+        }),
+      },
+    };
+    const { service } = buildService({ prisma });
+
+    const result = await service.findLastDial(
+      { userId: 'u1', role: UserRole.OWNER },
+      'pn1',
+      'Call now: (530) 441-9961',
+    );
+
+    expect(prisma.call.findFirst).toHaveBeenCalledWith({
+      where: {
+        phoneNumberId: 'pn1',
+        direction: CallDirection.OUTBOUND,
+        destinationE164: '+15304419961',
+      },
+      orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
+    });
+    expect(result).toEqual({
+      callId: 'c1',
+      destinationNumber: '+15304419961',
+      lastDialedAt: createdAt.toISOString(),
+    });
+  });
+
+  it('returns null when the destination was not dialed before', async () => {
+    const prisma = {
+      phoneNumber: { findUnique: vi.fn().mockResolvedValue({ id: 'pn1', userId: 'u1' }) },
+      call: { findFirst: vi.fn().mockResolvedValue(null) },
+    };
+    const { service } = buildService({ prisma });
+
+    await expect(
+      service.findLastDial({ userId: 'u1', role: UserRole.OWNER }, 'pn1', '+15304419961'),
+    ).resolves.toBeNull();
+  });
+
+  it('rejects invalid destinations before querying calls', async () => {
+    const prisma = {
+      phoneNumber: { findUnique: vi.fn().mockResolvedValue({ id: 'pn1', userId: 'u1' }) },
+      call: { findFirst: vi.fn() },
+    };
+    const { service } = buildService({ prisma });
+
+    await expect(
+      service.findLastDial({ userId: 'u1', role: UserRole.OWNER }, 'pn1', 'not a phone'),
+    ).rejects.toBeInstanceOf(BadRequestException);
+    expect(prisma.call.findFirst).not.toHaveBeenCalled();
   });
 });
 

@@ -89,6 +89,7 @@ export class VoiceService {
     if (!phoneNumber.active) {
       throw new BadRequestException('Selected number is inactive');
     }
+    await this.assertTwilioCallerIdUsable(actor, phoneNumber);
     const destinationNumber = normalizeDialablePhoneNumber(input.destinationNumber);
     if (!destinationNumber) {
       throw new BadRequestException('Destination must be E.164');
@@ -137,6 +138,60 @@ export class VoiceService {
       throw new ForbiddenException('You do not own this number');
     }
     return number;
+  }
+
+  private async assertTwilioCallerIdUsable(
+    actor: ActorContext,
+    phoneNumber: {
+      id: string;
+      twilioIncomingPhoneNumberSid: string;
+      phoneNumberE164: string;
+    },
+  ): Promise<void> {
+    try {
+      const remote = await this.twilio.client.api.v2010
+        .accounts(this.twilio.accountSid)
+        .incomingPhoneNumbers(phoneNumber.twilioIncomingPhoneNumberSid)
+        .fetch();
+      if (remote.phoneNumber !== phoneNumber.phoneNumberE164) {
+        throw new BadRequestException('Selected number no longer matches Twilio inventory');
+      }
+
+      const capabilities = (remote.capabilities ?? {}) as Record<string, boolean | undefined>;
+      if (capabilities.voice !== true) {
+        throw new BadRequestException('Selected number no longer has voice capability in Twilio');
+      }
+    } catch (err) {
+      if (err instanceof BadRequestException) throw err;
+      const status = (err as { status?: number; code?: number })?.status;
+      const code = (err as { status?: number; code?: number })?.code;
+      if (status === 404 || code === 20404) {
+        await this.prisma.phoneNumber
+          .update({ where: { id: phoneNumber.id }, data: { active: false } })
+          .catch(() => undefined);
+        await this.audit
+          .log({
+            userId: actor.userId,
+            action: 'number.twilio_missing',
+            entityType: 'PhoneNumber',
+            entityId: phoneNumber.id,
+            ipAddress: actor.ipAddress,
+            userAgent: actor.userAgent,
+            metadata: {
+              phoneNumber: phoneNumber.phoneNumberE164,
+              twilioIncomingPhoneNumberSid: phoneNumber.twilioIncomingPhoneNumberSid,
+            },
+          })
+          .catch(() => undefined);
+        throw new BadRequestException(
+          'Selected number is no longer provisioned in Twilio. Sync Twilio numbers and choose an active number.',
+        );
+      }
+
+      const message = err instanceof Error ? err.message : 'Twilio number validation failed';
+      this.logger.warn(`Twilio caller ID validation failed: ${message}`);
+      throw new BadRequestException(`Could not verify selected Twilio caller ID: ${message}`);
+    }
   }
 
   private async ensureVoiceIdentity(

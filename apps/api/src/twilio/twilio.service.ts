@@ -90,12 +90,26 @@ export class TwilioService {
   defaultWebhookUrls() {
     const base = this.webhookBaseUrl;
     return {
+      outboundVoiceUrl: `${base}/webhooks/twilio/voice/outbound`,
+      outboundVoiceFallbackUrl: `${base}/webhooks/twilio/voice/fallback`,
       voiceUrl: `${base}/webhooks/twilio/voice/inbound`,
       voiceFallbackUrl: `${base}/webhooks/twilio/voice/fallback`,
       statusCallback: `${base}/webhooks/twilio/voice/status`,
       smsUrl: `${base}/webhooks/twilio/messaging/inbound`,
       smsFallbackUrl: `${base}/webhooks/twilio/messaging/inbound`,
     };
+  }
+
+  async configureTwimlApplication(): Promise<void> {
+    const webhooks = this.defaultWebhookUrls();
+    await this.client.applications(this.twimlAppSid).update({
+      voiceUrl: webhooks.outboundVoiceUrl,
+      voiceMethod: 'POST',
+      voiceFallbackUrl: webhooks.outboundVoiceFallbackUrl,
+      voiceFallbackMethod: 'POST',
+      statusCallback: webhooks.statusCallback,
+      statusCallbackMethod: 'POST',
+    });
   }
 
   async fetchRecordingMedia(recordingSid: string): Promise<TwilioRecordingMedia> {
@@ -130,7 +144,14 @@ export class TwilioService {
       // Validate that path explicitly so /health/twilio catches 20101-causing
       // API key or TwiML App drift before the browser tries to register.
       await this.client.api.v2010.accounts(this.accountSid).incomingPhoneNumbers.list({ limit: 1 });
-      await this.client.applications(this.twimlAppSid).fetch();
+      const app = await this.client.applications(this.twimlAppSid).fetch();
+      const webhooks = this.defaultWebhookUrls();
+      if (app.voiceUrl !== webhooks.outboundVoiceUrl || app.voiceMethod?.toUpperCase() !== 'POST') {
+        this.logger.warn(
+          `TwiML App ${this.twimlAppSid} Voice URL drift: expected ${webhooks.outboundVoiceUrl}, got ${app.voiceUrl ?? '(unset)'}`,
+        );
+        return false;
+      }
       return true;
     } catch (err) {
       const message = err instanceof Error ? err.message : 'unknown';
