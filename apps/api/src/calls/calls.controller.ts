@@ -15,6 +15,8 @@ import type { Request, Response } from 'express';
 import { z } from 'zod';
 
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
+import { Roles } from '../auth/roles.decorator';
+import { RolesGuard } from '../auth/roles.guard';
 import { ZodValidationPipe } from '../common/zod.pipe';
 
 import { CallsService } from './calls.service';
@@ -25,6 +27,11 @@ const listQuerySchema = z.object({
   direction: z.nativeEnum(CallDirection).optional(),
   status: z.nativeEnum(CallStatus).optional(),
   since: z.string().datetime().optional(),
+});
+
+const voicemailListQuerySchema = z.object({
+  cursor: z.string().min(1).optional(),
+  limit: z.coerce.number().int().min(1).max(100).default(25),
 });
 
 const noteSchema = z.object({
@@ -67,6 +74,16 @@ export class CallsController {
     return this.calls.getOne(actorFromRequest(req), numberId, callId);
   }
 
+  @Get('voicemail')
+  @UseGuards(RolesGuard)
+  @Roles(UserRole.OWNER, UserRole.ADMIN)
+  voicemail(
+    @Query(new ZodValidationPipe(voicemailListQuerySchema))
+    query: z.infer<typeof voicemailListQuerySchema>,
+  ) {
+    return this.calls.listVoicemail(query);
+  }
+
   @Post('calls/:callId/hangup')
   @HttpCode(200)
   hangup(@Req() req: ActorRequest, @Param('callId') callId: string) {
@@ -97,6 +114,17 @@ export class CallsController {
       callId,
       recordingId,
     );
+    res.setHeader('Content-Type', media.contentType);
+    res.setHeader('Content-Disposition', `inline; filename="${media.filename}"`);
+    res.setHeader('Cache-Control', 'private, no-store');
+    res.send(media.body);
+  }
+
+  @Get('voicemail/:recordingId/media')
+  @UseGuards(RolesGuard)
+  @Roles(UserRole.OWNER, UserRole.ADMIN)
+  async voicemailMedia(@Param('recordingId') recordingId: string, @Res() res: Response) {
+    const media = await this.calls.getVoicemailMedia(recordingId);
     res.setHeader('Content-Type', media.contentType);
     res.setHeader('Content-Disposition', `inline; filename="${media.filename}"`);
     res.setHeader('Cache-Control', 'private, no-store');

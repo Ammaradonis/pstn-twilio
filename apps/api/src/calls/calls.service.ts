@@ -6,7 +6,7 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import { CallDirection, CallStatus, PhoneNumber, RecordingStatus, UserRole } from '@prisma/client';
-import type { CallDto, PaginatedDto } from '@pstn-twilio/shared';
+import type { CallDto, PaginatedDto, VoicemailDto } from '@pstn-twilio/shared';
 
 import { AuditService } from '../audit/audit.service';
 import { PrismaService } from '../prisma/prisma.service';
@@ -44,6 +44,24 @@ const HANGUPPABLE_STATUSES: CallStatus[] = [
 
 const CALL_RECORDINGS_INCLUDE = {
   recordings: { orderBy: { createdAt: 'desc' as const } },
+};
+
+const VOICEMAIL_INCLUDE = {
+  call: { include: { phoneNumber: true } },
+};
+
+type VoicemailRow = Awaited<ReturnType<PrismaService['callRecording']['findMany']>>[number] & {
+  call: {
+    id: string;
+    phoneNumberId: string | null;
+    fromE164: string;
+    toE164: string;
+    phoneNumber: {
+      id: string;
+      phoneNumberE164: string;
+      friendlyName: string | null;
+    } | null;
+  } | null;
 };
 
 @Injectable()
@@ -101,6 +119,40 @@ export class CallsService {
       throw new NotFoundException(`Call ${callId} not found`);
     }
     return mapCall(call);
+  }
+
+  async listVoicemail(input: {
+    cursor?: string;
+    limit: number;
+  }): Promise<PaginatedDto<VoicemailDto>> {
+    const cursor = input.cursor ? decodeCursor(input.cursor) : null;
+    if (input.cursor && !cursor) throw new BadRequestException('Invalid cursor');
+
+    const where: Record<string, unknown> = {
+      source: 'voicemail',
+      call: { phoneNumberId: { not: null } },
+    };
+    if (cursor) {
+      where.OR = [
+        { createdAt: { lt: new Date(cursor.t) } },
+        { AND: [{ createdAt: new Date(cursor.t) }, { id: { lt: cursor.id } }] },
+      ];
+    }
+
+    const rows = (await this.prisma.callRecording.findMany({
+      where,
+      include: VOICEMAIL_INCLUDE,
+      orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
+      take: input.limit,
+    })) as VoicemailRow[];
+    const items = rows.filter(isMappableVoicemail).map(mapVoicemail);
+    const last = rows[rows.length - 1];
+
+    return {
+      items,
+      nextCursor:
+        rows.length === input.limit && last ? encodeCursor(last.createdAt, last.id) : null,
+    };
   }
 
   async hangup(actor: ActorContext, callId: string): Promise<CallDto> {
@@ -209,6 +261,35 @@ export class CallsService {
     }
   }
 
+  async getVoicemailMedia(recordingId: string): Promise<RecordingMediaResult> {
+    const recording = (await this.prisma.callRecording.findUnique({
+      where: { id: recordingId },
+      include: VOICEMAIL_INCLUDE,
+    })) as VoicemailRow | null;
+    if (!recording || !isMappableVoicemail(recording) || recording.source !== 'voicemail') {
+      throw new NotFoundException(`Voicemail ${recordingId} not found`);
+    }
+    if (recording.status !== RecordingStatus.COMPLETED) {
+      throw new BadRequestException('Voicemail media is not ready yet');
+    }
+
+    try {
+      const media = await this.twilio.fetchRecordingMedia(recording.twilioRecordingSid);
+      return {
+        ...media,
+        filename: `${recording.twilioRecordingSid}.mp3`,
+      };
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'Twilio voicemail media fetch failed';
+      this.logger.warn(`Voicemail media fetch failed: ${message}`);
+      throw new BadRequestException({
+        statusCode: 400,
+        error: 'TwilioVoicemailMediaError',
+        message,
+      });
+    }
+  }
+
   private async assertOwnership(actor: ActorContext, numberId: string): Promise<PhoneNumber> {
     const number = await this.prisma.phoneNumber.findUnique({ where: { id: numberId } });
     if (!number) throw new NotFoundException(`Number ${numberId} not found`);
@@ -217,4 +298,36 @@ export class CallsService {
     }
     return number;
   }
+}
+
+function isMappableVoicemail(row: VoicemailRow): row is VoicemailRow & {
+  call: NonNullable<VoicemailRow['call']> & {
+    phoneNumber: NonNullable<NonNullable<VoicemailRow['call']>['phoneNumber']>;
+  };
+} {
+  return Boolean(row.call?.phoneNumber);
+}
+
+function mapVoicemail(
+  row: VoicemailRow & {
+    call: NonNullable<VoicemailRow['call']> & {
+      phoneNumber: NonNullable<NonNullable<VoicemailRow['call']>['phoneNumber']>;
+    };
+  },
+): VoicemailDto {
+  return {
+    id: row.id,
+    callId: row.call.id,
+    phoneNumberId: row.call.phoneNumber.id,
+    phoneNumberE164: row.call.phoneNumber.phoneNumberE164,
+    phoneNumberFriendlyName: row.call.phoneNumber.friendlyName,
+    twilioCallSid: row.twilioCallSid,
+    twilioRecordingSid: row.twilioRecordingSid,
+    from: row.call.fromE164,
+    to: row.call.toE164,
+    status: row.status,
+    durationSeconds: row.durationSeconds,
+    startedAt: row.startedAt?.toISOString() ?? null,
+    createdAt: row.createdAt.toISOString(),
+  };
 }

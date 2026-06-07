@@ -1,6 +1,6 @@
-import type { PhoneNumberDto } from '@pstn-twilio/shared';
+import type { PhoneNumberDto, VoicemailDto } from '@pstn-twilio/shared';
 import { useQueries, useQuery } from '@tanstack/react-query';
-import { useMemo } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
 
 import { useApiHealth } from '../hooks/use-api-health';
@@ -42,6 +42,7 @@ function isWebhookOk(n: PhoneNumberDto) {
 
 export function Dashboard() {
   const user = useAuthStore((s) => s.user);
+  const canAccessVoicemail = user?.role === 'OWNER' || user?.role === 'ADMIN';
 
   const numbersQuery = useQuery({
     queryKey: ['numbers'],
@@ -51,6 +52,13 @@ export function Dashboard() {
   const recentInboundSms = useQuery({
     queryKey: ['messages', 'search', { direction: 'INBOUND', limit: 5 }],
     queryFn: () => api.messages.search({ direction: 'INBOUND', limit: 5 }),
+  });
+
+  const voicemailQuery = useQuery({
+    queryKey: ['voicemail', { limit: 25 }],
+    queryFn: () => api.voicemail.list({ limit: 25 }),
+    enabled: canAccessVoicemail,
+    refetchInterval: 60_000,
   });
 
   const apiHealth = useApiHealth();
@@ -248,6 +256,118 @@ export function Dashboard() {
           </ul>
         </div>
       </div>
+
+      {canAccessVoicemail && (
+        <VoicemailInbox
+          items={voicemailQuery.data?.items ?? []}
+          loading={voicemailQuery.isLoading}
+        />
+      )}
     </section>
+  );
+}
+
+function VoicemailInbox({ items, loading }: { items: VoicemailDto[]; loading: boolean }) {
+  return (
+    <div className="rounded border border-slate-200 bg-white p-4">
+      <div className="flex items-center justify-between gap-3">
+        <h2 className="text-sm font-semibold uppercase tracking-wide text-slate-500">
+          Voicemail inbox
+        </h2>
+        <span className="text-xs text-slate-500">{items.length} recent</span>
+      </div>
+
+      {loading ? <p className="mt-2 text-sm text-slate-500">Loading…</p> : null}
+      {!loading && items.length === 0 ? (
+        <p className="mt-2 text-sm text-slate-500">No voicemail yet.</p>
+      ) : null}
+
+      {items.length > 0 ? (
+        <div className="mt-3 overflow-x-auto">
+          <table className="w-full table-auto border-collapse text-sm">
+            <thead>
+              <tr className="text-left text-xs text-slate-500">
+                <th className="px-3 py-2">Number</th>
+                <th className="px-3 py-2">From</th>
+                <th className="px-3 py-2">Received</th>
+                <th className="px-3 py-2">Duration</th>
+                <th className="px-3 py-2">Message</th>
+              </tr>
+            </thead>
+            <tbody>
+              {items.map((item) => (
+                <tr key={item.id} className="border-t border-slate-100">
+                  <td className="px-3 py-2">
+                    <div className="font-mono">{formatPhone(item.phoneNumberE164)}</div>
+                    {item.phoneNumberFriendlyName ? (
+                      <div className="text-xs text-slate-500">{item.phoneNumberFriendlyName}</div>
+                    ) : null}
+                  </td>
+                  <td className="px-3 py-2 font-mono">{formatPhone(item.from)}</td>
+                  <td className="px-3 py-2">{formatDate(item.createdAt)}</td>
+                  <td className="px-3 py-2">
+                    {item.durationSeconds !== null ? `${item.durationSeconds}s` : item.status}
+                  </td>
+                  <td className="px-3 py-2">
+                    <VoicemailAudio item={item} />
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
+function VoicemailAudio({ item }: { item: VoicemailDto }) {
+  const [src, setSrc] = useState<string | null>(null);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    return () => {
+      if (src) URL.revokeObjectURL(src);
+    };
+  }, [src]);
+
+  async function loadVoicemail() {
+    setLoading(true);
+    setError(null);
+    try {
+      const blob = await api.voicemail.media(item.id);
+      const url = URL.createObjectURL(blob);
+      setSrc((prev) => {
+        if (prev) URL.revokeObjectURL(prev);
+        return url;
+      });
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Voicemail unavailable');
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  if (item.status !== 'COMPLETED') {
+    return <span className="text-xs text-slate-500">{item.status}</span>;
+  }
+
+  if (src) {
+    return <audio controls preload="metadata" src={src} className="h-8 w-64 max-w-full" />;
+  }
+
+  return (
+    <div className="flex flex-col gap-1">
+      <button
+        type="button"
+        onClick={loadVoicemail}
+        disabled={loading}
+        className="w-fit rounded border border-slate-300 px-2 py-1 text-xs disabled:cursor-not-allowed disabled:opacity-60"
+      >
+        {loading ? 'Loading…' : 'Play'}
+      </button>
+      {error ? <span className="max-w-48 text-xs text-red-600">{error}</span> : null}
+    </div>
   );
 }

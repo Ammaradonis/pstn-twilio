@@ -92,6 +92,68 @@ describe('CallsService.list', () => {
   });
 });
 
+describe('CallsService.listVoicemail', () => {
+  it('returns voicemail recordings across provisioned numbers', async () => {
+    const createdAt = new Date('2026-05-19T00:00:00Z');
+    const prisma = {
+      callRecording: {
+        findMany: vi.fn().mockResolvedValue([
+          {
+            id: 'rec1',
+            twilioCallSid: 'CA1',
+            twilioRecordingSid: 'RE1',
+            source: 'voicemail',
+            status: RecordingStatus.COMPLETED,
+            durationSeconds: 18,
+            startedAt: createdAt,
+            createdAt,
+            call: {
+              id: 'c1',
+              phoneNumberId: 'pn1',
+              fromE164: '+15551111111',
+              toE164: '+15552222222',
+              phoneNumber: {
+                id: 'pn1',
+                phoneNumberE164: '+15552222222',
+                friendlyName: 'Main line',
+              },
+            },
+          },
+        ]),
+      },
+    };
+    const { service } = buildService({ prisma });
+
+    const result = await service.listVoicemail({ limit: 25 });
+
+    expect(prisma.callRecording.findMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: expect.objectContaining({ source: 'voicemail' }),
+        take: 25,
+      }),
+    );
+    expect(result.items).toEqual([
+      expect.objectContaining({
+        id: 'rec1',
+        callId: 'c1',
+        phoneNumberId: 'pn1',
+        phoneNumberE164: '+15552222222',
+        phoneNumberFriendlyName: 'Main line',
+        from: '+15551111111',
+        durationSeconds: 18,
+      }),
+    ]);
+  });
+
+  it('rejects an invalid voicemail cursor string', async () => {
+    const { service } = buildService();
+
+    await expect(service.listVoicemail({ limit: 10, cursor: 'bad' })).rejects.toBeInstanceOf(
+      BadRequestException,
+    );
+  });
+});
+
 describe('CallsService.hangup', () => {
   it('throws NotFound for missing call', async () => {
     const prisma = {
@@ -244,6 +306,73 @@ describe('CallsService.getRecordingMedia', () => {
     expect(media.contentType).toBe('audio/mpeg');
     expect(media.filename).toBe('RE1.mp3');
     expect(media.body.toString()).toBe('mp3-bytes');
+  });
+});
+
+describe('CallsService.getVoicemailMedia', () => {
+  it('fetches completed voicemail media through Twilio', async () => {
+    const prisma = {
+      callRecording: {
+        findUnique: vi.fn().mockResolvedValue({
+          id: 'rec1',
+          twilioRecordingSid: 'RE1',
+          twilioCallSid: 'CA1',
+          source: 'voicemail',
+          status: RecordingStatus.COMPLETED,
+          call: {
+            id: 'c1',
+            phoneNumberId: 'pn1',
+            fromE164: '+15551111111',
+            toE164: '+15552222222',
+            phoneNumber: {
+              id: 'pn1',
+              phoneNumberE164: '+15552222222',
+              friendlyName: 'Main line',
+            },
+          },
+        }),
+      },
+    };
+    const twilio = {
+      client: { calls: vi.fn() },
+      fetchRecordingMedia: vi.fn().mockResolvedValue({
+        body: Buffer.from('mp3-bytes'),
+        contentType: 'audio/mpeg',
+      }),
+    };
+    const { service } = buildService({ prisma, twilio });
+
+    const media = await service.getVoicemailMedia('rec1');
+
+    expect(twilio.fetchRecordingMedia).toHaveBeenCalledWith('RE1');
+    expect(media.filename).toBe('RE1.mp3');
+    expect(media.body.toString()).toBe('mp3-bytes');
+  });
+
+  it('does not expose normal call recordings through voicemail media', async () => {
+    const prisma = {
+      callRecording: {
+        findUnique: vi.fn().mockResolvedValue({
+          id: 'rec1',
+          source: 'DialVerb',
+          status: RecordingStatus.COMPLETED,
+          call: {
+            id: 'c1',
+            phoneNumberId: 'pn1',
+            fromE164: '+15551111111',
+            toE164: '+15552222222',
+            phoneNumber: {
+              id: 'pn1',
+              phoneNumberE164: '+15552222222',
+              friendlyName: 'Main line',
+            },
+          },
+        }),
+      },
+    };
+    const { service } = buildService({ prisma });
+
+    await expect(service.getVoicemailMedia('rec1')).rejects.toBeInstanceOf(NotFoundException);
   });
 });
 

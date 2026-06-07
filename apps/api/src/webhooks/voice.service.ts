@@ -67,6 +67,15 @@ export interface RecordingStatusParams {
   [key: string]: string | undefined;
 }
 
+export interface VoicemailParams {
+  CallSid?: string;
+  From?: string;
+  To?: string;
+  DialCallStatus?: string;
+  CallStatus?: string;
+  [key: string]: string | undefined;
+}
+
 type CallWithRecordings = Call & { recordings?: CallRecording[] };
 
 const RECORDING_CALLBACK_EVENTS = ['in-progress', 'completed', 'absent'] as const;
@@ -134,6 +143,8 @@ export class VoiceWebhookService {
     const dial = response.dial({
       answerOnBridge: true,
       timeout: 30,
+      action: `${this.twilio.webhookBaseUrl}/webhooks/twilio/voice/voicemail`,
+      method: 'POST',
       ...this.recordingDialAttributes(),
     });
     dial.client(
@@ -144,6 +155,52 @@ export class VoiceWebhookService {
       },
       identity,
     );
+    return response.toString();
+  }
+
+  async handleVoicemail(params: VoicemailParams): Promise<string> {
+    const callSid = params.CallSid ?? '';
+    const dialStatus = params.DialCallStatus ?? params.CallStatus ?? 'unknown';
+    if (callSid) {
+      await this.recordWebhookEvent(
+        `voice:voicemail-prompt:${callSid}:${dialStatus}`,
+        'voice.voicemail.prompt',
+        callSid,
+        params,
+      );
+    }
+
+    if (dialStatus === 'completed' || dialStatus === 'answered') {
+      const response = new twilio.twiml.VoiceResponse();
+      response.hangup();
+      return response.toString();
+    }
+
+    const response = new twilio.twiml.VoiceResponse();
+    response.say(
+      { voice: 'alice' },
+      'The browser phone is unavailable. Please leave a voicemail after the beep.',
+    );
+    response.record({
+      action: `${this.twilio.webhookBaseUrl}/webhooks/twilio/voice/voicemail/complete`,
+      method: 'POST',
+      maxLength: 180,
+      playBeep: true,
+      timeout: 8,
+      trim: 'trim-silence',
+      recordingStatusCallback: `${this.twilio.webhookBaseUrl}/webhooks/twilio/voice/recording?kind=voicemail`,
+      recordingStatusCallbackMethod: 'POST',
+      recordingStatusCallbackEvent: [...RECORDING_CALLBACK_EVENTS],
+    });
+    response.say({ voice: 'alice' }, 'No voicemail was recorded. Goodbye.');
+    response.hangup();
+    return response.toString();
+  }
+
+  handleVoicemailComplete(): string {
+    const response = new twilio.twiml.VoiceResponse();
+    response.say({ voice: 'alice' }, 'Your voicemail has been saved. Goodbye.');
+    response.hangup();
     return response.toString();
   }
 
@@ -261,15 +318,24 @@ export class VoiceWebhookService {
     });
   }
 
-  async handleRecording(params: RecordingStatusParams): Promise<void> {
+  async handleRecording(
+    params: RecordingStatusParams,
+    options: { kind?: string } = {},
+  ): Promise<void> {
     const callSid = params.CallSid;
     const recordingSid = params.RecordingSid;
     const statusRaw = params.RecordingStatus;
     if (!callSid || !recordingSid || !statusRaw) return;
 
+    const isVoicemail = options.kind === 'voicemail';
     const dedupeKey = `voice:recording:${recordingSid}:${statusRaw}`;
     if (await this.alreadyProcessed(dedupeKey)) return;
-    await this.recordWebhookEvent(dedupeKey, 'voice.recording', recordingSid, params);
+    await this.recordWebhookEvent(
+      dedupeKey,
+      isVoicemail ? 'voice.voicemail' : 'voice.recording',
+      recordingSid,
+      params,
+    );
 
     const call = await this.findCallForRecording(params);
     const existingRecording = await this.prisma.callRecording.findUnique({
@@ -291,7 +357,9 @@ export class VoiceWebhookService {
         status,
         durationSeconds: duration ?? existingRecording?.durationSeconds ?? null,
         channels: channels ?? existingRecording?.channels ?? null,
-        source: params.RecordingSource ?? existingRecording?.source ?? null,
+        source: isVoicemail
+          ? 'voicemail'
+          : (params.RecordingSource ?? existingRecording?.source ?? null),
         track: params.RecordingTrack ?? existingRecording?.track ?? null,
         rawPayload: params as never,
         startedAt,
@@ -304,7 +372,7 @@ export class VoiceWebhookService {
         status,
         durationSeconds: duration,
         channels,
-        source: params.RecordingSource ?? null,
+        source: isVoicemail ? 'voicemail' : (params.RecordingSource ?? null),
         track: params.RecordingTrack ?? null,
         rawPayload: params as never,
         startedAt,

@@ -11,6 +11,7 @@ import type {
   SendMessageInput,
   SmsMessageDto,
   UserDto,
+  VoicemailDto,
   VoiceTokenDto,
 } from '@pstn-twilio/shared';
 
@@ -213,6 +214,14 @@ export const api = {
         method: 'POST',
         body: { note },
       }),
+  },
+
+  voicemail: {
+    list: (opts?: { cursor?: string; limit?: number }) =>
+      request<PaginatedDto<VoicemailDto>>('/voicemail', {
+        query: { cursor: opts?.cursor, limit: opts?.limit },
+      }),
+    media: (recordingId: string) => requestBlob(`/voicemail/${recordingId}/media`),
   },
 
   voice: {

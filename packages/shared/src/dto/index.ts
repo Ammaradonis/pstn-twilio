@@ -99,6 +99,22 @@ export interface CallRecordingDto {
   createdAt: string;
 }
 
+export interface VoicemailDto {
+  id: string;
+  callId: string;
+  phoneNumberId: string;
+  phoneNumberE164: string;
+  phoneNumberFriendlyName: string | null;
+  twilioCallSid: string;
+  twilioRecordingSid: string;
+  from: string;
+  to: string;
+  status: RecordingStatus;
+  durationSeconds: number | null;
+  startedAt: string | null;
+  createdAt: string;
+}
+
 export interface VoiceTokenDto {
   token: string;
   identity: string;

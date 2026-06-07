@@ -126,6 +126,7 @@ describe('VoiceWebhookService.handleInbound', () => {
       expect.objectContaining({ numberId: 'pn1' }),
     );
     expect(xml).toContain('<Dial');
+    expect(xml).toContain('action="https://example.com/webhooks/twilio/voice/voicemail"');
     expect(xml).toContain('record="record-from-answer-dual"');
     expect(xml).toContain(
       'recordingStatusCallback="https://example.com/webhooks/twilio/voice/recording"',
@@ -134,6 +135,36 @@ describe('VoiceWebhookService.handleInbound', () => {
     expect(xml).toContain('<Client');
     expect(xml).toContain('user_u1_number_pn1');
     expect(xml).toContain('statusCallback="https://example.com/webhooks/twilio/voice/status"');
+  });
+});
+
+describe('VoiceWebhookService.handleVoicemail', () => {
+  it('returns Record TwiML for unanswered inbound calls', async () => {
+    const { service } = buildService();
+    const xml = await service.handleVoicemail({
+      CallSid: 'CA1',
+      From: '+15551111111',
+      To: '+15552222222',
+      DialCallStatus: 'no-answer',
+    });
+
+    expect(xml).toContain('<Say');
+    expect(xml).toContain('<Record');
+    expect(xml).toContain(
+      'recordingStatusCallback="https://example.com/webhooks/twilio/voice/recording?kind=voicemail"',
+    );
+    expect(xml).toContain('action="https://example.com/webhooks/twilio/voice/voicemail/complete"');
+  });
+
+  it('hangs up instead of recording when the browser call completed', async () => {
+    const { service } = buildService();
+    const xml = await service.handleVoicemail({
+      CallSid: 'CA1',
+      DialCallStatus: 'completed',
+    });
+
+    expect(xml).toContain('<Hangup');
+    expect(xml).not.toContain('<Record');
   });
 });
 
@@ -493,6 +524,89 @@ describe('VoiceWebhookService.handleRecording', () => {
     );
   });
 
+  it('tags voicemail recordings for the dashboard inbox', async () => {
+    const existingCall = {
+      id: 'c1',
+      phoneNumberId: 'pn1',
+      twilioCallSid: 'CA1',
+      direction: CallDirection.INBOUND,
+      fromE164: '+15551111111',
+      toE164: '+15552222222',
+      selectedCallerId: null,
+      destinationE164: null,
+      status: CallStatus.NO_ANSWER,
+      durationSeconds: null,
+      startedAt: new Date('2026-05-19T00:00:00Z'),
+      answeredAt: null,
+      endedAt: null,
+      createdAt: new Date('2026-05-19T00:00:00Z'),
+    };
+    const recording = {
+      id: 'rec-db-1',
+      callId: 'c1',
+      twilioCallSid: 'CA1',
+      twilioRecordingSid: 'RE1',
+      recordingUrl: 'https://api.twilio.com/2010-04-01/Accounts/AC1/Recordings/RE1',
+      status: RecordingStatus.COMPLETED,
+      durationSeconds: 18,
+      channels: 1,
+      source: 'voicemail',
+      track: null,
+      rawPayload: null,
+      startedAt: null,
+      createdAt: new Date('2026-05-19T00:00:43Z'),
+      updatedAt: new Date('2026-05-19T00:00:43Z'),
+    };
+    const updatedCall = { ...existingCall, recordings: [recording] };
+    const prisma = {
+      webhookEvent: {
+        findUnique: vi.fn().mockResolvedValue(null),
+        create: vi.fn().mockResolvedValue({}),
+      },
+      phoneNumber: { findUnique: vi.fn() },
+      call: {
+        findUnique: vi.fn().mockResolvedValueOnce(existingCall).mockResolvedValueOnce(updatedCall),
+        create: vi.fn(),
+        update: vi.fn(),
+      },
+      callRecording: {
+        findUnique: vi.fn().mockResolvedValue(null),
+        upsert: vi.fn().mockResolvedValue(recording),
+      },
+    };
+    const { service } = buildService({ prisma });
+
+    await service.handleRecording(
+      {
+        CallSid: 'CA1',
+        RecordingSid: 'RE1',
+        RecordingStatus: 'completed',
+        RecordingDuration: '18',
+        RecordingChannels: '1',
+        RecordingSource: 'RecordVerb',
+      },
+      { kind: 'voicemail' },
+    );
+
+    expect(prisma.webhookEvent.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          eventType: 'voice.voicemail',
+        }),
+      }),
+    );
+    expect(prisma.callRecording.upsert).toHaveBeenCalledWith(
+      expect.objectContaining({
+        create: expect.objectContaining({
+          source: 'voicemail',
+        }),
+        update: expect.objectContaining({
+          source: 'voicemail',
+        }),
+      }),
+    );
+  });
+
   it('stores recording metadata even when the matching call has not arrived yet', async () => {
     const recording = {
       id: 'rec-db-1',
@@ -555,6 +669,14 @@ describe('VoiceWebhookService.handleFallback', () => {
     const xml = service.handleFallback();
     expect(xml).toContain('<Response>');
     expect(xml).toContain('<Say');
+    expect(xml).toContain('<Hangup');
+  });
+
+  it('returns valid voicemail completion TwiML', () => {
+    const { service } = buildService();
+    const xml = service.handleVoicemailComplete();
+    expect(xml).toContain('<Response>');
+    expect(xml).toContain('voicemail has been saved');
     expect(xml).toContain('<Hangup');
   });
 });
