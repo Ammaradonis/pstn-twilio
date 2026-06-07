@@ -16,6 +16,7 @@ type VoiceCall = {
   accept?: () => void;
   reject?: () => void;
   disconnect?: () => void;
+  sendDigits?: (digits: string) => void;
 };
 
 type VoiceDeviceRegistrationState = 'destroyed' | 'unregistered' | 'registering' | 'registered';
@@ -74,6 +75,7 @@ interface UseVoiceDevice extends VoiceRuntimeState {
   reject: () => void;
   hangup: () => void;
   toggleMute: () => void;
+  sendDigits: (digits: string) => void;
   makeCall: (selectedNumberId: string, destinationNumber: string) => Promise<VoiceCall | null>;
 }
 
@@ -89,6 +91,7 @@ const INITIAL_RUNTIME_STATE: VoiceRuntimeState = {
 };
 
 const RECONNECTABLE_ERROR_CODES = new Set([20101, 31005, 31203, 31204, 31205, 31207, 53001]);
+const DTMF_DIGITS_PATTERN = /^[0-9*#w]+$/;
 
 const subscribers = new Set<() => void>();
 
@@ -638,6 +641,28 @@ function toggleMute(): void {
   }
 }
 
+function sendDtmfDigits(digits: string): void {
+  const normalized = digits.trim();
+  if (!normalized) return;
+  if (!DTMF_DIGITS_PATTERN.test(normalized)) {
+    setRuntimeState({ error: 'DTMF digits can only contain 0-9, *, #, or wait pauses.' });
+    return;
+  }
+
+  const conn = runtime.call;
+  if (!conn?.sendDigits) {
+    setRuntimeState({ error: 'No active call is available for DTMF tones.' });
+    return;
+  }
+
+  try {
+    conn.sendDigits(normalized);
+    setRuntimeState({ error: null });
+  } catch (err) {
+    setRuntimeState({ error: formatVoiceError(err) });
+  }
+}
+
 export function useVoiceDevice(): UseVoiceDevice {
   const [snapshot, setSnapshot] = useState<VoiceRuntimeState>(runtime.state);
   const [micPermission, setMicPermission] = useState<UseVoiceDevice['micPermission']>('unknown');
@@ -682,6 +707,7 @@ export function useVoiceDevice(): UseVoiceDevice {
     reject: rejectIncomingCall,
     hangup: hangupCall,
     toggleMute,
+    sendDigits: sendDtmfDigits,
     makeCall: makeVoiceCall,
   };
 }

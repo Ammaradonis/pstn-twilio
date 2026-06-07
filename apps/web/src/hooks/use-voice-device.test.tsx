@@ -172,4 +172,36 @@ describe('useVoiceDevice', () => {
       },
     });
   });
+
+  it('sends DTMF digits on the active Twilio call', async () => {
+    render(<Harness onChange={(voice) => (current = voice)} />);
+
+    await act(async () => {
+      await current!.init('pn1');
+      await Promise.resolve();
+    });
+
+    const device = voiceSdkMock.instances[0];
+    expect(device).toBeDefined();
+    if (!device) throw new Error('Mock Twilio Device was not created');
+    const call = {
+      on: vi.fn(),
+      isMuted: vi.fn().mockReturnValue(false),
+      sendDigits: vi.fn(),
+    };
+    device.connect.mockReturnValue(call);
+
+    await act(async () => {
+      await current!.makeCall('pn1', '+1 555-111-1111');
+      current!.sendDigits('5');
+    });
+
+    expect(call.sendDigits).toHaveBeenCalledWith('5');
+    expect(current!.error).toBeNull();
+
+    act(() => current!.sendDigits('+'));
+
+    expect(call.sendDigits).not.toHaveBeenCalledWith('+');
+    expect(current!.error).toContain('DTMF digits');
+  });
 });

@@ -5,7 +5,7 @@ import { useParams } from 'react-router-dom';
 import { useVoiceDevice } from '../hooks/use-voice-device';
 import { api } from '../lib/api-client';
 
-const DIGITS = ['1', '2', '3', '4', '5', '6', '7', '8', '9', '*', '0', '#'] as const;
+const DIALPAD_KEYS = ['1', '2', '3', '4', '5', '6', '7', '8', '9', '*', '0', '#', '+'] as const;
 
 function StatusPill({ label, ok }: { label: string; ok: boolean }) {
   return (
@@ -26,15 +26,52 @@ export function DialPage() {
   const [submitting, setSubmitting] = useState(false);
   const [pageError, setPageError] = useState<string | null>(null);
   const voice = useVoiceDevice();
+  const voiceActive = voice.active;
+  const sendDtmfDigits = voice.sendDigits;
 
   function setDestinationFromInput(value: string) {
     setDestination(normalizeDialablePhoneNumber(value) ?? value.trim());
+  }
+
+  function appendDestinationKey(key: (typeof DIALPAD_KEYS)[number]) {
+    if (key === '+') {
+      setDestination((prev) => {
+        const trimmed = prev.trim();
+        return trimmed.startsWith('+') ? trimmed : `+${trimmed}`;
+      });
+      return;
+    }
+
+    setDestination((prev) => normalizeDialablePhoneNumber(prev + key) ?? prev + key);
+  }
+
+  function handleDialpadKey(key: (typeof DIALPAD_KEYS)[number]) {
+    if (voice.active) {
+      if (key !== '+') sendDtmfDigits(key);
+      return;
+    }
+
+    appendDestinationKey(key);
   }
 
   useEffect(() => {
     void voice.init(numberId);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [numberId]);
+
+  useEffect(() => {
+    if (!voiceActive) return;
+
+    function handleKeyDown(event: KeyboardEvent) {
+      if (event.altKey || event.ctrlKey || event.metaKey) return;
+      if (!/^[0-9*#]$/.test(event.key)) return;
+      event.preventDefault();
+      sendDtmfDigits(event.key);
+    }
+
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [sendDtmfDigits, voiceActive]);
 
   useEffect(() => {
     if (!numberId) return;
@@ -151,9 +188,12 @@ export function DialPage() {
       )}
 
       <div className="rounded border border-slate-200 bg-white p-4">
-        <label className="text-sm text-slate-700">Destination (E.164)</label>
+        <label htmlFor="destination-number" className="text-sm text-slate-700">
+          Destination (E.164)
+        </label>
         <div className="mt-1 flex gap-2">
           <input
+            id="destination-number"
             value={destination}
             onChange={(e) => setDestinationFromInput(e.target.value)}
             onPaste={(e) => {
@@ -164,7 +204,8 @@ export function DialPage() {
             }}
             placeholder="+1 530-441-9961"
             inputMode="tel"
-            className="min-w-0 flex-1 rounded border border-slate-300 px-2 py-1 font-mono text-sm focus:border-slate-500 focus:outline-none"
+            readOnly={voice.active}
+            className="min-w-0 flex-1 rounded border border-slate-300 px-2 py-1 font-mono text-sm focus:border-slate-500 focus:outline-none read-only:bg-slate-50"
           />
           <button
             type="button"
@@ -184,14 +225,15 @@ export function DialPage() {
         )}
 
         <div className="mt-3 grid grid-cols-3 gap-2">
-          {DIGITS.map((d) => (
+          {DIALPAD_KEYS.map((d) => (
             <button
               key={d}
               type="button"
-              onClick={() =>
-                setDestination((prev) => normalizeDialablePhoneNumber(prev + d) ?? prev + d)
-              }
-              className="rounded border border-slate-200 px-3 py-2 text-base hover:bg-slate-50"
+              onClick={() => handleDialpadKey(d)}
+              disabled={voice.active && d === '+'}
+              className={`rounded border border-slate-200 px-3 py-2 text-base hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50 ${
+                d === '+' ? 'col-start-2' : ''
+              }`}
             >
               {d}
             </button>
