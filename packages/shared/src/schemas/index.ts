@@ -59,7 +59,7 @@ export const purchaseNumberSchema = z.object({
 });
 
 export const sendMessageSchema = z.object({
-  to: e164Schema,
+  to: dialablePhoneNumberSchema,
   body: z.string().min(1).max(1600),
   mediaUrl: z.array(z.string().url()).max(10).optional(),
 });

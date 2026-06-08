@@ -1,6 +1,6 @@
 import { normalizeDialablePhoneNumber, type SmsMessageDto } from '@pstn-twilio/shared';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
 
 import { useRealtimeMessages } from '../hooks/use-realtime-messages';
@@ -29,9 +29,10 @@ export function MessagesPage() {
   const [to, setTo] = useState('');
   const [body, setBody] = useState('');
   const [showRaw, setShowRaw] = useState<string | null>(null);
+  const normalizedTo = useMemo(() => normalizeDialablePhoneNumber(to), [to]);
 
   const send = useMutation({
-    mutationFn: () => api.messages.send(numberId!, { to, body }),
+    mutationFn: () => api.messages.send(numberId!, { to: normalizedTo!, body }),
     onSuccess: (message) => {
       queryClient.setQueryData(
         ['messages', numberId],
@@ -68,7 +69,7 @@ export function MessagesPage() {
   const items = messagesQuery.data?.items ?? [];
   const charCount = body.length;
   const charLimit = 1600;
-  const ok = isE164(to) && body.length > 0 && body.length <= charLimit;
+  const ok = normalizedTo !== null && body.length > 0 && body.length <= charLimit;
 
   return (
     <section className="space-y-4">
@@ -139,10 +140,6 @@ export function MessagesPage() {
   );
 }
 
-function isE164(value: string): boolean {
-  return /^\+[1-9]\d{1,14}$/.test(value.trim());
-}
-
 interface ComposePanelProps {
   to: string;
   setTo: (v: string) => void;
@@ -205,8 +202,14 @@ function ComposePanel({
             onChange={(e) => setToFromInput(e.target.value)}
             onPaste={(e) => {
               const normalized = normalizeDialablePhoneNumber(e.clipboardData.getData('text'));
-              if (!normalized) return;
               e.preventDefault();
+              if (!normalized) {
+                push({
+                  tone: 'error',
+                  message: 'Pasted text does not contain a valid phone number.',
+                });
+                return;
+              }
               setTo(normalized);
             }}
             placeholder="+15551234567"
@@ -242,7 +245,11 @@ function ComposePanel({
         <span>
           {charCount} / {charLimit}
         </span>
-        <span>{to && !isE164(to) ? 'Destination must be E.164 (e.g. +14155552671)' : ''}</span>
+        <span>
+          {to && !normalizeDialablePhoneNumber(to)
+            ? 'Destination must be E.164 (e.g. +14155552671)'
+            : ''}
+        </span>
       </div>
       <p className="text-[11px] leading-snug text-amber-700">
         You must have lawful consent from the recipient. Do not use this app for bulk SMS,

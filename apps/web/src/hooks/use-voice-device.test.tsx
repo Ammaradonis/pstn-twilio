@@ -181,22 +181,40 @@ describe('useVoiceDevice', () => {
       },
       rtcConstraints: { audio: true },
     });
+    expect(mediaMock.getUserMedia).not.toHaveBeenCalled();
   });
 
-  it('does not prepare an outbound intent when microphone media cannot start', async () => {
-    mediaMock.getUserMedia.mockRejectedValueOnce(
-      new DOMException('The input device is already in use.', 'NotReadableError'),
-    );
+  it('reports Twilio media failures from outbound connect without a duplicate mic preflight', async () => {
     render(<Harness onChange={(voice) => (current = voice)} />);
+
+    await act(async () => {
+      await current!.init('pn1');
+      await Promise.resolve();
+    });
+
+    const device = voiceSdkMock.instances[0];
+    expect(device).toBeDefined();
+    if (!device) throw new Error('Mock Twilio Device was not created');
+    device.connect.mockRejectedValue(
+      Object.assign(new Error('getting the media failed'), { code: 31402 }),
+    );
 
     await act(async () => {
       await current!.makeCall('pn1', '+1 555-111-1111');
       await Promise.resolve();
     });
 
-    expect(api.voice.prepareOutbound).not.toHaveBeenCalled();
-    expect(voiceSdkMock.instances).toHaveLength(0);
-    expect(current!.error).toContain('Microphone is unavailable');
+    expect(api.voice.prepareOutbound).toHaveBeenCalledWith('pn1', '+1 555-111-1111');
+    expect(device.connect).toHaveBeenCalledWith({
+      params: {
+        selectedNumberId: 'pn1',
+        destinationNumber: '+15551111111',
+        outboundIntentId: 'intent1',
+      },
+      rtcConstraints: { audio: true },
+    });
+    expect(mediaMock.getUserMedia).not.toHaveBeenCalled();
+    expect(current!.error).toContain('31402');
   });
 
   it('accepts an inbound call with default microphone constraints', async () => {

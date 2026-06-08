@@ -4,7 +4,6 @@ import { useParams } from 'react-router-dom';
 
 import { useVoiceDevice } from '../hooks/use-voice-device';
 import { api, ApiError } from '../lib/api-client';
-import { env } from '../lib/env';
 import { formatDate, formatPhone } from '../lib/format';
 
 const DIALPAD_KEYS = ['1', '2', '3', '4', '5', '6', '7', '8', '9', '*', '0', '#', '+'] as const;
@@ -34,7 +33,12 @@ export function DialPage() {
   const [sentTones, setSentTones] = useState('');
   const [repeatDialWarning, setRepeatDialWarning] = useState<LastDialDto | null>(null);
   const voice = useVoiceDevice();
-  const inCallMode = voice.active || voice.canSendDigits;
+  const inCallMode =
+    voice.active ||
+    voice.canSendDigits ||
+    voice.connectionState === 'pending' ||
+    voice.connectionState === 'ringing' ||
+    voice.connectionState === 'open';
   const sendDtmfDigits = voice.sendDigits;
 
   function setDestinationFromInput(value: string) {
@@ -128,7 +132,7 @@ export function DialPage() {
     }
     setSubmitting(true);
     try {
-      if (env.VITE_REPEAT_DIAL_WARNING_ENABLED && !opts.skipRepeatWarning) {
+      if (!opts.skipRepeatWarning) {
         let lastDial: LastDialDto | null = null;
         try {
           lastDial = await api.calls.lastDial(numberId, destinationNumber);
@@ -245,8 +249,12 @@ export function DialPage() {
             onChange={(e) => setDestinationFromInput(e.target.value)}
             onPaste={(e) => {
               const normalized = normalizeDialablePhoneNumber(e.clipboardData.getData('text'));
-              if (!normalized) return;
               e.preventDefault();
+              if (!normalized) {
+                setPageError('Pasted text does not contain a dialable phone number.');
+                return;
+              }
+              setPageError(null);
               setDestination(normalized);
             }}
             placeholder="+1 530-441-9961"

@@ -1,4 +1,4 @@
-import type { PhoneNumberDto, VoicemailDto } from '@pstn-twilio/shared';
+import type { CallDto, CallRecordingDto, PhoneNumberDto, VoicemailDto } from '@pstn-twilio/shared';
 import { useQueries, useQuery } from '@tanstack/react-query';
 import { useEffect, useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
@@ -93,6 +93,13 @@ export function Dashboard() {
       staleTime: 30_000,
     })),
   });
+  const outboundRecordingQueries = useQueries({
+    queries: numbers.map((n) => ({
+      queryKey: ['calls', n.id, { direction: 'OUTBOUND', limit: 25 }],
+      queryFn: () => api.calls.list(n.id, { direction: 'OUTBOUND', limit: 25 }),
+      staleTime: 30_000,
+    })),
+  });
   const recentCalls = useMemo(() => {
     const items = callsQueries.flatMap((q) => q.data?.items ?? []);
     return items
@@ -100,6 +107,17 @@ export function Dashboard() {
       .sort((a, b) => new Date(b.startedAt).getTime() - new Date(a.startedAt).getTime())
       .slice(0, 5);
   }, [callsQueries]);
+  const outboundRecordings = useMemo<OutboundRecordingItem[]>(() => {
+    return outboundRecordingQueries.flatMap((query, index) => {
+      const number = numbers[index];
+      if (!number) return [];
+      return (query.data?.items ?? []).flatMap((call) =>
+        call.recordings.map((recording) => ({ number, call, recording })),
+      );
+    });
+  }, [numbers, outboundRecordingQueries]);
+  const outboundRecordingsLoading =
+    numbersQuery.isLoading || outboundRecordingQueries.some((q) => q.isLoading);
 
   const numberById = useMemo(() => {
     const map = new Map<string, PhoneNumberDto>();
@@ -263,7 +281,183 @@ export function Dashboard() {
           loading={voicemailQuery.isLoading}
         />
       )}
+
+      <OutboundRecordingsByNumber
+        numbers={numbers}
+        items={outboundRecordings}
+        loading={outboundRecordingsLoading}
+      />
     </section>
+  );
+}
+
+interface OutboundRecordingItem {
+  number: PhoneNumberDto;
+  call: CallDto;
+  recording: CallRecordingDto;
+}
+
+function OutboundRecordingsByNumber({
+  numbers,
+  items,
+  loading,
+}: {
+  numbers: PhoneNumberDto[];
+  items: OutboundRecordingItem[];
+  loading: boolean;
+}) {
+  const itemsByNumberId = useMemo(() => {
+    const map = new Map<string, OutboundRecordingItem[]>();
+    for (const item of items) {
+      const bucket = map.get(item.number.id) ?? [];
+      bucket.push(item);
+      map.set(item.number.id, bucket);
+    }
+    for (const bucket of map.values()) {
+      bucket.sort(
+        (a, b) =>
+          new Date(b.recording.createdAt).getTime() - new Date(a.recording.createdAt).getTime(),
+      );
+    }
+    return map;
+  }, [items]);
+
+  return (
+    <div className="rounded border border-slate-200 bg-white p-4">
+      <div className="flex items-center justify-between gap-3">
+        <h2 className="text-sm font-semibold uppercase tracking-wide text-slate-500">
+          Outbound recordings
+        </h2>
+        <span className="text-xs text-slate-500">{items.length} recent</span>
+      </div>
+
+      {loading ? <p className="mt-2 text-sm text-slate-500">Loading…</p> : null}
+      {!loading && numbers.length === 0 ? (
+        <p className="mt-2 text-sm text-slate-500">No provisioned numbers yet.</p>
+      ) : null}
+
+      {numbers.length > 0 ? (
+        <div className="mt-3 divide-y divide-slate-100">
+          {numbers.map((number) => {
+            const recordings = itemsByNumberId.get(number.id) ?? [];
+            return (
+              <section key={number.id} className="py-3 first:pt-0 last:pb-0">
+                <div className="flex flex-wrap items-baseline justify-between gap-2">
+                  <div>
+                    <div className="font-mono text-sm">{formatPhone(number.phoneNumberE164)}</div>
+                    <div className="text-xs text-slate-500">{number.friendlyName}</div>
+                  </div>
+                  <Link
+                    to={`/numbers/${number.id}/calls`}
+                    className="text-xs text-slate-600 underline"
+                  >
+                    Open call log
+                  </Link>
+                </div>
+
+                {recordings.length === 0 ? (
+                  <p className="mt-2 text-sm text-slate-500">No outbound recordings yet.</p>
+                ) : (
+                  <div className="mt-2 overflow-x-auto">
+                    <table className="w-full table-auto border-collapse text-sm">
+                      <thead>
+                        <tr className="text-left text-xs text-slate-500">
+                          <th className="px-3 py-2">To</th>
+                          <th className="px-3 py-2">Recorded</th>
+                          <th className="px-3 py-2">Duration</th>
+                          <th className="px-3 py-2">Playback</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {recordings.map(({ call, recording }) => (
+                          <tr key={recording.id} className="border-t border-slate-100">
+                            <td className="px-3 py-2 font-mono">
+                              {formatPhone(call.destination ?? call.to)}
+                            </td>
+                            <td className="px-3 py-2">{formatDate(recording.createdAt)}</td>
+                            <td className="px-3 py-2">
+                              {recording.durationSeconds !== null
+                                ? `${recording.durationSeconds}s`
+                                : recording.status}
+                            </td>
+                            <td className="px-3 py-2">
+                              <OutboundRecordingAudio
+                                numberId={number.id}
+                                callId={call.id}
+                                recording={recording}
+                              />
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
+              </section>
+            );
+          })}
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
+function OutboundRecordingAudio({
+  numberId,
+  callId,
+  recording,
+}: {
+  numberId: string;
+  callId: string;
+  recording: CallRecordingDto;
+}) {
+  const [src, setSrc] = useState<string | null>(null);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    return () => {
+      if (src) URL.revokeObjectURL(src);
+    };
+  }, [src]);
+
+  async function loadRecording() {
+    setLoading(true);
+    setError(null);
+    try {
+      const blob = await api.calls.recordingMedia(numberId, callId, recording.id);
+      const url = URL.createObjectURL(blob);
+      setSrc((prev) => {
+        if (prev) URL.revokeObjectURL(prev);
+        return url;
+      });
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Recording unavailable');
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  if (recording.status !== 'COMPLETED') {
+    return <span className="text-xs text-slate-500">{recording.status}</span>;
+  }
+
+  if (src) {
+    return <audio controls preload="metadata" src={src} className="h-8 w-64 max-w-full" />;
+  }
+
+  return (
+    <div className="flex flex-col gap-1">
+      <button
+        type="button"
+        onClick={loadRecording}
+        disabled={loading}
+        className="w-fit rounded border border-slate-300 px-2 py-1 text-xs disabled:cursor-not-allowed disabled:opacity-60"
+      >
+        {loading ? 'Loading…' : 'Play'}
+      </button>
+      {error ? <span className="max-w-48 text-xs text-red-600">{error}</span> : null}
+    </div>
   );
 }
 

@@ -59,6 +59,15 @@ describe('sendMessageSchema', () => {
     expect(sendMessageSchema.safeParse({ to: '+14155552671', body: long }).success).toBe(false);
     expect(sendMessageSchema.safeParse({ to: '+14155552671', body: 'hi' }).success).toBe(true);
   });
+
+  it('normalizes pasted phone numbers before sending', () => {
+    const parsed = sendMessageSchema.parse({
+      to: 'Front desk: +1 (530) 441-9961',
+      body: 'hi',
+    });
+
+    expect(parsed.to).toBe('+15304419961');
+  });
 });
 
 describe('prepareOutboundCallSchema', () => {

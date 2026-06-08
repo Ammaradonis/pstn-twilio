@@ -67,13 +67,7 @@ export class TwilioService {
 
   get client(): Twilio {
     if (!this.clientInstance) {
-      const apiKeySid = this.config.get<string>('TWILIO_API_KEY_SID');
-      const apiKeySecret = this.config.get<string>('TWILIO_API_KEY_SECRET');
-      if (apiKeySid && apiKeySecret) {
-        this.clientInstance = twilio(apiKeySid, apiKeySecret, { accountSid: this.accountSid });
-      } else {
-        this.clientInstance = twilio(this.accountSid, this.authToken);
-      }
+      this.clientInstance = twilio(this.accountSid, this.authToken);
     }
     return this.clientInstance;
   }
@@ -143,7 +137,17 @@ export class TwilioService {
       // Voice Access Tokens are signed with the API key, not the Auth Token.
       // Validate that path explicitly so /health/twilio catches 20101-causing
       // API key or TwiML App drift before the browser tries to register.
-      await this.client.api.v2010.accounts(this.accountSid).incomingPhoneNumbers.list({ limit: 1 });
+      const apiKeySid = this.config.get<string>('TWILIO_API_KEY_SID');
+      const apiKeySecret = this.config.get<string>('TWILIO_API_KEY_SECRET');
+      if (apiKeySid && apiKeySecret) {
+        const keyClient = twilio(apiKeySid, apiKeySecret, { accountSid: this.accountSid });
+        await keyClient.api.v2010.accounts(this.accountSid).incomingPhoneNumbers.list({ limit: 1 });
+      } else {
+        await authClient.api.v2010
+          .accounts(this.accountSid)
+          .incomingPhoneNumbers.list({ limit: 1 });
+      }
+
       const app = await this.client.applications(this.twimlAppSid).fetch();
       const webhooks = this.defaultWebhookUrls();
       if (app.voiceUrl !== webhooks.outboundVoiceUrl || app.voiceMethod?.toUpperCase() !== 'POST') {

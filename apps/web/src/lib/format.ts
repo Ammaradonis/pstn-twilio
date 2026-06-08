@@ -1,8 +1,11 @@
+import { normalizeDialablePhoneNumber } from '@pstn-twilio/shared';
+
 export function formatPhone(e164: string): string {
-  if (e164.startsWith('+1') && e164.length === 12) {
-    return `+1 (${e164.slice(2, 5)}) ${e164.slice(5, 8)}-${e164.slice(8)}`;
+  const value = normalizeDialablePhoneNumber(e164) ?? e164.trim();
+  if (value.startsWith('+1') && value.length === 12) {
+    return `+1 (${value.slice(2, 5)}) ${value.slice(5, 8)}-${value.slice(8)}`;
   }
-  return e164;
+  return value;
 }
 
 export function formatDate(iso: string | null): string {

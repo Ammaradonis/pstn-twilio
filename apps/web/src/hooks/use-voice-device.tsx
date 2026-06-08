@@ -198,48 +198,6 @@ function formatVoiceError(err: unknown): string {
   return details.length > 0 ? details.join(': ') : voiceError.message;
 }
 
-function formatMicrophoneError(err: unknown): string {
-  const name =
-    err && typeof err === 'object' && typeof (err as { name?: unknown }).name === 'string'
-      ? (err as { name: string }).name
-      : '';
-  if (name === 'NotAllowedError' || name === 'PermissionDeniedError') {
-    return 'Microphone access is denied. Allow microphone access in the browser and try again.';
-  }
-  if (name === 'NotFoundError' || name === 'DevicesNotFoundError') {
-    return 'No microphone was found. Connect or enable an input device and try again.';
-  }
-  if (name === 'NotReadableError' || name === 'TrackStartError') {
-    return 'Microphone is unavailable. Close other apps using it, select the OS default microphone, and try again.';
-  }
-  if (name === 'OverconstrainedError' || name === 'ConstraintNotSatisfiedError') {
-    return 'The browser could not satisfy microphone constraints. The app reset to the default microphone request; try again with the OS default input device.';
-  }
-  const details =
-    err && typeof err === 'object' && typeof (err as { message?: unknown }).message === 'string'
-      ? (err as { message: string }).message
-      : String(err);
-  return `Microphone media could not start. Check browser, operating system, and hardware input settings. ${details}`;
-}
-
-async function ensureMicrophoneMediaReady(): Promise<boolean> {
-  if (typeof navigator === 'undefined' || !navigator.mediaDevices?.getUserMedia) {
-    setRuntimeState({
-      error: 'This browser cannot start microphone media for WebRTC calls.',
-    });
-    return false;
-  }
-
-  try {
-    const stream = await navigator.mediaDevices.getUserMedia(DEFAULT_RTC_CONSTRAINTS);
-    stream.getTracks().forEach((track) => track.stop());
-    return true;
-  } catch (err) {
-    setRuntimeState({ error: formatMicrophoneError(err) });
-    return false;
-  }
-}
-
 function sanitizeDeviceConfig(config: Record<string, unknown>): Record<string, unknown> {
   const safeConfig = { ...config };
   delete safeConfig.audioConstraints;
@@ -583,9 +541,6 @@ async function initVoiceDevice(
     });
 
     try {
-      const micReady = await ensureMicrophoneMediaReady();
-      if (!micReady) return null;
-
       const tokenPromise = api.voice.token(numberId);
       const sdkPromise = import('@twilio/voice-sdk') as Promise<unknown>;
       const configPromise = api.voice.deviceConfig();
@@ -652,9 +607,6 @@ async function makeVoiceCall(
     return null;
   }
 
-  const micReady = await ensureMicrophoneMediaReady();
-  if (!micReady) return null;
-
   try {
     const result = device.connect({
       params: {
@@ -680,8 +632,6 @@ async function acceptIncomingCall(): Promise<void> {
   const conn = runtime.state.incoming?.connection;
   if (!conn) return;
   try {
-    const micReady = await ensureMicrophoneMediaReady();
-    if (!micReady) return;
     attachCallListeners(conn);
     conn.accept?.({ rtcConstraints: DEFAULT_RTC_CONSTRAINTS });
     setRuntimeState({ incoming: null });

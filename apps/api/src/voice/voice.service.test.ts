@@ -345,9 +345,11 @@ describe('VoiceService.getDeviceConfig', () => {
   it('returns codec preferences and protective defaults', () => {
     const { service } = buildService();
     const config = service.getDeviceConfig();
+    expect(config.codecPreferences[0]).toBe('pcmu');
     expect(config.codecPreferences).toContain('opus');
     expect(config.edge[0]).toBe('frankfurt');
     expect(config.edge).toContain('dublin');
+    expect(config.dscp).toBe(true);
     expect(config.closeProtection).toBe(true);
     expect(config.enableImprovedSignalingErrorPrecision).toBe(true);
     expect(config.tokenRefreshMs).toBe(60_000);
