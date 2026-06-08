@@ -1,4 +1,4 @@
-import type { SmsMessageDto } from '@pstn-twilio/shared';
+import { normalizeDialablePhoneNumber, type SmsMessageDto } from '@pstn-twilio/shared';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
@@ -170,16 +170,58 @@ function ComposePanel({
   smsCapable,
   onSend,
 }: ComposePanelProps) {
+  const { push } = useToast();
+
+  function setToFromInput(value: string) {
+    setTo(normalizeDialablePhoneNumber(value) ?? value.trim());
+  }
+
+  async function handlePaste() {
+    if (!navigator.clipboard?.readText) {
+      push({ tone: 'error', message: 'Clipboard access is unavailable in this browser.' });
+      return;
+    }
+
+    try {
+      const pasted = await navigator.clipboard.readText();
+      const normalized = normalizeDialablePhoneNumber(pasted);
+      if (!normalized) {
+        push({ tone: 'error', message: 'Clipboard does not contain a valid phone number.' });
+        return;
+      }
+      setTo(normalized);
+    } catch (err) {
+      push({ tone: 'error', message: err instanceof Error ? err.message : String(err) });
+    }
+  }
+
   return (
     <div className="space-y-2 rounded border border-slate-200 bg-white p-4">
       <h2 className="text-sm font-semibold uppercase tracking-wide text-slate-500">Compose</h2>
-      <div className="grid gap-2 md:grid-cols-[200px_1fr_auto]">
-        <input
-          value={to}
-          onChange={(e) => setTo(e.target.value)}
-          placeholder="+15551234567"
-          className="rounded border border-slate-300 px-2 py-1.5 text-sm font-mono"
-        />
+      <div className="grid gap-2 md:grid-cols-[auto_1fr_auto]">
+        <div className="flex gap-2 md:w-[280px]">
+          <input
+            value={to}
+            onChange={(e) => setToFromInput(e.target.value)}
+            onPaste={(e) => {
+              const normalized = normalizeDialablePhoneNumber(e.clipboardData.getData('text'));
+              if (!normalized) return;
+              e.preventDefault();
+              setTo(normalized);
+            }}
+            placeholder="+15551234567"
+            className="min-w-0 flex-1 rounded border border-slate-300 px-2 py-1.5 text-sm font-mono"
+          />
+          <button
+            type="button"
+            onClick={handlePaste}
+            disabled={submitting}
+            title="Paste a phone number from the clipboard"
+            className="rounded border border-slate-300 px-3 py-1.5 text-sm font-medium hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-60"
+          >
+            Paste
+          </button>
+        </div>
         <textarea
           value={body}
           onChange={(e) => setBody(e.target.value)}
