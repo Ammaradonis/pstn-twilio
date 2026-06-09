@@ -179,7 +179,11 @@ describe('useVoiceDevice', () => {
         destinationNumber: '+15551111111',
         outboundIntentId: 'intent1',
       },
-      rtcConstraints: { audio: true },
+      audioConstraints: {
+        echoCancellation: true,
+        noiseSuppression: true,
+        autoGainControl: true,
+      },
     });
     expect(mediaMock.getUserMedia).not.toHaveBeenCalled();
   });
@@ -211,7 +215,11 @@ describe('useVoiceDevice', () => {
         destinationNumber: '+15551111111',
         outboundIntentId: 'intent1',
       },
-      rtcConstraints: { audio: true },
+      audioConstraints: {
+        echoCancellation: true,
+        noiseSuppression: true,
+        autoGainControl: true,
+      },
     });
     expect(mediaMock.getUserMedia).not.toHaveBeenCalled();
     expect(current!.error).toContain('31402');
@@ -243,7 +251,13 @@ describe('useVoiceDevice', () => {
       await current!.accept();
     });
 
-    expect(call.accept).toHaveBeenCalledWith({ rtcConstraints: { audio: true } });
+    expect(call.accept).toHaveBeenCalledWith({
+      audioConstraints: {
+        echoCancellation: true,
+        noiseSuppression: true,
+        autoGainControl: true,
+      },
+    });
     expect(current!.incoming).toBeNull();
   });
 

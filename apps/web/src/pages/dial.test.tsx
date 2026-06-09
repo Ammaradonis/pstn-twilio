@@ -112,7 +112,7 @@ describe('DialPage dialpad', () => {
     expect(voiceMock.current.sendDigits).toHaveBeenCalledWith('5');
     expect(voiceMock.current.sendDigits).not.toHaveBeenCalledWith('+');
     expect(screen.getByText(/Tones:/)).toHaveTextContent('5');
-    expect(screen.getByLabelText(/destination/i)).toHaveValue('');
+    expect(screen.getByLabelText(/destination/i)).toHaveValue('5');
   });
 
   it('sends DTMF when the Twilio call can send digits even if active state is stale', () => {

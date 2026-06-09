@@ -326,7 +326,7 @@ function OutboundRecordingsByNumber({
     <div className="rounded border border-slate-200 bg-white p-4">
       <div className="flex items-center justify-between gap-3">
         <h2 className="text-sm font-semibold uppercase tracking-wide text-slate-500">
-          Outbound recordings
+          Outbound voicemails (sent recordings)
         </h2>
         <span className="text-xs text-slate-500">{items.length} recent</span>
       </div>

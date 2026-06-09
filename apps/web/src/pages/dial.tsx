@@ -67,7 +67,10 @@ export function DialPage() {
 
   function handleDialpadKey(key: (typeof DIALPAD_KEYS)[number]) {
     if (inCallMode) {
-      if (key !== '+') sendDialpadTone(key);
+      if (key !== '+') {
+        sendDialpadTone(key);
+        setDestination((prev) => prev + key);
+      }
       return;
     }
 
@@ -92,6 +95,7 @@ export function DialPage() {
       if (!/^[0-9*#]$/.test(event.key)) return;
       event.preventDefault();
       sendDialpadTone(event.key);
+      setDestination((prev) => prev + event.key);
     }
 
     window.addEventListener('keydown', handleKeyDown);

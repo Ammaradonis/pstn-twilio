@@ -13,7 +13,10 @@ type VoiceCall = {
   on?: (event: string, handler: VoiceEventHandler) => void;
   isMuted?: () => boolean;
   mute?: (shouldMute: boolean) => void;
-  accept?: (options?: { rtcConstraints?: MediaStreamConstraints }) => void;
+  accept?: (options?: {
+    audioConstraints?: MediaTrackConstraints | boolean;
+    rtcConstraints?: RTCConfiguration;
+  }) => void;
   reject?: () => void;
   disconnect?: () => void;
   sendDigits?: (digits: string) => void;
@@ -33,7 +36,8 @@ type VoiceDevice = {
   updateToken?: (token: string) => void;
   connect: (options: {
     params: { selectedNumberId: string; destinationNumber: string; outboundIntentId: string };
-    rtcConstraints?: MediaStreamConstraints;
+    audioConstraints?: MediaTrackConstraints | boolean;
+    rtcConstraints?: RTCConfiguration;
   }) => VoiceCall | Promise<VoiceCall>;
 };
 
@@ -95,7 +99,11 @@ const INITIAL_RUNTIME_STATE: VoiceRuntimeState = {
 
 const RECONNECTABLE_ERROR_CODES = new Set([20101, 31005, 31203, 31204, 31205, 31207, 53001]);
 const DTMF_DIGITS_PATTERN = /^[0-9*#w]+$/;
-const DEFAULT_RTC_CONSTRAINTS: MediaStreamConstraints = { audio: true };
+const DEFAULT_AUDIO_CONSTRAINTS: MediaTrackConstraints = {
+  echoCancellation: true,
+  noiseSuppression: true,
+  autoGainControl: true,
+};
 
 const subscribers = new Set<() => void>();
 
@@ -614,7 +622,7 @@ async function makeVoiceCall(
         destinationNumber: prepared.destinationNumber,
         outboundIntentId: prepared.outboundIntentId,
       },
-      rtcConstraints: DEFAULT_RTC_CONSTRAINTS,
+      audioConstraints: DEFAULT_AUDIO_CONSTRAINTS,
     });
     const conn = isPromiseLike(result) ? await result : result;
     attachCallListeners(conn);
@@ -633,7 +641,7 @@ async function acceptIncomingCall(): Promise<void> {
   if (!conn) return;
   try {
     attachCallListeners(conn);
-    conn.accept?.({ rtcConstraints: DEFAULT_RTC_CONSTRAINTS });
+    conn.accept?.({ audioConstraints: DEFAULT_AUDIO_CONSTRAINTS });
     setRuntimeState({ incoming: null });
   } catch (err) {
     setRuntimeState({ error: formatVoiceError(err) });

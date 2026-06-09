@@ -2,13 +2,13 @@ const E164_RE = /^\+[1-9]\d{1,14}$/;
 const EXTENSION_RE = /\s*(?:[,;#]\s*)?(?:ext\.?|extension|x|#)\s*\d{1,6}\s*$/i;
 const UNICODE_DASH_RE = /[\u2010-\u2015\u2212]/g;
 const UNICODE_PLUS_RE = /[\uFF0B]/g;
-const PHONE_SEPARATOR = String.raw`[\s,./'"’‘()\-]*`;
+const PHONE_SEPARATOR = String.raw`[\s,./'"’‘()\[\]{}\-]*`;
 const INTERNATIONAL_PHONE_CANDIDATE_RE = new RegExp(
   String.raw`(?:^|[^\d+])(\+(?:${PHONE_SEPARATOR}\d){2,15}(?:\s*(?:ext\.?|extension|x|#)\s*\d{1,6})?)(?=$|[^\d])`,
   'gi',
 );
 const US_PHONE_CANDIDATE_RE = new RegExp(
-  String.raw`(?:^|[^\d+])((?:\+?1${PHONE_SEPARATOR})?(?:\([2-9]\d{2}\)|[2-9]\d{2})${PHONE_SEPARATOR}[2-9]\d{2}${PHONE_SEPARATOR}\d{4}(?:\s*(?:ext\.?|extension|x|#)\s*\d{1,6})?)(?=$|[^\d])`,
+  String.raw`(?:^|[^\d+])((?:\+?1${PHONE_SEPARATOR})?(?:\(${PHONE_SEPARATOR}[2-9]\d{2}${PHONE_SEPARATOR}\)|\[${PHONE_SEPARATOR}[2-9]\d{2}${PHONE_SEPARATOR}\]|\{${PHONE_SEPARATOR}[2-9]\d{2}${PHONE_SEPARATOR}\}|[2-9]\d{2})${PHONE_SEPARATOR}[2-9]\d{2}${PHONE_SEPARATOR}\d{4}(?:\s*(?:ext\.?|extension|x|#)\s*\d{1,6})?)(?=$|[^\d])`,
   'gi',
 );
 
