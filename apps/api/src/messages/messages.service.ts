@@ -116,7 +116,10 @@ export class MessagesService {
         to: input.to,
         body: input.body,
         mediaUrl: input.mediaUrl,
-        statusCallback: `${this.twilio.webhookBaseUrl}/webhooks/twilio/messaging/status`,
+        statusCallback: callbackUrlWithLocalMessageId(
+          this.twilio.messagingStatusCallbackUrl,
+          pending.id,
+        ),
       });
     } catch (err) {
       const message = err instanceof Error ? err.message : 'Twilio send failed';
@@ -136,12 +139,15 @@ export class MessagesService {
       });
     }
 
+    const current = await this.prisma.smsMessage.findUnique({ where: { id: pending.id } });
+    const data =
+      current && isTerminalStatus(current.status)
+        ? { twilioMessageSid: sent.sid }
+        : { twilioMessageSid: sent.sid, status: MessageStatus.SENT };
+
     const updated = await this.prisma.smsMessage.update({
       where: { id: pending.id },
-      data: {
-        twilioMessageSid: sent.sid,
-        status: MessageStatus.SENT,
-      },
+      data,
     });
 
     await this.audit.log({
@@ -228,4 +234,18 @@ function extractMediaArray(message: SmsMessage): string[] | undefined {
   if (!Array.isArray(message.media)) return undefined;
   const urls = message.media.filter((u): u is string => typeof u === 'string');
   return urls.length > 0 ? urls : undefined;
+}
+
+function callbackUrlWithLocalMessageId(callbackUrl: string, messageId: string): string {
+  const url = new URL(callbackUrl);
+  url.searchParams.set('messageId', messageId);
+  return url.toString();
+}
+
+function isTerminalStatus(status: MessageStatus): boolean {
+  return (
+    status === MessageStatus.DELIVERED ||
+    status === MessageStatus.FAILED ||
+    status === MessageStatus.UNDELIVERED
+  );
 }

@@ -22,3 +22,36 @@ export function mapTwilioStatusToEnum(raw: string): MessageStatus {
       return MessageStatus.QUEUED;
   }
 }
+
+export function preserveMostFinalMessageStatus(
+  current: MessageStatus,
+  incoming: MessageStatus,
+): MessageStatus {
+  return statusRank(incoming) >= statusRank(current) ? incoming : current;
+}
+
+export function describeTwilioMessagingError(errorCode: string | null | undefined): string | null {
+  switch (errorCode) {
+    case '30032':
+      return 'The toll-free sender is not verified for messaging. Complete Twilio toll-free verification or send from an approved SMS sender.';
+    default:
+      return null;
+  }
+}
+
+function statusRank(status: MessageStatus): number {
+  switch (status) {
+    case MessageStatus.QUEUED:
+      return 0;
+    case MessageStatus.SENT:
+      return 1;
+    case MessageStatus.RECEIVED:
+    case MessageStatus.DELIVERED:
+      return 2;
+    case MessageStatus.UNDELIVERED:
+    case MessageStatus.FAILED:
+      return 3;
+    default:
+      return 0;
+  }
+}

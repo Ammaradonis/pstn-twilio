@@ -13,6 +13,7 @@ function buildService(overrides: { prisma?: any; twilio?: any; audit?: any; real
   const twilio = overrides.twilio ?? {
     accountSid: 'AC123',
     webhookBaseUrl: 'https://example.com',
+    messagingStatusCallbackUrl: 'https://example.com/webhooks/twilio/messaging/status',
     client: {
       api: { v2010: { accounts: () => ({ messages: { create: vi.fn() } }) } },
     },
@@ -97,6 +98,7 @@ describe('MessagesService.send', () => {
     const twilio = {
       accountSid: 'AC123',
       webhookBaseUrl: 'https://example.com',
+      messagingStatusCallbackUrl: 'https://example.com/webhooks/twilio/messaging/status',
       client: {
         api: { v2010: { accounts: () => ({ messages: { create: createTwilio } }) } },
       },
@@ -116,7 +118,7 @@ describe('MessagesService.send', () => {
         from: '+15552222222',
         to: '+15551111111',
         body: 'hello',
-        statusCallback: 'https://example.com/webhooks/twilio/messaging/status',
+        statusCallback: 'https://example.com/webhooks/twilio/messaging/status?messageId=m1',
       }),
     );
     expect(prisma.smsMessage.update).toHaveBeenCalledWith(
@@ -130,6 +132,61 @@ describe('MessagesService.send', () => {
     );
     expect(realtime.smsSent).toHaveBeenCalledTimes(1);
     expect(result.twilioMessageSid).toBe('SM999');
+  });
+
+  it('does not overwrite a terminal status received before Twilio send returns', async () => {
+    const pending = {
+      id: 'm1',
+      phoneNumberId: 'pn1',
+      twilioMessageSid: null,
+      direction: MessageDirection.OUTBOUND,
+      fromE164: '+15552222222',
+      toE164: '+15551111111',
+      body: 'hello',
+      status: MessageStatus.QUEUED,
+      errorCode: null,
+      errorMessage: null,
+      numMedia: 0,
+      media: null,
+      createdAt: new Date('2026-05-19T00:00:00Z'),
+      updatedAt: new Date('2026-05-19T00:00:00Z'),
+    };
+    const delivered = {
+      ...pending,
+      twilioMessageSid: 'SM999',
+      status: MessageStatus.DELIVERED,
+    };
+
+    const prisma = {
+      phoneNumber: { findUnique: vi.fn().mockResolvedValue(phoneNumber) },
+      smsMessage: {
+        create: vi.fn().mockResolvedValue(pending),
+        findUnique: vi.fn().mockResolvedValue(delivered),
+        update: vi.fn().mockResolvedValue(delivered),
+      },
+    };
+    const createTwilio = vi.fn().mockResolvedValue({ sid: 'SM999' });
+    const twilio = {
+      accountSid: 'AC123',
+      messagingStatusCallbackUrl: 'https://example.com/webhooks/twilio/messaging/status',
+      client: {
+        api: { v2010: { accounts: () => ({ messages: { create: createTwilio } }) } },
+      },
+    };
+    const audit = { log: vi.fn().mockResolvedValue(undefined) };
+    const realtime = { smsSent: vi.fn(), smsStatusUpdated: vi.fn() };
+    const service = buildService({ prisma, twilio, audit, realtime });
+
+    const result = await service.send({ userId: 'u1', role: UserRole.OWNER }, 'pn1', {
+      to: '+15551111111',
+      body: 'hello',
+    });
+
+    expect(prisma.smsMessage.update).toHaveBeenCalledWith({
+      where: { id: 'm1' },
+      data: { twilioMessageSid: 'SM999' },
+    });
+    expect(result.status).toBe(MessageStatus.DELIVERED);
   });
 
   it('marks message FAILED and surfaces a 400 when Twilio rejects the send', async () => {
@@ -161,6 +218,7 @@ describe('MessagesService.send', () => {
     const twilio = {
       accountSid: 'AC123',
       webhookBaseUrl: 'https://example.com',
+      messagingStatusCallbackUrl: 'https://example.com/webhooks/twilio/messaging/status',
       client: {
         api: {
           v2010: {

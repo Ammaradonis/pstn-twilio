@@ -1,10 +1,15 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { MessageDirection, MessageStatus, WebhookProvider } from '@prisma/client';
 
+import { mapMessage } from '../messages/messages.mapper';
 import { PrismaService } from '../prisma/prisma.service';
 import { RealtimeService } from '../realtime/realtime.service';
 
-import { mapTwilioStatusToEnum } from './status.mapper';
+import {
+  describeTwilioMessagingError,
+  mapTwilioStatusToEnum,
+  preserveMostFinalMessageStatus,
+} from './status.mapper';
 
 export interface InboundParams {
   MessageSid?: string;
@@ -24,6 +29,10 @@ export interface StatusParams {
   ErrorCode?: string;
   ErrorMessage?: string;
   [key: string]: string | undefined;
+}
+
+interface StatusContext {
+  localMessageId?: string;
 }
 
 @Injectable()
@@ -109,54 +118,64 @@ export class MessagingWebhookService {
     return { deduped: false };
   }
 
-  async handleStatus(params: StatusParams): Promise<{ deduped: boolean }> {
+  async handleStatus(
+    params: StatusParams,
+    context: StatusContext = {},
+  ): Promise<{ deduped: boolean }> {
     const sid = params.MessageSid ?? params.SmsSid;
     const statusRaw = params.MessageStatus ?? params.SmsStatus;
     if (!sid || !statusRaw) {
       throw new Error('MessageSid or MessageStatus missing from status callback');
     }
-    const dedupeKey = `messaging:status:${sid}:${statusRaw}`;
+    const dedupeKey = [
+      'messaging:status',
+      sid,
+      statusRaw.toLowerCase(),
+      params.ErrorCode ?? '',
+      context.localMessageId ?? '',
+    ].join(':');
     if (await this.alreadyProcessed(dedupeKey)) {
       return { deduped: true };
     }
     await this.recordWebhookEvent(dedupeKey, 'messaging.status', sid, params);
 
-    const existing = await this.prisma.smsMessage.findUnique({
-      where: { twilioMessageSid: sid },
-    });
+    const existing =
+      (await this.prisma.smsMessage.findUnique({
+        where: { twilioMessageSid: sid },
+      })) ??
+      (context.localMessageId
+        ? await this.prisma.smsMessage.findUnique({ where: { id: context.localMessageId } })
+        : null);
     if (!existing) {
       this.logger.warn(`Status callback for unknown SMS sid ${sid}`);
       return { deduped: false };
     }
+    if (existing.twilioMessageSid && existing.twilioMessageSid !== sid) {
+      this.logger.warn(
+        `Status callback sid ${sid} does not match local SMS ${existing.id} sid ${existing.twilioMessageSid}`,
+      );
+      return { deduped: false };
+    }
 
-    const status = mapTwilioStatusToEnum(statusRaw);
+    const status = preserveMostFinalMessageStatus(
+      existing.status,
+      mapTwilioStatusToEnum(statusRaw),
+    );
+    const errorCode = params.ErrorCode ?? existing.errorCode;
     const updated = await this.prisma.smsMessage.update({
-      where: { twilioMessageSid: sid },
+      where: { id: existing.id },
       data: {
+        twilioMessageSid: existing.twilioMessageSid ?? sid,
         status,
-        errorCode: params.ErrorCode ?? existing.errorCode,
-        errorMessage: params.ErrorMessage ?? existing.errorMessage,
+        errorCode,
+        errorMessage:
+          params.ErrorMessage ?? describeTwilioMessagingError(errorCode) ?? existing.errorMessage,
       },
     });
 
     this.realtime.smsStatusUpdated({
       numberId: updated.phoneNumberId,
-      message: {
-        id: updated.id,
-        phoneNumberId: updated.phoneNumberId,
-        twilioMessageSid: updated.twilioMessageSid,
-        direction: updated.direction,
-        from: updated.fromE164,
-        to: updated.toE164,
-        body: updated.body ?? '',
-        status: updated.status,
-        errorCode: updated.errorCode,
-        errorMessage: updated.errorMessage,
-        numMedia: updated.numMedia,
-        mediaUrls: collectMediaFromRow(updated.media),
-        createdAt: updated.createdAt.toISOString(),
-        updatedAt: updated.updatedAt.toISOString(),
-      },
+      message: mapMessage(updated),
     });
 
     return { deduped: false };
@@ -198,9 +217,4 @@ function collectMedia(params: InboundParams, numMedia: number): string[] {
     if (typeof url === 'string' && url.length > 0) urls.push(url);
   }
   return urls;
-}
-
-function collectMediaFromRow(media: unknown): string[] {
-  if (!media || !Array.isArray(media)) return [];
-  return media.filter((u): u is string => typeof u === 'string');
 }

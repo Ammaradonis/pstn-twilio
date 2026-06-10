@@ -34,6 +34,13 @@ export class TwilioService {
     return url.replace(/\/$/, '');
   }
 
+  get messagingStatusCallbackUrl(): string {
+    return (
+      this.config.get<string>('TWILIO_MESSAGING_STATUS_CALLBACK_URL') ??
+      `${this.webhookBaseUrl}/webhooks/twilio/messaging/status`
+    ).replace(/\/$/, '');
+  }
+
   get defaultCountry(): string {
     return this.config.get<string>('TWILIO_DEFAULT_COUNTRY') ?? 'US';
   }

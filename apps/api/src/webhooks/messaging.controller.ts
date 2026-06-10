@@ -1,4 +1,4 @@
-import { Body, Controller, Header, HttpCode, Logger, Post, UseGuards } from '@nestjs/common';
+import { Body, Controller, Header, HttpCode, Logger, Post, Query, UseGuards } from '@nestjs/common';
 
 import { MessagingWebhookService, InboundParams, StatusParams } from './messaging.service';
 import { TwilioSignatureGuard } from './twilio-signature.guard';
@@ -26,9 +26,9 @@ export class MessagingWebhookController {
 
   @Post('status')
   @HttpCode(204)
-  async status(@Body() body: StatusParams): Promise<void> {
+  async status(@Body() body: StatusParams, @Query('messageId') messageId?: string): Promise<void> {
     try {
-      await this.service.handleStatus(body);
+      await this.service.handleStatus(body, { localMessageId: messageId });
     } catch (err) {
       this.logger.error(
         `Status callback failed: ${err instanceof Error ? err.message : 'unknown'}`,

@@ -73,6 +73,14 @@ describe('TwilioService', () => {
     );
   });
 
+  it('derives the messaging status callback URL from the webhook base by default', () => {
+    const service = buildService();
+
+    expect(service.messagingStatusCallbackUrl).toBe(
+      'https://api.example.com/webhooks/twilio/messaging/status',
+    );
+  });
+
   it('fails validation when the TwiML App Voice URL points away from outbound', async () => {
     twilioMocks.applicationFetch.mockResolvedValue({
       voiceUrl: 'https://api.example.com/webhooks/twilio/voice/inbound',

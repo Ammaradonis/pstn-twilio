@@ -183,11 +183,170 @@ describe('MessagingWebhookService.handleStatus', () => {
 
     expect(prisma.smsMessage.update).toHaveBeenCalledWith(
       expect.objectContaining({
-        where: { twilioMessageSid: 'SM1' },
+        where: { id: 'm1' },
         data: expect.objectContaining({ status: MessageStatus.DELIVERED }),
       }),
     );
     expect(realtime.smsStatusUpdated).toHaveBeenCalledTimes(1);
+  });
+
+  it('uses the signed local message id when the status callback beats sid persistence', async () => {
+    const pending = {
+      id: 'm1',
+      phoneNumberId: 'pn1',
+      twilioMessageSid: null,
+      errorCode: null,
+      errorMessage: null,
+      status: MessageStatus.QUEUED,
+    };
+    const updated = {
+      ...pending,
+      twilioMessageSid: 'SM1',
+      direction: MessageDirection.OUTBOUND,
+      fromE164: '+15552222222',
+      toE164: '+15551111111',
+      body: 'reply',
+      status: MessageStatus.SENT,
+      numMedia: 0,
+      media: null,
+      createdAt: new Date('2026-05-19T00:00:00Z'),
+      updatedAt: new Date('2026-05-19T00:00:01Z'),
+    };
+    const prisma = {
+      webhookEvent: {
+        findUnique: vi.fn().mockResolvedValue(null),
+        create: vi.fn().mockResolvedValue({}),
+      },
+      phoneNumber: { findUnique: vi.fn() },
+      smsMessage: {
+        findUnique: vi.fn().mockResolvedValueOnce(null).mockResolvedValueOnce(pending),
+        create: vi.fn(),
+        update: vi.fn().mockResolvedValue(updated),
+      },
+    };
+    const realtime = { smsReceived: vi.fn(), smsStatusUpdated: vi.fn() };
+    const service = buildService({ prisma, realtime });
+
+    await service.handleStatus(
+      {
+        MessageSid: 'SM1',
+        MessageStatus: 'sent',
+      },
+      { localMessageId: 'm1' },
+    );
+
+    expect(prisma.smsMessage.update).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: { id: 'm1' },
+        data: expect.objectContaining({
+          twilioMessageSid: 'SM1',
+          status: MessageStatus.SENT,
+        }),
+      }),
+    );
+  });
+
+  it('does not regress a terminal status when a late lower-priority callback arrives', async () => {
+    const existing = {
+      id: 'm1',
+      phoneNumberId: 'pn1',
+      twilioMessageSid: 'SM1',
+      errorCode: '30032',
+      errorMessage: 'already failed',
+      status: MessageStatus.UNDELIVERED,
+    };
+    const updated = {
+      ...existing,
+      direction: MessageDirection.OUTBOUND,
+      fromE164: '+15552222222',
+      toE164: '+15551111111',
+      body: 'reply',
+      numMedia: 0,
+      media: null,
+      createdAt: new Date('2026-05-19T00:00:00Z'),
+      updatedAt: new Date('2026-05-19T00:00:01Z'),
+    };
+    const prisma = {
+      webhookEvent: {
+        findUnique: vi.fn().mockResolvedValue(null),
+        create: vi.fn().mockResolvedValue({}),
+      },
+      phoneNumber: { findUnique: vi.fn() },
+      smsMessage: {
+        findUnique: vi.fn().mockResolvedValue(existing),
+        create: vi.fn(),
+        update: vi.fn().mockResolvedValue(updated),
+      },
+    };
+    const realtime = { smsReceived: vi.fn(), smsStatusUpdated: vi.fn() };
+    const service = buildService({ prisma, realtime });
+
+    await service.handleStatus({
+      MessageSid: 'SM1',
+      MessageStatus: 'sent',
+    });
+
+    expect(prisma.smsMessage.update).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({ status: MessageStatus.UNDELIVERED }),
+      }),
+    );
+  });
+
+  it('adds a useful message for Twilio 30032 when the callback omits ErrorMessage', async () => {
+    const existing = {
+      id: 'm1',
+      phoneNumberId: 'pn1',
+      twilioMessageSid: 'SM1',
+      errorCode: null,
+      errorMessage: null,
+      status: MessageStatus.SENT,
+    };
+    const updated = {
+      ...existing,
+      direction: MessageDirection.OUTBOUND,
+      fromE164: '+15552222222',
+      toE164: '+15551111111',
+      body: 'reply',
+      status: MessageStatus.UNDELIVERED,
+      errorCode: '30032',
+      errorMessage:
+        'The toll-free sender is not verified for messaging. Complete Twilio toll-free verification or send from an approved SMS sender.',
+      numMedia: 0,
+      media: null,
+      createdAt: new Date('2026-05-19T00:00:00Z'),
+      updatedAt: new Date('2026-05-19T00:00:01Z'),
+    };
+    const prisma = {
+      webhookEvent: {
+        findUnique: vi.fn().mockResolvedValue(null),
+        create: vi.fn().mockResolvedValue({}),
+      },
+      phoneNumber: { findUnique: vi.fn() },
+      smsMessage: {
+        findUnique: vi.fn().mockResolvedValue(existing),
+        create: vi.fn(),
+        update: vi.fn().mockResolvedValue(updated),
+      },
+    };
+    const realtime = { smsReceived: vi.fn(), smsStatusUpdated: vi.fn() };
+    const service = buildService({ prisma, realtime });
+
+    await service.handleStatus({
+      MessageSid: 'SM1',
+      MessageStatus: 'undelivered',
+      ErrorCode: '30032',
+    });
+
+    expect(prisma.smsMessage.update).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          errorCode: '30032',
+          errorMessage:
+            'The toll-free sender is not verified for messaging. Complete Twilio toll-free verification or send from an approved SMS sender.',
+        }),
+      }),
+    );
   });
 });
 
