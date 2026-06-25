@@ -15,7 +15,8 @@ type VoiceCall = {
   mute?: (shouldMute: boolean) => void;
   accept?: (options?: {
     audioConstraints?: MediaTrackConstraints | boolean;
-    rtcConstraints?: RTCConfiguration;
+    rtcConstraints?: MediaStreamConstraints;
+    rtcConfiguration?: RTCConfiguration;
   }) => void;
   reject?: () => void;
   disconnect?: () => void;
@@ -34,10 +35,14 @@ type VoiceDevice = {
   destroy?: () => void;
   disconnectAll?: () => void;
   updateToken?: (token: string) => void;
+  audio?: {
+    setAudioConstraints: (constraints: MediaTrackConstraints) => Promise<void>;
+  };
   connect: (options: {
     params: { selectedNumberId: string; destinationNumber: string; outboundIntentId: string };
     audioConstraints?: MediaTrackConstraints | boolean;
-    rtcConstraints?: RTCConfiguration;
+    rtcConstraints?: MediaStreamConstraints;
+    rtcConfiguration?: RTCConfiguration;
   }) => VoiceCall | Promise<VoiceCall>;
 };
 
@@ -101,8 +106,8 @@ const RECONNECTABLE_ERROR_CODES = new Set([20101, 31005, 31203, 31204, 31205, 31
 const DTMF_DIGITS_PATTERN = /^[0-9*#w]+$/;
 const DEFAULT_AUDIO_CONSTRAINTS: MediaTrackConstraints = {
   echoCancellation: true,
-  noiseSuppression: true,
-  autoGainControl: true,
+  noiseSuppression: false,
+  autoGainControl: false,
 };
 
 const subscribers = new Set<() => void>();
@@ -562,6 +567,13 @@ async function initVoiceDevice(
 
       const device = new Device(tokenResp.token, sanitizeDeviceConfig(config));
       runtime.device = device;
+      if (device.audio && typeof device.audio.setAudioConstraints === 'function') {
+        try {
+          await device.audio.setAudioConstraints(DEFAULT_AUDIO_CONSTRAINTS);
+        } catch {
+          // ignore
+        }
+      }
       runtime.lastNumberId = numberId;
       runtime.expiresAt = tokenResp.expiresAt;
       runtime.intentionallyDestroyed = false;
@@ -623,6 +635,9 @@ async function makeVoiceCall(
         outboundIntentId: prepared.outboundIntentId,
       },
       audioConstraints: DEFAULT_AUDIO_CONSTRAINTS,
+      rtcConstraints: {
+        audio: DEFAULT_AUDIO_CONSTRAINTS,
+      },
     });
     const conn = isPromiseLike(result) ? await result : result;
     attachCallListeners(conn);
@@ -641,7 +656,12 @@ async function acceptIncomingCall(): Promise<void> {
   if (!conn) return;
   try {
     attachCallListeners(conn);
-    conn.accept?.({ audioConstraints: DEFAULT_AUDIO_CONSTRAINTS });
+    conn.accept?.({
+      audioConstraints: DEFAULT_AUDIO_CONSTRAINTS,
+      rtcConstraints: {
+        audio: DEFAULT_AUDIO_CONSTRAINTS,
+      },
+    });
     setRuntimeState({ incoming: null });
   } catch (err) {
     setRuntimeState({ error: formatVoiceError(err) });

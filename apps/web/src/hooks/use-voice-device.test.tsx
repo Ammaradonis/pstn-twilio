@@ -181,8 +181,15 @@ describe('useVoiceDevice', () => {
       },
       audioConstraints: {
         echoCancellation: true,
-        noiseSuppression: true,
-        autoGainControl: true,
+        noiseSuppression: false,
+        autoGainControl: false,
+      },
+      rtcConstraints: {
+        audio: {
+          echoCancellation: true,
+          noiseSuppression: false,
+          autoGainControl: false,
+        },
       },
     });
     expect(mediaMock.getUserMedia).not.toHaveBeenCalled();
@@ -217,8 +224,15 @@ describe('useVoiceDevice', () => {
       },
       audioConstraints: {
         echoCancellation: true,
-        noiseSuppression: true,
-        autoGainControl: true,
+        noiseSuppression: false,
+        autoGainControl: false,
+      },
+      rtcConstraints: {
+        audio: {
+          echoCancellation: true,
+          noiseSuppression: false,
+          autoGainControl: false,
+        },
       },
     });
     expect(mediaMock.getUserMedia).not.toHaveBeenCalled();
@@ -254,8 +268,15 @@ describe('useVoiceDevice', () => {
     expect(call.accept).toHaveBeenCalledWith({
       audioConstraints: {
         echoCancellation: true,
-        noiseSuppression: true,
-        autoGainControl: true,
+        noiseSuppression: false,
+        autoGainControl: false,
+      },
+      rtcConstraints: {
+        audio: {
+          echoCancellation: true,
+          noiseSuppression: false,
+          autoGainControl: false,
+        },
       },
     });
     expect(current!.incoming).toBeNull();
