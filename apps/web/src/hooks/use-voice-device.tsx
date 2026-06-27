@@ -215,6 +215,7 @@ function sanitizeDeviceConfig(config: Record<string, unknown>): Record<string, u
   const safeConfig = { ...config };
   delete safeConfig.audioConstraints;
   delete safeConfig.rtcConstraints;
+  delete safeConfig.edge;
   return safeConfig;
 }
 
@@ -330,13 +331,10 @@ function scheduleReconnect(numberId: string | undefined): void {
       return;
     }
     if (state === 'registering') {
-      markDeviceRegistering();
-      scheduleReconnect(numberId);
       return;
     }
 
     await registerCurrentDevice(numberId);
-    if (!runtime.state.registered) scheduleReconnect(numberId);
   }, delay);
 }
 
