@@ -2,6 +2,7 @@
   "name": "@pstn-twilio/api",
   "version": "0.0.0",
   "private": true,
+  "type": "commonjs",
   "description": "NestJS backend for pstn-twilio",
   "scripts": {
     "build": "nest build",
