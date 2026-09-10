@@ -108,6 +108,7 @@ const INITIAL_RUNTIME_STATE: VoiceRuntimeState = {
 };
 
 const RECONNECTABLE_ERROR_CODES = new Set([20101, 31005, 31009, 31203, 31204, 31205, 31207, 53001]);
+const MAX_STALLED_REGISTRATION_RECONNECT_ATTEMPTS = 5;
 const DTMF_DIGITS_PATTERN = /^[0-9*#w]+$/;
 const DEFAULT_AUDIO_CONSTRAINTS: MediaTrackConstraints = {
   echoCancellation: true,
@@ -381,20 +382,33 @@ function scheduleReconnect(numberId: string | undefined): void {
     const device = runtime.device;
     if (runtime.intentionallyDestroyed || !device) return;
 
-    try {
-      await refreshVoiceToken(numberId);
-    } catch (err) {
-      setRuntimeState({ error: formatVoiceError(err) });
-      scheduleReconnect(numberId);
-      return;
+    const state = getDeviceRegistrationState(device);
+    if (state !== 'registering' || runtime.reconnectAttempt === 1) {
+      try {
+        await refreshVoiceToken(numberId);
+      } catch (err) {
+        setRuntimeState({ error: formatVoiceError(err) });
+        scheduleReconnect(numberId);
+        return;
+      }
     }
 
-    const state = getDeviceRegistrationState(device);
-    if (state === 'registered') {
+    const refreshedState = getDeviceRegistrationState(device);
+    if (refreshedState === 'registered') {
       markDeviceRegistered();
       return;
     }
-    if (state === 'registering') {
+    if (refreshedState === 'registering') {
+      if (runtime.reconnectAttempt >= MAX_STALLED_REGISTRATION_RECONNECT_ATTEMPTS) {
+        // The SDK did not emit "registered" during its 30-second signaling recovery window.
+        // A new Device creates a fresh signaling stream without interrupting an active call.
+        if (!runtime.state.active) {
+          disposeCurrentDevice(false);
+          await initVoiceDevice(numberId, isBrowserSupported());
+          return;
+        }
+      }
+      scheduleReconnect(numberId);
       return;
     }
 

@@ -216,6 +216,37 @@ describe('useVoiceDevice', () => {
     expect(current!.error).toBeNull();
   });
 
+  it('recreates a device that remains registering after a signaling disconnect', async () => {
+    render(<Harness onChange={(voice) => (current = voice)} />);
+
+    await act(async () => {
+      await current!.init('pn1');
+      await Promise.resolve();
+    });
+
+    const stalledDevice = voiceSdkMock.instances[0];
+    expect(stalledDevice).toBeDefined();
+    if (!stalledDevice) throw new Error('Mock Twilio Device was not created');
+    stalledDevice.state = 'registering';
+
+    act(() => {
+      stalledDevice.emit(
+        'error',
+        Object.assign(new Error('signaling disconnected'), { code: 31005 }),
+      );
+    });
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(30_000);
+    });
+
+    expect(stalledDevice.destroy).toHaveBeenCalledTimes(1);
+    expect(voiceSdkMock.instances).toHaveLength(2);
+    expect(voiceSdkMock.instances[1]?.register).toHaveBeenCalledTimes(1);
+    expect(current!.registered).toBe(true);
+    expect(current!.error).toBeNull();
+  });
+
   it('prepares an outbound intent before connecting the Twilio device', async () => {
     render(<Harness onChange={(voice) => (current = voice)} />);
 
