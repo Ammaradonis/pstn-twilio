@@ -50,6 +50,17 @@ export function AnswerPage() {
             label={`Mic: ${voice.micPermission}`}
             ok={voice.micPermission === 'granted'}
           />
+          {voice.micPermission !== 'granted' && voice.browserSupported && (
+            <button
+              type="button"
+              onClick={() => void voice.requestMicPermission()}
+              className="rounded border border-amber-300 bg-amber-50 px-2.5 py-0.5 text-xs font-medium text-amber-900 hover:bg-amber-100"
+            >
+              {voice.micPermission === 'denied'
+                ? 'Re-check Microphone Permission'
+                : 'Enable Microphone'}
+            </button>
+          )}
         </div>
         {voice.identity && (
           <p className="mt-2 text-xs text-slate-500">
@@ -66,11 +77,24 @@ export function AnswerPage() {
       )}
       {voice.micPermission === 'denied' && (
         <div className="rounded border border-rose-300 bg-rose-50 p-3 text-sm text-rose-800">
-          Microphone access is blocked for this site. Allow microphone permissions in the browser to
-          answer calls.
+          <p className="font-semibold">Microphone access is blocked (Twilio 31401)</p>
+          <p className="mt-1 text-xs">
+            Microphone access is blocked for this site. Allow microphone permissions in the browser
+            to answer calls.
+          </p>
+          <ol className="mt-1 list-decimal list-inside space-y-0.5 text-xs">
+            <li>Click the lock or site settings icon in your browser address bar.</li>
+            <li>
+              Change the <strong>Microphone</strong> permission from Block to <strong>Allow</strong>
+              .
+            </li>
+            <li>
+              Click <strong>Re-check Microphone Permission</strong> above or refresh the page.
+            </li>
+          </ol>
         </div>
       )}
-      {voice.error && (
+      {voice.error && voice.micPermission !== 'denied' && (
         <div className="rounded border border-rose-300 bg-rose-50 p-3 text-sm text-rose-800">
           {voice.error}
         </div>
@@ -84,8 +108,18 @@ export function AnswerPage() {
           </p>
           <div className="mt-3 flex gap-2">
             <button
-              onClick={() => voice.accept()}
-              className="rounded bg-emerald-600 px-3 py-1.5 text-sm font-semibold text-white hover:bg-emerald-700"
+              onClick={async () => {
+                if (
+                  voice.micPermission !== 'granted' &&
+                  typeof voice.requestMicPermission === 'function'
+                ) {
+                  const granted = await voice.requestMicPermission();
+                  if (!granted) return;
+                }
+                voice.accept();
+              }}
+              disabled={voice.micPermission === 'denied'}
+              className="rounded bg-emerald-600 px-3 py-1.5 text-sm font-semibold text-white hover:bg-emerald-700 disabled:cursor-not-allowed disabled:opacity-60"
             >
               Answer
             </button>

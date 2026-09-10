@@ -353,5 +353,6 @@ describe('VoiceService.getDeviceConfig', () => {
     expect(config.closeProtection).toBe(true);
     expect(config.enableImprovedSignalingErrorPrecision).toBe(true);
     expect(config.tokenRefreshMs).toBe(60_000);
+    expect(config.maxCallSignalingTimeoutMs).toBe(30_000);
   });
 });

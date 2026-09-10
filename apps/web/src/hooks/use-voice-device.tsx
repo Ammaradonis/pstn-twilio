@@ -65,6 +65,8 @@ type IncomingCall = {
   from?: string;
 };
 
+type MicPermission = 'unknown' | 'granted' | 'denied' | 'prompt';
+
 type VoiceRuntimeState = {
   ready: boolean;
   registered: boolean;
@@ -75,12 +77,13 @@ type VoiceRuntimeState = {
   error: string | null;
   isMuted: boolean;
   canSendDigits: boolean;
+  micPermission: MicPermission;
 };
 
 interface UseVoiceDevice extends VoiceRuntimeState {
   init: (numberId?: string) => Promise<{ identity: string; expiresAt: string } | null>;
   destroy: () => void;
-  micPermission: 'unknown' | 'granted' | 'denied' | 'prompt';
+  micPermission: MicPermission;
   browserSupported: boolean;
   accept: () => void;
   reject: () => void;
@@ -88,6 +91,7 @@ interface UseVoiceDevice extends VoiceRuntimeState {
   toggleMute: () => void;
   sendDigits: (digits: string) => void;
   makeCall: (selectedNumberId: string, destinationNumber: string) => Promise<VoiceCall | null>;
+  requestMicPermission: () => Promise<boolean>;
 }
 
 const INITIAL_RUNTIME_STATE: VoiceRuntimeState = {
@@ -100,9 +104,10 @@ const INITIAL_RUNTIME_STATE: VoiceRuntimeState = {
   error: null,
   isMuted: false,
   canSendDigits: false,
+  micPermission: 'unknown',
 };
 
-const RECONNECTABLE_ERROR_CODES = new Set([20101, 31005, 31203, 31204, 31205, 31207, 53001]);
+const RECONNECTABLE_ERROR_CODES = new Set([20101, 31005, 31009, 31203, 31204, 31205, 31207, 53001]);
 const DTMF_DIGITS_PATTERN = /^[0-9*#w]+$/;
 const DEFAULT_AUDIO_CONSTRAINTS: MediaTrackConstraints = {
   echoCancellation: true,
@@ -179,6 +184,19 @@ function getVoiceErrorCode(err: unknown): number | undefined {
   return voiceError.twilioError?.code ?? voiceError.code;
 }
 
+function isMicDeniedError(err: unknown): boolean {
+  if (!(err instanceof Error)) return false;
+  const code = getVoiceErrorCode(err);
+  if (code === 31401) return true;
+  if (err.name === 'NotAllowedError' || err.name === 'PermissionDeniedError') return true;
+  const msg = (err.message ?? '').toLowerCase();
+  return (
+    msg.includes('31401') ||
+    msg.includes('denied permissions to user media') ||
+    msg.includes('permission denied')
+  );
+}
+
 function formatVoiceError(err: unknown): string {
   if (!(err instanceof Error)) return String(err);
   const voiceError = err as VoiceSdkError;
@@ -197,8 +215,14 @@ function formatVoiceError(err: unknown): string {
   if (code === 31005) {
     return 'Twilio signaling disconnected (31005). The device is reconnecting automatically.';
   }
+  if (code === 31009) {
+    return 'Twilio transport is unavailable (31009). The device is reconnecting through its configured signaling edges.';
+  }
   if (code === 31000) {
     return 'Twilio reported a generic Voice SDK setup error (31000). Run Twilio sync/diagnostics; this usually means the TwiML App Voice URL or outbound webhook response is wrong.';
+  }
+  if (code === 31401 || isMicDeniedError(err)) {
+    return 'Microphone permission was denied (31401). The browser or user blocked microphone access. Please allow microphone permissions in your browser settings (click the lock or tune icon next to the address bar) and try again.';
   }
   if (code === 31402) {
     return 'Twilio could not start microphone media (31402). The app is using default audio constraints; close other apps using the microphone, select the OS default microphone, and try again.';
@@ -212,10 +236,47 @@ function formatVoiceError(err: unknown): string {
 }
 
 function sanitizeDeviceConfig(config: Record<string, unknown>): Record<string, unknown> {
-  const safeConfig = { ...config };
-  delete safeConfig.audioConstraints;
-  delete safeConfig.rtcConstraints;
-  delete safeConfig.edge;
+  const safeConfig: Record<string, unknown> = {};
+  const codecPreferences = config.codecPreferences;
+  const edge = config.edge;
+
+  if (
+    Array.isArray(codecPreferences) &&
+    codecPreferences.every((codec) => codec === 'opus' || codec === 'pcmu')
+  ) {
+    safeConfig.codecPreferences = [...codecPreferences];
+  }
+  if (
+    typeof edge === 'string' ||
+    (Array.isArray(edge) &&
+      edge.length > 0 &&
+      edge.every((candidate) => typeof candidate === 'string'))
+  ) {
+    safeConfig.edge = Array.isArray(edge) ? [...edge] : edge;
+  }
+
+  for (const option of ['dscp', 'closeProtection', 'enableImprovedSignalingErrorPrecision']) {
+    if (typeof config[option] === 'boolean') safeConfig[option] = config[option];
+  }
+  if (typeof config.logLevel === 'number' && Number.isInteger(config.logLevel)) {
+    safeConfig.logLevel = config.logLevel;
+  }
+  if (
+    typeof config.tokenRefreshMs === 'number' &&
+    Number.isInteger(config.tokenRefreshMs) &&
+    config.tokenRefreshMs >= 1_000
+  ) {
+    safeConfig.tokenRefreshMs = config.tokenRefreshMs;
+  }
+  if (
+    typeof config.maxCallSignalingTimeoutMs === 'number' &&
+    Number.isInteger(config.maxCallSignalingTimeoutMs) &&
+    config.maxCallSignalingTimeoutMs >= 0 &&
+    config.maxCallSignalingTimeoutMs <= 30_000
+  ) {
+    safeConfig.maxCallSignalingTimeoutMs = config.maxCallSignalingTimeoutMs;
+  }
+
   return safeConfig;
 }
 
@@ -274,7 +335,10 @@ function disposeCurrentDevice(resetState: boolean): void {
   runtime.currentInitNumberId = undefined;
 
   if (resetState) {
-    runtime.state = INITIAL_RUNTIME_STATE;
+    runtime.state = {
+      ...INITIAL_RUNTIME_STATE,
+      micPermission: runtime.state.micPermission,
+    };
     emit();
   }
 }
@@ -455,11 +519,13 @@ function attachCallListeners(conn: VoiceCall): void {
   });
   conn.on?.('error', (err) => {
     runtime.call = null;
+    const isDenied = isMicDeniedError(err);
     setRuntimeState({
       error: formatVoiceError(err),
       active: false,
       connectionState: 'closed',
       canSendDigits: false,
+      ...(isDenied ? { micPermission: 'denied' as const } : {}),
     });
     if (RECONNECTABLE_ERROR_CODES.has(getVoiceErrorCode(err) ?? 0)) {
       scheduleReconnect(runtime.lastNumberId);
@@ -504,7 +570,11 @@ function attachDeviceListeners(device: VoiceDevice, numberId: string | undefined
   device.on('error', (err) => {
     if (runtime.device !== device) return;
     const code = getVoiceErrorCode(err);
-    setRuntimeState({ error: formatVoiceError(err) });
+    const isDenied = isMicDeniedError(err);
+    setRuntimeState({
+      error: formatVoiceError(err),
+      ...(isDenied ? { micPermission: 'denied' as const } : {}),
+    });
     if (RECONNECTABLE_ERROR_CODES.has(code ?? 0)) {
       scheduleReconnect(numberId);
     }
@@ -597,6 +667,14 @@ async function makeVoiceCall(
   selectedNumberId: string,
   destinationNumber: string,
 ): Promise<VoiceCall | null> {
+  if (runtime.state.micPermission === 'denied') {
+    setRuntimeState({
+      error:
+        'Microphone permission was denied (31401). The browser or user blocked microphone access. Please allow microphone permissions in your browser settings (click the lock or tune icon next to the address bar) and try again.',
+    });
+    return null;
+  }
+
   const initialized = await initVoiceDevice(selectedNumberId, isBrowserSupported());
   if (!initialized) {
     setRuntimeState({
@@ -641,7 +719,11 @@ async function makeVoiceCall(
     attachCallListeners(conn);
     return conn;
   } catch (err) {
-    setRuntimeState({ error: formatVoiceError(err) });
+    const isDenied = isMicDeniedError(err);
+    setRuntimeState({
+      error: formatVoiceError(err),
+      ...(isDenied ? { micPermission: 'denied' as const } : {}),
+    });
     if (RECONNECTABLE_ERROR_CODES.has(getVoiceErrorCode(err) ?? 0)) {
       scheduleReconnect(prepared.selectedNumberId);
     }
@@ -652,6 +734,13 @@ async function makeVoiceCall(
 async function acceptIncomingCall(): Promise<void> {
   const conn = runtime.state.incoming?.connection;
   if (!conn) return;
+  if (runtime.state.micPermission === 'denied') {
+    setRuntimeState({
+      error:
+        'Microphone permission was denied (31401). The browser or user blocked microphone access. Please allow microphone permissions in your browser settings (click the lock or tune icon next to the address bar) and try again.',
+    });
+    return;
+  }
   try {
     attachCallListeners(conn);
     conn.accept?.({
@@ -662,7 +751,11 @@ async function acceptIncomingCall(): Promise<void> {
     });
     setRuntimeState({ incoming: null });
   } catch (err) {
-    setRuntimeState({ error: formatVoiceError(err) });
+    const isDenied = isMicDeniedError(err);
+    setRuntimeState({
+      error: formatVoiceError(err),
+      ...(isDenied ? { micPermission: 'denied' as const } : {}),
+    });
   }
 }
 
@@ -732,9 +825,39 @@ function sendDtmfDigits(digits: string): void {
   }
 }
 
+async function requestMicrophonePermission(): Promise<boolean> {
+  if (typeof navigator === 'undefined' || !navigator.mediaDevices?.getUserMedia) {
+    setRuntimeState({
+      micPermission: 'denied',
+      error: 'This browser cannot start microphone media for WebRTC calls.',
+    });
+    return false;
+  }
+
+  try {
+    const stream = await navigator.mediaDevices.getUserMedia({ audio: DEFAULT_AUDIO_CONSTRAINTS });
+    stream.getTracks().forEach((track) => track.stop());
+    setRuntimeState({
+      micPermission: 'granted',
+      error:
+        runtime.state.error?.includes('31401') || runtime.state.error?.includes('Microphone')
+          ? null
+          : runtime.state.error,
+    });
+    return true;
+  } catch (err) {
+    setRuntimeState({
+      micPermission: 'denied',
+      error: formatVoiceError(
+        Object.assign(err instanceof Error ? err : new Error(String(err)), { code: 31401 }),
+      ),
+    });
+    return false;
+  }
+}
+
 export function useVoiceDevice(): UseVoiceDevice {
   const [snapshot, setSnapshot] = useState<VoiceRuntimeState>(runtime.state);
-  const [micPermission, setMicPermission] = useState<UseVoiceDevice['micPermission']>('unknown');
   const [browserSupported] = useState<boolean>(isBrowserSupported);
 
   useEffect(() => subscribe(() => setSnapshot(runtime.state)), []);
@@ -746,9 +869,9 @@ export function useVoiceDevice(): UseVoiceDevice {
       .query({ name: 'microphone' as PermissionName })
       .then((status) => {
         if (cancelled) return;
-        setMicPermission(status.state as UseVoiceDevice['micPermission']);
+        setRuntimeState({ micPermission: status.state as MicPermission });
         status.onchange = () => {
-          if (!cancelled) setMicPermission(status.state as UseVoiceDevice['micPermission']);
+          if (!cancelled) setRuntimeState({ micPermission: status.state as MicPermission });
         };
       })
       .catch(() => {
@@ -770,7 +893,6 @@ export function useVoiceDevice(): UseVoiceDevice {
     ...snapshot,
     init,
     destroy,
-    micPermission,
     browserSupported,
     accept: acceptIncomingCall,
     reject: rejectIncomingCall,
@@ -778,5 +900,6 @@ export function useVoiceDevice(): UseVoiceDevice {
     toggleMute,
     sendDigits: sendDtmfDigits,
     makeCall: makeVoiceCall,
+    requestMicPermission: requestMicrophonePermission,
   };
 }

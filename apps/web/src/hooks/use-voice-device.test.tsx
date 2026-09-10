@@ -13,6 +13,7 @@ const voiceSdkMock = vi.hoisted(() => ({
     updateToken: ReturnType<typeof vi.fn>;
     destroy: ReturnType<typeof vi.fn>;
     connect: ReturnType<typeof vi.fn>;
+    options: Record<string, unknown>;
     emit: (event: string, ...args: unknown[]) => void;
   }>,
 }));
@@ -35,6 +36,7 @@ vi.mock('../lib/api-client', () => ({
 vi.mock('@twilio/voice-sdk', () => {
   class Device {
     state: 'destroyed' | 'unregistered' | 'registering' | 'registered' = 'unregistered';
+    options: Record<string, unknown>;
     register = vi.fn(async () => {
       if (this.state !== 'unregistered') {
         throw new Error(
@@ -53,7 +55,8 @@ vi.mock('@twilio/voice-sdk', () => {
 
     private readonly handlers = new Map<string, Array<(...args: unknown[]) => void>>();
 
-    constructor() {
+    constructor(_token: string, options: Record<string, unknown>) {
+      this.options = options;
       voiceSdkMock.instances.push(this);
     }
 
@@ -141,6 +144,66 @@ describe('useVoiceDevice', () => {
       device.emit('error', Object.assign(new Error('signaling disconnected'), { code: 31005 }));
     });
     expect(current!.error).toContain('31005');
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(1_000);
+    });
+
+    expect(api.voice.token).toHaveBeenCalledTimes(2);
+    expect(device.updateToken).toHaveBeenCalledTimes(1);
+    expect(device.register).toHaveBeenCalledTimes(1);
+    expect(current!.registered).toBe(true);
+    expect(current!.error).toBeNull();
+  });
+
+  it('passes validated fallback edges and signaling recovery options to the Twilio device', async () => {
+    vi.mocked(api.voice.deviceConfig).mockResolvedValue({
+      codecPreferences: ['pcmu', 'opus'],
+      edge: ['frankfurt', 'dublin', 'ashburn'],
+      dscp: true,
+      closeProtection: true,
+      enableImprovedSignalingErrorPrecision: true,
+      tokenRefreshMs: 60_000,
+      maxCallSignalingTimeoutMs: 30_000,
+      audioConstraints: { shouldNotReachTheSdk: true },
+    });
+    render(<Harness onChange={(voice) => (current = voice)} />);
+
+    await act(async () => {
+      await current!.init('pn1');
+      await Promise.resolve();
+    });
+
+    const device = voiceSdkMock.instances[0];
+    expect(device).toBeDefined();
+    if (!device) throw new Error('Mock Twilio Device was not created');
+    expect(device.options).toEqual({
+      codecPreferences: ['pcmu', 'opus'],
+      edge: ['frankfurt', 'dublin', 'ashburn'],
+      dscp: true,
+      closeProtection: true,
+      enableImprovedSignalingErrorPrecision: true,
+      tokenRefreshMs: 60_000,
+      maxCallSignalingTimeoutMs: 30_000,
+    });
+  });
+
+  it('refreshes the device after a 31009 transport error', async () => {
+    render(<Harness onChange={(voice) => (current = voice)} />);
+
+    await act(async () => {
+      await current!.init('pn1');
+      await Promise.resolve();
+    });
+
+    const device = voiceSdkMock.instances[0];
+    expect(device).toBeDefined();
+    if (!device) throw new Error('Mock Twilio Device was not created');
+
+    act(() => {
+      device.emit('error', Object.assign(new Error('transport unavailable'), { code: 31009 }));
+    });
+    expect(current!.error).toContain('31009');
 
     await act(async () => {
       await vi.advanceTimersByTimeAsync(1_000);
@@ -312,5 +375,69 @@ describe('useVoiceDevice', () => {
 
     expect(call.sendDigits).not.toHaveBeenCalledWith('+');
     expect(current!.error).toContain('DTMF digits');
+  });
+
+  it('handles Twilio 31401 user media denied error and marks micPermission as denied', async () => {
+    render(<Harness onChange={(voice) => (current = voice)} />);
+
+    await act(async () => {
+      await current!.init('pn1');
+      await Promise.resolve();
+    });
+
+    const device = voiceSdkMock.instances[0];
+    expect(device).toBeDefined();
+    if (!device) throw new Error('Mock Twilio Device was not created');
+    device.connect.mockRejectedValue(
+      Object.assign(new Error('The browser or end-user denied permissions to user media.'), {
+        code: 31401,
+      }),
+    );
+
+    await act(async () => {
+      await current!.makeCall('pn1', '+1 555-111-1111');
+      await Promise.resolve();
+    });
+
+    expect(current!.error).toContain('31401');
+    expect(current!.error).toContain('Microphone permission was denied');
+    expect(current!.micPermission).toBe('denied');
+
+    // Subsequent makeCall should be guarded immediately without creating another outbound intent
+    vi.mocked(api.voice.prepareOutbound).mockClear();
+    await act(async () => {
+      await current!.makeCall('pn1', '+1 555-111-1111');
+      await Promise.resolve();
+    });
+    expect(api.voice.prepareOutbound).not.toHaveBeenCalled();
+    expect(current!.error).toContain('31401');
+  });
+
+  it('requests microphone permission successfully via requestMicPermission', async () => {
+    render(<Harness onChange={(voice) => (current = voice)} />);
+
+    await act(async () => {
+      const granted = await current!.requestMicPermission();
+      expect(granted).toBe(true);
+    });
+
+    expect(mediaMock.getUserMedia).toHaveBeenCalled();
+    expect(mediaMock.stopTrack).toHaveBeenCalled();
+    expect(current!.micPermission).toBe('granted');
+  });
+
+  it('marks micPermission as denied when requestMicPermission fails', async () => {
+    mediaMock.getUserMedia.mockRejectedValueOnce(
+      Object.assign(new Error('Permission denied'), { name: 'NotAllowedError' }),
+    );
+    render(<Harness onChange={(voice) => (current = voice)} />);
+
+    await act(async () => {
+      const granted = await current!.requestMicPermission();
+      expect(granted).toBe(false);
+    });
+
+    expect(current!.micPermission).toBe('denied');
+    expect(current!.error).toContain('31401');
   });
 });

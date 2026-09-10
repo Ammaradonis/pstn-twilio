@@ -134,6 +134,18 @@ export function DialPage() {
       setPageError('Enter a valid U.S. phone number, such as +1 530-441-9961.');
       return;
     }
+    if (voice.micPermission === 'denied') {
+      setPageError(
+        'Microphone permission was denied (31401). Please allow microphone permissions in your browser settings (click the lock or tune icon next to the address bar) and try again.',
+      );
+      return;
+    }
+    if (voice.micPermission !== 'granted' && typeof voice.requestMicPermission === 'function') {
+      const granted = await voice.requestMicPermission();
+      if (!granted) {
+        return;
+      }
+    }
     setSubmitting(true);
     try {
       if (!opts.skipRepeatWarning) {
@@ -209,7 +221,7 @@ export function DialPage() {
 
       <div className="rounded border border-slate-200 bg-white p-4">
         <h2 className="text-sm font-semibold text-slate-700">Device readiness</h2>
-        <div className="mt-2 flex flex-wrap gap-2">
+        <div className="mt-2 flex flex-wrap items-center gap-2">
           <StatusPill
             label={voice.browserSupported ? 'WebRTC supported' : 'WebRTC unavailable'}
             ok={voice.browserSupported}
@@ -223,6 +235,17 @@ export function DialPage() {
             label={`Mic: ${voice.micPermission}`}
             ok={voice.micPermission === 'granted'}
           />
+          {voice.micPermission !== 'granted' && voice.browserSupported && (
+            <button
+              type="button"
+              onClick={() => void voice.requestMicPermission()}
+              className="rounded border border-amber-300 bg-amber-50 px-2.5 py-0.5 text-xs font-medium text-amber-900 hover:bg-amber-100"
+            >
+              {voice.micPermission === 'denied'
+                ? 'Re-check Microphone Permission'
+                : 'Enable Microphone'}
+            </button>
+          )}
         </div>
         {callerId && (
           <p className="mt-2 text-xs text-slate-500">
@@ -236,7 +259,25 @@ export function DialPage() {
           Your browser does not support WebRTC. Use the latest Chrome, Edge, or Firefox.
         </div>
       )}
-      {(pageError || voice.error) && (
+      {voice.micPermission === 'denied' && (
+        <div className="rounded border border-rose-300 bg-rose-50 p-3 text-sm text-rose-800">
+          <p className="font-semibold">Microphone access is blocked (Twilio 31401)</p>
+          <p className="mt-1 text-xs">
+            The browser or user denied permissions to the microphone. To fix this:
+          </p>
+          <ol className="mt-1 list-decimal list-inside space-y-0.5 text-xs">
+            <li>Click the lock or site settings icon in your browser address bar.</li>
+            <li>
+              Change the <strong>Microphone</strong> permission from Block to <strong>Allow</strong>
+              .
+            </li>
+            <li>
+              Click <strong>Re-check Microphone Permission</strong> above or refresh the page.
+            </li>
+          </ol>
+        </div>
+      )}
+      {(pageError || voice.error) && voice.micPermission !== 'denied' && (
         <div className="rounded border border-rose-300 bg-rose-50 p-3 text-sm text-rose-800">
           {pageError ?? voice.error}
         </div>
@@ -269,7 +310,7 @@ export function DialPage() {
           <button
             type="button"
             onClick={handlePasteAndCall}
-            disabled={submitting || inCallMode}
+            disabled={submitting || inCallMode || voice.micPermission === 'denied'}
             title="Paste a phone number from the clipboard and call it"
             className="rounded border border-slate-300 px-3 py-1.5 text-sm font-medium hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-60"
           >
@@ -307,7 +348,7 @@ export function DialPage() {
         <div className="mt-4 flex flex-wrap gap-2">
           <button
             onClick={handleCall}
-            disabled={!valid || submitting || inCallMode}
+            disabled={!valid || submitting || inCallMode || voice.micPermission === 'denied'}
             className="rounded bg-emerald-600 px-3 py-1.5 text-sm font-semibold text-white hover:bg-emerald-700 disabled:cursor-not-allowed disabled:opacity-60"
           >
             {inCallMode ? 'In call' : submitting ? 'Calling…' : 'Call'}

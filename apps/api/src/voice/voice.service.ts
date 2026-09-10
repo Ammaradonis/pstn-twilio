@@ -76,6 +76,7 @@ export class VoiceService {
       closeProtection: true,
       enableImprovedSignalingErrorPrecision: true,
       tokenRefreshMs: 60_000,
+      maxCallSignalingTimeoutMs: 30_000,
     };
   }
 
