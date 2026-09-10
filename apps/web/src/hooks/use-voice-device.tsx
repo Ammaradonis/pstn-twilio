@@ -107,7 +107,14 @@ const INITIAL_RUNTIME_STATE: VoiceRuntimeState = {
   micPermission: 'unknown',
 };
 
-const RECONNECTABLE_ERROR_CODES = new Set([20101, 31005, 31009, 31203, 31204, 31205, 31207, 53001]);
+const RECONNECTABLE_ERROR_CODES = new Set([
+  20101, 20104, 31005, 31009, 31203, 31204, 31205, 31207, 53001,
+]);
+// Codes meaning Twilio rejected the current access token, so recovery needs a
+// fresh one. Transport errors (31005/31009) do not: the SDK re-sends its stored
+// token when the signaling socket reopens.
+const TOKEN_ERROR_CODES = new Set([20101, 20104, 31202, 31204, 31205]);
+const TOKEN_REFRESH_WINDOW_MS = 2 * 60_000;
 // The Voice SDK keeps a lost signaling connection on its current edge for up
 // to 30 seconds before it begins the configured edge fallback. Do not recreate
 // the Device at that boundary: doing so resets the edge list and repeatedly
@@ -138,6 +145,7 @@ const runtime: {
   registering: boolean;
   reconnectAttempt: number;
   signalingRecoveryPending: boolean;
+  tokenRejected: boolean;
 } = {
   state: INITIAL_RUNTIME_STATE,
   device: null,
@@ -152,6 +160,7 @@ const runtime: {
   registering: false,
   reconnectAttempt: 0,
   signalingRecoveryPending: false,
+  tokenRejected: false,
 };
 
 function isPromiseLike<T>(value: T | Promise<T>): value is Promise<T> {
@@ -331,6 +340,7 @@ function disposeCurrentDevice(resetState: boolean): void {
   runtime.registering = false;
   runtime.reconnectAttempt = 0;
   runtime.signalingRecoveryPending = false;
+  runtime.tokenRejected = false;
   runtime.call = null;
 
   try {
@@ -361,8 +371,14 @@ async function refreshVoiceToken(numberId: string | undefined): Promise<void> {
   const next = await api.voice.token(numberId);
   device.updateToken?.(next.token);
   runtime.expiresAt = next.expiresAt;
+  runtime.tokenRejected = false;
   setRuntimeState({ identity: next.identity });
   scheduleTokenRefresh(next.expiresAt, numberId);
+}
+
+function tokenNeedsRefresh(): boolean {
+  if (runtime.tokenRejected || !runtime.expiresAt) return true;
+  return new Date(runtime.expiresAt).getTime() - Date.now() < TOKEN_REFRESH_WINDOW_MS;
 }
 
 function scheduleTokenRefresh(expiresAt: string, numberId: string | undefined): void {
@@ -392,8 +408,10 @@ function scheduleReconnect(numberId: string | undefined): void {
     const device = runtime.device;
     if (runtime.intentionallyDestroyed || !device) return;
 
-    const state = getDeviceRegistrationState(device);
-    if (state !== 'registering' || runtime.reconnectAttempt === 1) {
+    // Only push a new token when the current one is expiring or was rejected.
+    // Device.updateToken() publishes on the signaling socket; while that socket
+    // is down the SDK emits 31009, which would re-trigger this reconnect loop.
+    if (tokenNeedsRefresh()) {
       try {
         await refreshVoiceToken(numberId);
       } catch (err) {
@@ -554,7 +572,9 @@ function attachCallListeners(conn: VoiceCall): void {
       canSendDigits: false,
       ...(isDenied ? { micPermission: 'denied' as const } : {}),
     });
-    if (RECONNECTABLE_ERROR_CODES.has(getVoiceErrorCode(err) ?? 0)) {
+    const code = getVoiceErrorCode(err) ?? 0;
+    if (TOKEN_ERROR_CODES.has(code)) runtime.tokenRejected = true;
+    if (RECONNECTABLE_ERROR_CODES.has(code)) {
       runtime.signalingRecoveryPending = true;
       scheduleReconnect(runtime.lastNumberId);
     }
@@ -620,6 +640,7 @@ function attachDeviceListeners(device: VoiceDevice, numberId: string | undefined
       error: formatVoiceError(err),
       ...(isDenied ? { micPermission: 'denied' as const } : {}),
     });
+    if (TOKEN_ERROR_CODES.has(code ?? 0)) runtime.tokenRejected = true;
     if (RECONNECTABLE_ERROR_CODES.has(code ?? 0)) {
       runtime.signalingRecoveryPending = true;
       scheduleReconnect(numberId);

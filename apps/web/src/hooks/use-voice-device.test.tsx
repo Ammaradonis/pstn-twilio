@@ -149,8 +149,10 @@ describe('useVoiceDevice', () => {
       await vi.advanceTimersByTimeAsync(1_000);
     });
 
-    expect(api.voice.token).toHaveBeenCalledTimes(2);
-    expect(device.updateToken).toHaveBeenCalledTimes(1);
+    // A transport drop does not invalidate the token; pushing one while the
+    // socket is down would only make the SDK emit 31009.
+    expect(api.voice.token).toHaveBeenCalledTimes(1);
+    expect(device.updateToken).not.toHaveBeenCalled();
     expect(device.register).toHaveBeenCalledTimes(1);
     expect(current!.registered).toBe(false);
     expect(current!.error).toContain('31005');
@@ -195,7 +197,7 @@ describe('useVoiceDevice', () => {
     });
   });
 
-  it('refreshes the device after a 31009 transport error and accepts an SDK recovery event', async () => {
+  it('does not push a token into a down socket after 31009 and accepts an SDK recovery event', async () => {
     render(<Harness onChange={(voice) => (current = voice)} />);
 
     await act(async () => {
@@ -216,8 +218,8 @@ describe('useVoiceDevice', () => {
       await vi.advanceTimersByTimeAsync(1_000);
     });
 
-    expect(api.voice.token).toHaveBeenCalledTimes(2);
-    expect(device.updateToken).toHaveBeenCalledTimes(1);
+    expect(api.voice.token).toHaveBeenCalledTimes(1);
+    expect(device.updateToken).not.toHaveBeenCalled();
     expect(device.register).toHaveBeenCalledTimes(1);
 
     act(() => {
@@ -226,6 +228,29 @@ describe('useVoiceDevice', () => {
 
     expect(current!.registered).toBe(true);
     expect(current!.error).toBeNull();
+  });
+
+  it('fetches a fresh token when Twilio rejects the current one', async () => {
+    render(<Harness onChange={(voice) => (current = voice)} />);
+
+    await act(async () => {
+      await current!.init('pn1');
+      await Promise.resolve();
+    });
+
+    const device = voiceSdkMock.instances[0];
+    if (!device) throw new Error('Mock Twilio Device was not created');
+
+    act(() => {
+      device.emit('error', Object.assign(new Error('invalid token'), { code: 31204 }));
+    });
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(1_000);
+    });
+
+    expect(api.voice.token).toHaveBeenCalledTimes(2);
+    expect(device.updateToken).toHaveBeenCalledWith('voice.jwt');
   });
 
   it('lets Twilio edge fallback run before recreating a stale registered device', async () => {
