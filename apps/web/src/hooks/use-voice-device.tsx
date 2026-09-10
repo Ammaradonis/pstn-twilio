@@ -108,7 +108,13 @@ const INITIAL_RUNTIME_STATE: VoiceRuntimeState = {
 };
 
 const RECONNECTABLE_ERROR_CODES = new Set([20101, 31005, 31009, 31203, 31204, 31205, 31207, 53001]);
-const MAX_STALLED_REGISTRATION_RECONNECT_ATTEMPTS = 5;
+// The Voice SDK keeps a lost signaling connection on its current edge for up
+// to 30 seconds before it begins the configured edge fallback. Do not recreate
+// the Device at that boundary: doing so resets the edge list and repeatedly
+// sends the browser back to the failing first edge. Eight retries reaches 75
+// seconds (1 + 2 + 4 + 8 + 15 + 15 + 15 + 15), leaving room for that fallback
+// and its backoff before the app uses a last-resort fresh Device.
+const MAX_STALLED_REGISTRATION_RECONNECT_ATTEMPTS = 8;
 const DTMF_DIGITS_PATTERN = /^[0-9*#w]+$/;
 const DEFAULT_AUDIO_CONSTRAINTS: MediaTrackConstraints = {
   echoCancellation: true,

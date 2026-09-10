@@ -228,7 +228,7 @@ describe('useVoiceDevice', () => {
     expect(current!.error).toBeNull();
   });
 
-  it('recreates a stale registered device after transport recovery times out', async () => {
+  it('lets Twilio edge fallback run before recreating a stale registered device', async () => {
     render(<Harness onChange={(voice) => (current = voice)} />);
 
     await act(async () => {
@@ -251,6 +251,14 @@ describe('useVoiceDevice', () => {
       await vi.advanceTimersByTimeAsync(30_000);
     });
 
+    // maxCallSignalingTimeoutMs gives the SDK this interval to reconnect to
+    // the original edge before it attempts the configured fallback edges.
+    expect(stalledDevice.destroy).not.toHaveBeenCalled();
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(45_000);
+    });
+
     expect(stalledDevice.destroy).toHaveBeenCalledTimes(1);
     expect(voiceSdkMock.instances).toHaveLength(2);
     expect(voiceSdkMock.instances[1]?.register).toHaveBeenCalledTimes(1);
@@ -258,7 +266,7 @@ describe('useVoiceDevice', () => {
     expect(current!.error).toBeNull();
   });
 
-  it('recreates a device that remains registering after a signaling disconnect', async () => {
+  it('recreates a device that remains registering after the edge-fallback window expires', async () => {
     render(<Harness onChange={(voice) => (current = voice)} />);
 
     await act(async () => {
@@ -279,7 +287,7 @@ describe('useVoiceDevice', () => {
     });
 
     await act(async () => {
-      await vi.advanceTimersByTimeAsync(30_000);
+      await vi.advanceTimersByTimeAsync(75_000);
     });
 
     expect(stalledDevice.destroy).toHaveBeenCalledTimes(1);
