@@ -125,7 +125,7 @@ describe('useVoiceDevice', () => {
     vi.clearAllMocks();
   });
 
-  it('does not call register again when 31005 fires while the Twilio device is still registered', async () => {
+  it('waits for the SDK to confirm recovery when 31005 fires while the device state is still registered', async () => {
     render(<Harness onChange={(voice) => (current = voice)} />);
     expect(current).not.toBeNull();
 
@@ -152,6 +152,13 @@ describe('useVoiceDevice', () => {
     expect(api.voice.token).toHaveBeenCalledTimes(2);
     expect(device.updateToken).toHaveBeenCalledTimes(1);
     expect(device.register).toHaveBeenCalledTimes(1);
+    expect(current!.registered).toBe(false);
+    expect(current!.error).toContain('31005');
+
+    act(() => {
+      device.emit('reconnected');
+    });
+
     expect(current!.registered).toBe(true);
     expect(current!.error).toBeNull();
   });
@@ -188,7 +195,7 @@ describe('useVoiceDevice', () => {
     });
   });
 
-  it('refreshes the device after a 31009 transport error', async () => {
+  it('refreshes the device after a 31009 transport error and accepts an SDK recovery event', async () => {
     render(<Harness onChange={(voice) => (current = voice)} />);
 
     await act(async () => {
@@ -212,6 +219,41 @@ describe('useVoiceDevice', () => {
     expect(api.voice.token).toHaveBeenCalledTimes(2);
     expect(device.updateToken).toHaveBeenCalledTimes(1);
     expect(device.register).toHaveBeenCalledTimes(1);
+
+    act(() => {
+      device.emit('reconnected');
+    });
+
+    expect(current!.registered).toBe(true);
+    expect(current!.error).toBeNull();
+  });
+
+  it('recreates a stale registered device after transport recovery times out', async () => {
+    render(<Harness onChange={(voice) => (current = voice)} />);
+
+    await act(async () => {
+      await current!.init('pn1');
+      await Promise.resolve();
+    });
+
+    const stalledDevice = voiceSdkMock.instances[0];
+    expect(stalledDevice).toBeDefined();
+    if (!stalledDevice) throw new Error('Mock Twilio Device was not created');
+
+    act(() => {
+      stalledDevice.emit(
+        'error',
+        Object.assign(new Error('transport unavailable'), { code: 31009 }),
+      );
+    });
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(30_000);
+    });
+
+    expect(stalledDevice.destroy).toHaveBeenCalledTimes(1);
+    expect(voiceSdkMock.instances).toHaveLength(2);
+    expect(voiceSdkMock.instances[1]?.register).toHaveBeenCalledTimes(1);
     expect(current!.registered).toBe(true);
     expect(current!.error).toBeNull();
   });

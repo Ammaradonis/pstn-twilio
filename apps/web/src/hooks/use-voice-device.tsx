@@ -131,6 +131,7 @@ const runtime: {
   intentionallyDestroyed: boolean;
   registering: boolean;
   reconnectAttempt: number;
+  signalingRecoveryPending: boolean;
 } = {
   state: INITIAL_RUNTIME_STATE,
   device: null,
@@ -144,6 +145,7 @@ const runtime: {
   intentionallyDestroyed: false,
   registering: false,
   reconnectAttempt: 0,
+  signalingRecoveryPending: false,
 };
 
 function isPromiseLike<T>(value: T | Promise<T>): value is Promise<T> {
@@ -299,6 +301,7 @@ function markDeviceRegistered(): void {
   clearTimer(runtime.reconnectTimer);
   runtime.reconnectTimer = null;
   runtime.reconnectAttempt = 0;
+  runtime.signalingRecoveryPending = false;
   setRuntimeState({
     ready: true,
     registered: true,
@@ -321,6 +324,7 @@ function disposeCurrentDevice(resetState: boolean): void {
   runtime.reconnectTimer = null;
   runtime.registering = false;
   runtime.reconnectAttempt = 0;
+  runtime.signalingRecoveryPending = false;
   runtime.call = null;
 
   try {
@@ -394,14 +398,17 @@ function scheduleReconnect(numberId: string | undefined): void {
     }
 
     const refreshedState = getDeviceRegistrationState(device);
-    if (refreshedState === 'registered') {
+    if (refreshedState === 'registered' && !runtime.signalingRecoveryPending) {
       markDeviceRegistered();
       return;
     }
-    if (refreshedState === 'registering') {
+    if (refreshedState === 'registering' || runtime.signalingRecoveryPending) {
       if (runtime.reconnectAttempt >= MAX_STALLED_REGISTRATION_RECONNECT_ATTEMPTS) {
-        // The SDK did not emit "registered" during its 30-second signaling recovery window.
-        // A new Device creates a fresh signaling stream without interrupting an active call.
+        // The SDK did not emit a real signaling recovery event during its
+        // 30-second recovery window. Device.state can remain "registered" while
+        // its WebSocket is unusable, so it is not evidence that recovery worked.
+        // A new Device creates a fresh signaling stream without interrupting an
+        // active call.
         if (!runtime.state.active) {
           disposeCurrentDevice(false);
           await initVoiceDevice(numberId, isBrowserSupported());
@@ -542,6 +549,7 @@ function attachCallListeners(conn: VoiceCall): void {
       ...(isDenied ? { micPermission: 'denied' as const } : {}),
     });
     if (RECONNECTABLE_ERROR_CODES.has(getVoiceErrorCode(err) ?? 0)) {
+      runtime.signalingRecoveryPending = true;
       scheduleReconnect(runtime.lastNumberId);
     }
   });
@@ -555,8 +563,25 @@ function attachDeviceListeners(device: VoiceDevice, numberId: string | undefined
 
   device.on('unregistered', () => {
     if (runtime.device !== device) return;
+    runtime.signalingRecoveryPending = true;
     setRuntimeState({ ready: false, registered: false });
     scheduleReconnect(numberId);
+  });
+
+  // These are emitted by the Voice SDK while it restores a dropped signaling
+  // connection. They are the only positive confirmation that a transport error
+  // has recovered; `device.state` may still say "registered" while its
+  // WebSocket is unavailable.
+  device.on('reconnecting', () => {
+    if (runtime.device !== device) return;
+    runtime.signalingRecoveryPending = true;
+    markDeviceRegistering();
+    scheduleReconnect(numberId);
+  });
+
+  device.on('reconnected', () => {
+    if (runtime.device !== device) return;
+    markDeviceRegistered();
   });
 
   device.on('tokenWillExpire', async () => {
@@ -590,6 +615,7 @@ function attachDeviceListeners(device: VoiceDevice, numberId: string | undefined
       ...(isDenied ? { micPermission: 'denied' as const } : {}),
     });
     if (RECONNECTABLE_ERROR_CODES.has(code ?? 0)) {
+      runtime.signalingRecoveryPending = true;
       scheduleReconnect(numberId);
     }
   });
