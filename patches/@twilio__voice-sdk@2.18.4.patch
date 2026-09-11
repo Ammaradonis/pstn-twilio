@@ -1,0 +1,78 @@
+diff --git a/es5/twilio/device.js b/es5/twilio/device.js
+index 7af10588d5a5dc4fc8a22d0fdcdb7deb362c2449..0e6d353310a46a01f828b1c4b1b7b166f65c65b8 100644
+--- a/es5/twilio/device.js
++++ b/es5/twilio/device.js
+@@ -256,7 +256,9 @@ exports.default = /** @class */ (function (_super) {
+             // The signaling stream emits a `connected` event after reconnection, if the
+             // device was registered before this, then register again.
+             if (_this._shouldReRegister) {
+-                _this.register();
++                _this.register().catch(function (error) {
++                    _this._log.warn('Failed to re-register after signaling reconnect', error);
++                });
+             }
+         };
+         /**
+@@ -365,6 +367,8 @@ exports.default = /** @class */ (function (_super) {
+             _this._log.info('Stream is offline');
+             _this._edge = null;
+             _this._region = null;
++            // A tick landing before the server validates the token earns a 31204.
++            _this._stopRegistrationTimer();
+             _this._shouldReRegister = _this.state !== Device.State.Unregistered;
+             _this._setState(Device.State.Unregistered);
+         };
+diff --git a/es5/twilio/pstream.js b/es5/twilio/pstream.js
+index 975147733671aa081c32bcde99d5b700340575ff..dd4d9265209a8b47fa4638dcebb14bfa6d81a474 100644
+--- a/es5/twilio/pstream.js
++++ b/es5/twilio/pstream.js
+@@ -185,7 +185,9 @@ PStream.prototype.sendMessage = function (callsid, content, contenttype, message
+ };
+ PStream.prototype.register = function (mediaCapabilities) {
+     var regPayload = { media: mediaCapabilities };
+-    this._publish('register', regPayload, true);
++    // A queued register is replayed alongside `listen`, before the server
++    // validates the token, and earns a 31204. Re-register on `connected` covers it.
++    this._publish('register', regPayload, false);
+ };
+ PStream.prototype.invite = function (sdp, callsid, params) {
+     var payload = {
+diff --git a/esm/twilio/device.js b/esm/twilio/device.js
+index a6e2eff3f952ca17b3e6af770fde390fd02fdd5b..f4068ec03e1ffcea3b7d09d042637221d46b0864 100644
+--- a/esm/twilio/device.js
++++ b/esm/twilio/device.js
+@@ -303,7 +303,9 @@ class Device extends EventEmitter {
+             // The signaling stream emits a `connected` event after reconnection, if the
+             // device was registered before this, then register again.
+             if (this._shouldReRegister) {
+-                this.register();
++                this.register().catch((error) => {
++                    this._log.warn('Failed to re-register after signaling reconnect', error);
++                });
+             }
+         };
+         /**
+@@ -400,6 +402,8 @@ class Device extends EventEmitter {
+             this._log.info('Stream is offline');
+             this._edge = null;
+             this._region = null;
++            // A tick landing before the server validates the token earns a 31204.
++            this._stopRegistrationTimer();
+             this._shouldReRegister = this.state !== Device.State.Unregistered;
+             this._setState(Device.State.Unregistered);
+         };
+diff --git a/esm/twilio/pstream.js b/esm/twilio/pstream.js
+index de58ed25010761ab476f2b858728b7ea09084482..5dd3fd17cac348bb78558572dde29e1470f41898 100644
+--- a/esm/twilio/pstream.js
++++ b/esm/twilio/pstream.js
+@@ -176,7 +176,9 @@ PStream.prototype.sendMessage = function (callsid, content, contenttype = 'appli
+ };
+ PStream.prototype.register = function (mediaCapabilities) {
+     const regPayload = { media: mediaCapabilities };
+-    this._publish('register', regPayload, true);
++    // A queued register is replayed alongside `listen`, before the server
++    // validates the token, and earns a 31204. Re-register on `connected` covers it.
++    this._publish('register', regPayload, false);
+ };
+ PStream.prototype.invite = function (sdp, callsid, params) {
+     const payload = {

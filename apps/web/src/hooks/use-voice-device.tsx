@@ -346,13 +346,17 @@ function disposeCurrentDevice(resetState: boolean): void {
   runtime.tokenRejected = false;
   runtime.call = null;
 
+  // Detach first so the old Device's teardown events (unregistered, error)
+  // fail the `runtime.device !== device` guard and cannot leak into the next
+  // Device, e.g. when switching to another phone number.
+  const device = runtime.device;
+  runtime.device = null;
   try {
-    runtime.device?.destroy?.();
+    device?.destroy?.();
   } catch {
     /* noop */
   }
 
-  runtime.device = null;
   runtime.lastNumberId = undefined;
   runtime.expiresAt = null;
   runtime.currentInit = null;
