@@ -114,6 +114,9 @@ const RECONNECTABLE_ERROR_CODES = new Set([
 // fresh one. Transport errors (31005/31009) do not: the SDK re-sends its stored
 // token when the signaling socket reopens.
 const TOKEN_ERROR_CODES = new Set([20101, 20104, 31202, 31204, 31205]);
+// Signaling drops the SDK recovers from on its own. An active call survives
+// them for up to maxCallSignalingTimeoutMs; 'disconnect' fires if it cannot.
+const TRANSIENT_SIGNALING_CODES = new Set([31005, 31009, 53001]);
 const TOKEN_REFRESH_WINDOW_MS = 2 * 60_000;
 // The Voice SDK keeps a lost signaling connection on its current edge for up
 // to 30 seconds before it begins the configured edge fallback. Do not recreate
@@ -562,17 +565,29 @@ function attachCallListeners(conn: VoiceCall): void {
       canSendDigits: false,
     });
   });
-  conn.on?.('error', (err) => {
-    runtime.call = null;
-    const isDenied = isMicDeniedError(err);
+  conn.on?.('reconnecting', (err) =>
     setRuntimeState({
-      error: formatVoiceError(err),
-      active: false,
-      connectionState: 'closed',
-      canSendDigits: false,
-      ...(isDenied ? { micPermission: 'denied' as const } : {}),
-    });
+      error: err ? formatVoiceError(err) : 'Call connection lost. Reconnecting…',
+    }),
+  );
+  conn.on?.('reconnected', () => setRuntimeState({ error: null }));
+  conn.on?.('error', (err) => {
     const code = getVoiceErrorCode(err) ?? 0;
+    const isDenied = isMicDeniedError(err);
+    if (TRANSIENT_SIGNALING_CODES.has(code)) {
+      // Keep the call usable (hangup, mute, DTMF) while the SDK restores
+      // signaling; the 'disconnect' handler cleans up if recovery fails.
+      setRuntimeState({ error: formatVoiceError(err) });
+    } else {
+      runtime.call = null;
+      setRuntimeState({
+        error: formatVoiceError(err),
+        active: false,
+        connectionState: 'closed',
+        canSendDigits: false,
+        ...(isDenied ? { micPermission: 'denied' as const } : {}),
+      });
+    }
     if (TOKEN_ERROR_CODES.has(code)) runtime.tokenRejected = true;
     if (RECONNECTABLE_ERROR_CODES.has(code)) {
       runtime.signalingRecoveryPending = true;
@@ -608,6 +623,14 @@ function attachDeviceListeners(device: VoiceDevice, numberId: string | undefined
   device.on('reconnected', () => {
     if (runtime.device !== device) return;
     markDeviceRegistered();
+  });
+
+  // The SDK can destroy itself (e.g. on page lifecycle events). Only an
+  // intentional dispose should leave the softphone without a Device.
+  device.on('destroyed', () => {
+    if (runtime.device !== device || runtime.intentionallyDestroyed) return;
+    disposeCurrentDevice(false);
+    void initVoiceDevice(numberId, isBrowserSupported());
   });
 
   device.on('tokenWillExpire', async () => {
@@ -923,11 +946,42 @@ async function requestMicrophonePermission(): Promise<boolean> {
   }
 }
 
+let recoveryListenersInstalled = false;
+
+function recoverNow(): void {
+  if (runtime.intentionallyDestroyed || !runtime.device || runtime.state.registered) return;
+  if (typeof document !== 'undefined' && document.visibilityState === 'hidden') return;
+  // Back online or visible again: retry now instead of waiting out the backoff.
+  clearTimer(runtime.reconnectTimer);
+  runtime.reconnectTimer = null;
+  runtime.reconnectAttempt = 0;
+  scheduleReconnect(runtime.lastNumberId);
+}
+
+function installRecoveryListeners(): void {
+  if (recoveryListenersInstalled || typeof window === 'undefined') return;
+  recoveryListenersInstalled = true;
+  window.addEventListener('online', recoverNow);
+  window.addEventListener('pageshow', recoverNow);
+  document.addEventListener('visibilitychange', recoverNow);
+  // voice-sdk 2.18.4 can reject an internal re-register after a signaling drop
+  // (fixed upstream in 2.18.5, not yet on npm). Recover instead of surfacing
+  // an unhandled rejection.
+  window.addEventListener('unhandledrejection', (event) => {
+    const code = getVoiceErrorCode(event.reason);
+    if (!code || !RECONNECTABLE_ERROR_CODES.has(code) || !runtime.device) return;
+    event.preventDefault();
+    runtime.signalingRecoveryPending = true;
+    scheduleReconnect(runtime.lastNumberId);
+  });
+}
+
 export function useVoiceDevice(): UseVoiceDevice {
   const [snapshot, setSnapshot] = useState<VoiceRuntimeState>(runtime.state);
   const [browserSupported] = useState<boolean>(isBrowserSupported);
 
   useEffect(() => subscribe(() => setSnapshot(runtime.state)), []);
+  useEffect(() => installRecoveryListeners(), []);
 
   useEffect(() => {
     if (typeof navigator === 'undefined' || !navigator.permissions?.query) return;

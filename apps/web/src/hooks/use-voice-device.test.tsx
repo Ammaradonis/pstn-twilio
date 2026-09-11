@@ -322,6 +322,85 @@ describe('useVoiceDevice', () => {
     expect(current!.error).toBeNull();
   });
 
+  it('keeps an active call usable through a transient 31005 until the SDK reconnects it', async () => {
+    render(<Harness onChange={(voice) => (current = voice)} />);
+
+    await act(async () => {
+      await current!.init('pn1');
+      await Promise.resolve();
+    });
+
+    const device = voiceSdkMock.instances[0];
+    if (!device) throw new Error('Mock Twilio Device was not created');
+    const handlers = new Map<string, (...args: unknown[]) => void>();
+    const call = {
+      on: vi.fn((event: string, handler: (...args: unknown[]) => void) =>
+        handlers.set(event, handler),
+      ),
+      isMuted: vi.fn().mockReturnValue(false),
+      disconnect: vi.fn(),
+      sendDigits: vi.fn(),
+    };
+    device.connect.mockReturnValue(call);
+
+    await act(async () => {
+      await current!.makeCall('pn1', '+1 555-111-1111');
+    });
+    act(() => handlers.get('accept')?.());
+
+    act(() => {
+      handlers.get('error')?.(Object.assign(new Error('signaling dropped'), { code: 31005 }));
+    });
+    expect(current!.active).toBe(true);
+    expect(current!.connectionState).toBe('open');
+    expect(current!.error).toContain('31005');
+
+    act(() => handlers.get('reconnected')?.());
+    expect(current!.error).toBeNull();
+
+    act(() => current!.hangup());
+    expect(call.disconnect).toHaveBeenCalledTimes(1);
+  });
+
+  it('rebuilds the device when the SDK destroys it unexpectedly', async () => {
+    render(<Harness onChange={(voice) => (current = voice)} />);
+
+    await act(async () => {
+      await current!.init('pn1');
+      await Promise.resolve();
+    });
+
+    const device = voiceSdkMock.instances[0];
+    if (!device) throw new Error('Mock Twilio Device was not created');
+
+    await act(async () => {
+      device.state = 'destroyed';
+      device.emit('destroyed');
+      await vi.advanceTimersByTimeAsync(0);
+    });
+
+    expect(voiceSdkMock.instances).toHaveLength(2);
+    expect(voiceSdkMock.instances[1]?.register).toHaveBeenCalledTimes(1);
+    expect(current!.registered).toBe(true);
+  });
+
+  it('absorbs unhandled Twilio signaling rejections instead of surfacing them', async () => {
+    render(<Harness onChange={(voice) => (current = voice)} />);
+
+    await act(async () => {
+      await current!.init('pn1');
+      await Promise.resolve();
+    });
+
+    const event = Object.assign(new Event('unhandledrejection', { cancelable: true }), {
+      reason: Object.assign(new Error('re-register failed'), { code: 31005 }),
+    });
+    act(() => {
+      window.dispatchEvent(event);
+    });
+    expect(event.defaultPrevented).toBe(true);
+  });
+
   it('prepares an outbound intent before connecting the Twilio device', async () => {
     render(<Harness onChange={(voice) => (current = voice)} />);
 
