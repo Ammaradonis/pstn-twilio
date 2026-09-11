@@ -102,7 +102,9 @@ async function request<T>(path: string, opts: RequestOptions = {}): Promise<T> {
   }
 
   if (res.status === 204) return undefined as T;
-  return (await res.json()) as T;
+  // NestJS sends a handler's `null` as a 200 with an empty body.
+  const text = await res.text();
+  return (text ? JSON.parse(text) : null) as T;
 }
 
 async function requestBlob(path: string): Promise<Blob> {

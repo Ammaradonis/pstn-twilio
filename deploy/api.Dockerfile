@@ -15,6 +15,8 @@ RUN corepack enable && corepack prepare pnpm@11.0.0 --activate
 FROM base AS deps
 WORKDIR /app
 COPY pnpm-lock.yaml pnpm-workspace.yaml package.json .npmrc ./
+# pnpm-workspace.yaml's patchedDependencies must resolve during install.
+COPY patches/ patches/
 COPY packages/shared/package.json packages/shared/
 COPY apps/api/package.json apps/api/
 COPY apps/web/package.json apps/web/
@@ -29,8 +31,10 @@ COPY tsconfig.base.json tsconfig.json ./
 RUN pnpm --filter @pstn-twilio/shared build
 RUN pnpm --filter @pstn-twilio/api prisma:generate
 RUN pnpm --filter @pstn-twilio/api build
-# Prune dev deps for the runtime image.
-RUN pnpm --filter @pstn-twilio/api deploy --prod --legacy --config.node-linker=hoisted /out/api
+# Prune dev deps for the runtime image. The workspace patches web-only packages
+# (e.g. @twilio/voice-sdk), which an API-only deploy never installs.
+RUN pnpm --filter @pstn-twilio/api deploy --prod --legacy --config.node-linker=hoisted \
+  --config.allow-unused-patches=true /out/api
 # Re-generate Prisma client into the pruned tree (deploy --prod creates an isolated
 # node_modules; the generated client written during the build stage's prisma:generate
 # step lived in the unpruned tree and is NOT copied over).
