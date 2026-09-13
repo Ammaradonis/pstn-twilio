@@ -20,7 +20,27 @@ export function getSocket(): Socket {
     reconnectionAttempts: Infinity,
     reconnectionDelay: 1000,
   });
+  installResumeListeners();
   return socketInstance;
+}
+
+let resumeListenersInstalled = false;
+
+// Back in the tab or back online: reconnect now instead of waiting out the
+// reconnection backoff, which grows while a hidden tab keeps failing.
+function reconnectNow(): void {
+  if (!socketInstance || socketInstance.connected) return;
+  if (document.visibilityState === 'hidden') return;
+  socketInstance.disconnect();
+  socketInstance.connect();
+}
+
+function installResumeListeners(): void {
+  if (resumeListenersInstalled || typeof window === 'undefined') return;
+  resumeListenersInstalled = true;
+  window.addEventListener('online', reconnectNow);
+  window.addEventListener('pageshow', reconnectNow);
+  document.addEventListener('visibilitychange', reconnectNow);
 }
 
 export function closeSocket(): void {

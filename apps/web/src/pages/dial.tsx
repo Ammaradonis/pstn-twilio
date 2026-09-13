@@ -12,11 +12,15 @@ function isMissingLastDialEndpointError(err: unknown): boolean {
   return err instanceof ApiError && err.status === 404;
 }
 
-function StatusPill({ label, ok }: { label: string; ok: boolean }) {
+function StatusPill({ label, ok, pending }: { label: string; ok: boolean; pending?: boolean }) {
   return (
     <span
       className={`inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium ${
-        ok ? 'bg-emerald-100 text-emerald-700' : 'bg-slate-100 text-slate-600'
+        ok
+          ? 'bg-emerald-100 text-emerald-700'
+          : pending
+            ? 'bg-amber-100 text-amber-800'
+            : 'bg-slate-100 text-slate-600'
       }`}
     >
       {label}
@@ -227,10 +231,19 @@ export function DialPage() {
             ok={voice.browserSupported}
           />
           <StatusPill
-            label={voice.registered ? 'Registered' : 'Not registered'}
+            label={
+              voice.registered
+                ? 'Registered'
+                : voice.reconnecting
+                  ? 'Reconnecting…'
+                  : 'Not registered'
+            }
             ok={voice.registered}
+            pending={voice.reconnecting}
           />
-          <StatusPill label={voice.ready ? 'Ready' : 'Initializing…'} ok={voice.ready} />
+          {!voice.reconnecting && (
+            <StatusPill label={voice.ready ? 'Ready' : 'Initializing…'} ok={voice.ready} />
+          )}
           <StatusPill
             label={`Mic: ${voice.micPermission}`}
             ok={voice.micPermission === 'granted'}

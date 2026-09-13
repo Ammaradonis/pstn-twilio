@@ -625,4 +625,84 @@ describe('useVoiceDevice', () => {
     expect(current!.micPermission).toBe('denied');
     expect(current!.error).toContain('31401');
   });
+
+  it('shows reconnecting and swaps in a fresh device when signaling stalls after returning to the tab', async () => {
+    render(<Harness onChange={(voice) => (current = voice)} />);
+
+    await act(async () => {
+      await current!.init('pn1');
+      await Promise.resolve();
+    });
+
+    const device = voiceSdkMock.instances[0];
+    if (!device) throw new Error('Mock Twilio Device was not created');
+    expect(current!.reconnecting).toBe(false);
+
+    act(() => {
+      device.state = 'registering';
+      device.emit('reconnecting');
+    });
+    expect(current!.registered).toBe(false);
+    expect(current!.reconnecting).toBe(true);
+
+    await act(async () => {
+      document.dispatchEvent(new Event('visibilitychange'));
+      await vi.advanceTimersByTimeAsync(3_999);
+    });
+    expect(voiceSdkMock.instances).toHaveLength(1);
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(1);
+    });
+
+    expect(device.destroy).toHaveBeenCalledTimes(1);
+    expect(voiceSdkMock.instances).toHaveLength(2);
+    expect(voiceSdkMock.instances[1]!.register).toHaveBeenCalledTimes(1);
+    expect(current!.registered).toBe(true);
+    expect(current!.reconnecting).toBe(false);
+  });
+
+  it('leaves a device alone when the SDK recovers within the resume grace period', async () => {
+    render(<Harness onChange={(voice) => (current = voice)} />);
+
+    await act(async () => {
+      await current!.init('pn1');
+      await Promise.resolve();
+    });
+
+    const device = voiceSdkMock.instances[0];
+    if (!device) throw new Error('Mock Twilio Device was not created');
+
+    await act(async () => {
+      document.dispatchEvent(new Event('visibilitychange'));
+      device.emit('reconnecting');
+      await vi.advanceTimersByTimeAsync(1_500);
+      device.emit('reconnected');
+      await vi.advanceTimersByTimeAsync(5_000);
+    });
+
+    expect(device.destroy).not.toHaveBeenCalled();
+    expect(voiceSdkMock.instances).toHaveLength(1);
+    expect(current!.registered).toBe(true);
+  });
+
+  it('retries device creation after a failed token request, immediately once the network is back', async () => {
+    vi.mocked(api.voice.token).mockRejectedValueOnce(new TypeError('Failed to fetch'));
+    render(<Harness onChange={(voice) => (current = voice)} />);
+
+    await act(async () => {
+      await current!.init('pn1');
+    });
+    expect(voiceSdkMock.instances).toHaveLength(0);
+    expect(current!.error).toContain('Failed to fetch');
+
+    await act(async () => {
+      window.dispatchEvent(new Event('online'));
+      await vi.advanceTimersByTimeAsync(0);
+    });
+
+    expect(api.voice.token).toHaveBeenCalledTimes(2);
+    expect(voiceSdkMock.instances).toHaveLength(1);
+    expect(current!.registered).toBe(true);
+  });
 });

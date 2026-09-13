@@ -70,6 +70,9 @@ type MicPermission = 'unknown' | 'granted' | 'denied' | 'prompt';
 type VoiceRuntimeState = {
   ready: boolean;
   registered: boolean;
+  // Not registered right now, but this Device was before: signaling is being
+  // restored rather than set up for the first time.
+  reconnecting: boolean;
   incoming: IncomingCall | null;
   active: boolean;
   connectionState: ConnectionState;
@@ -97,6 +100,7 @@ interface UseVoiceDevice extends VoiceRuntimeState {
 const INITIAL_RUNTIME_STATE: VoiceRuntimeState = {
   ready: false,
   registered: false,
+  reconnecting: false,
   incoming: null,
   active: false,
   connectionState: 'idle',
@@ -125,6 +129,10 @@ const TOKEN_REFRESH_WINDOW_MS = 2 * 60_000;
 // seconds (1 + 2 + 4 + 8 + 15 + 15 + 15 + 15), leaving room for that fallback
 // and its backoff before the app uses a last-resort fresh Device.
 const MAX_STALLED_REGISTRATION_RECONNECT_ATTEMPTS = 8;
+// On returning to the tab or the network, the SDK normally restores signaling
+// within a second or two. If it has not by then, replace the Device instead of
+// waiting out the stalled-registration schedule above.
+const RESUME_RECOVERY_GRACE_MS = 4_000;
 const DTMF_DIGITS_PATTERN = /^[0-9*#w]+$/;
 const DEFAULT_AUDIO_CONSTRAINTS: MediaTrackConstraints = {
   echoCancellation: true,
@@ -142,6 +150,10 @@ const runtime: {
   expiresAt: string | null;
   tokenRefreshTimer: ReturnType<typeof setTimeout> | null;
   reconnectTimer: ReturnType<typeof setTimeout> | null;
+  resumeTimer: ReturnType<typeof setTimeout> | null;
+  // Set while a failed Device creation is waiting to be retried.
+  initRetry: { numberId: string | undefined } | null;
+  hasRegistered: boolean;
   currentInit: Promise<{ identity: string; expiresAt: string } | null> | null;
   currentInitNumberId: string | undefined;
   intentionallyDestroyed: boolean;
@@ -157,6 +169,9 @@ const runtime: {
   expiresAt: null,
   tokenRefreshTimer: null,
   reconnectTimer: null,
+  resumeTimer: null,
+  initRetry: null,
+  hasRegistered: false,
   currentInit: null,
   currentInitNumberId: undefined,
   intentionallyDestroyed: false,
@@ -187,7 +202,9 @@ function emit(): void {
 }
 
 function setRuntimeState(patch: Partial<VoiceRuntimeState>): void {
-  runtime.state = { ...runtime.state, ...patch };
+  const next = { ...runtime.state, ...patch };
+  next.reconnecting = !next.registered && runtime.hasRegistered;
+  runtime.state = next;
   emit();
 }
 
@@ -320,6 +337,7 @@ function markDeviceRegistered(): void {
   runtime.reconnectTimer = null;
   runtime.reconnectAttempt = 0;
   runtime.signalingRecoveryPending = false;
+  runtime.hasRegistered = true;
   setRuntimeState({
     ready: true,
     registered: true,
@@ -338,8 +356,11 @@ function disposeCurrentDevice(resetState: boolean): void {
   runtime.intentionallyDestroyed = true;
   clearTimer(runtime.tokenRefreshTimer);
   clearTimer(runtime.reconnectTimer);
+  clearTimer(runtime.resumeTimer);
   runtime.tokenRefreshTimer = null;
   runtime.reconnectTimer = null;
+  runtime.resumeTimer = null;
+  runtime.initRetry = null;
   runtime.registering = false;
   runtime.reconnectAttempt = 0;
   runtime.signalingRecoveryPending = false;
@@ -363,6 +384,7 @@ function disposeCurrentDevice(resetState: boolean): void {
   runtime.currentInitNumberId = undefined;
 
   if (resetState) {
+    runtime.hasRegistered = false;
     runtime.state = {
       ...INITIAL_RUNTIME_STATE,
       micPermission: runtime.state.micPermission,
@@ -451,6 +473,23 @@ function scheduleReconnect(numberId: string | undefined): void {
     }
 
     await registerCurrentDevice(numberId);
+  }, delay);
+}
+
+// scheduleReconnect() needs a Device to recover. When creating one failed
+// (e.g. the token request ran before the network was back), retry creation.
+function scheduleInitRetry(numberId: string | undefined): void {
+  if (runtime.intentionallyDestroyed || runtime.device || runtime.reconnectTimer) return;
+
+  const delay = Math.min(15_000, 1_000 * 2 ** Math.min(runtime.reconnectAttempt, 4));
+  runtime.reconnectAttempt += 1;
+  runtime.initRetry = { numberId };
+
+  runtime.reconnectTimer = setTimeout(() => {
+    runtime.reconnectTimer = null;
+    runtime.initRetry = null;
+    if (runtime.intentionallyDestroyed || runtime.device) return;
+    void initVoiceDevice(numberId, isBrowserSupported());
   }, delay);
 }
 
@@ -705,6 +744,11 @@ async function initVoiceDevice(
   runtime.currentInitNumberId = numberId;
   runtime.currentInit = (async () => {
     if (runtime.device) disposeCurrentDevice(true);
+    if (runtime.initRetry) {
+      clearTimer(runtime.reconnectTimer);
+      runtime.reconnectTimer = null;
+      runtime.initRetry = null;
+    }
     runtime.intentionallyDestroyed = false;
     setRuntimeState({
       ready: false,
@@ -746,7 +790,8 @@ async function initVoiceDevice(
       return { identity: tokenResp.identity, expiresAt: tokenResp.expiresAt };
     } catch (err) {
       setRuntimeState({ error: formatVoiceError(err) });
-      scheduleReconnect(numberId);
+      if (runtime.device) scheduleReconnect(numberId);
+      else scheduleInitRetry(numberId);
       return null;
     } finally {
       runtime.currentInit = null;
@@ -952,10 +997,36 @@ async function requestMicrophonePermission(): Promise<boolean> {
 
 let recoveryListenersInstalled = false;
 
-function recoverNow(): void {
+function replaceStalledDevice(): void {
+  runtime.resumeTimer = null;
   if (runtime.intentionallyDestroyed || !runtime.device || runtime.state.registered) return;
+  if (runtime.state.active || runtime.currentInit) return;
   if (typeof document !== 'undefined' && document.visibilityState === 'hidden') return;
+  const numberId = runtime.lastNumberId;
+  disposeCurrentDevice(false);
+  void initVoiceDevice(numberId, isBrowserSupported());
+}
+
+function recoverNow(): void {
+  if (runtime.intentionallyDestroyed) return;
+  if (typeof document !== 'undefined' && document.visibilityState === 'hidden') return;
+  // A signaling socket that died while the tab was in the background can still
+  // read as registered for a moment after it returns, so check again shortly.
+  if (runtime.device && !runtime.resumeTimer) {
+    runtime.resumeTimer = setTimeout(replaceStalledDevice, RESUME_RECOVERY_GRACE_MS);
+  }
+  if (runtime.state.registered) return;
   // Back online or visible again: retry now instead of waiting out the backoff.
+  if (runtime.initRetry) {
+    const { numberId } = runtime.initRetry;
+    clearTimer(runtime.reconnectTimer);
+    runtime.reconnectTimer = null;
+    runtime.initRetry = null;
+    runtime.reconnectAttempt = 0;
+    void initVoiceDevice(numberId, isBrowserSupported());
+    return;
+  }
+  if (!runtime.device) return;
   clearTimer(runtime.reconnectTimer);
   runtime.reconnectTimer = null;
   runtime.reconnectAttempt = 0;

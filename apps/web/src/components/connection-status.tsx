@@ -33,13 +33,17 @@ export function ConnectionStatusBar() {
   const apiHealth = useApiHealth();
   const socket = useSocketStatus();
 
+  // An error stays on the query until a fetch succeeds, so a re-check in flight
+  // (e.g. just after returning to the tab) reads as reconnecting, not down.
   const apiState: 'ok' | 'warn' | 'down' = apiHealth.isError
-    ? 'down'
+    ? apiHealth.isFetching
+      ? 'warn'
+      : 'down'
     : apiHealth.data?.status === 'ok'
       ? 'ok'
       : apiHealth.data?.status === 'degraded'
         ? 'warn'
-        : apiHealth.isLoading
+        : apiHealth.isPending
           ? 'warn'
           : 'down';
 
