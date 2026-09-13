@@ -1,6 +1,7 @@
 import { useEffect } from 'react';
 import { useParams } from 'react-router-dom';
 
+import { DtmfKeypad } from '../components/dtmf-keypad';
 import { useVoiceDevice } from '../hooks/use-voice-device';
 
 function StatusPill({ label, ok, pending }: { label: string; ok: boolean; pending?: boolean }) {
@@ -162,6 +163,7 @@ export function AnswerPage() {
               Hangup
             </button>
           </div>
+          <DtmfKeypad onDigit={voice.sendDigits} disabled={!voice.canSendDigits} />
         </div>
       ) : (
         <div className="rounded border border-dashed border-slate-300 bg-white p-4 text-sm text-slate-500">
