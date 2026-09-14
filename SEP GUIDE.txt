@@ -1,0 +1,24 @@
+The Vapi agent is set up and verified. It can't place real prospect calls yet, because it's missing three things only you can provide: your business name, your name, and Google Calendar access.
+
+How it works
+- Starting a call: on the Dial page, paste a number, pick the target state (Alabama is the default and your choice is remembered), and press Call with AI agent. It calls from +1 (667) 220-6726.
+- The conversation:
+  - The agent says it's an AI in its first sentence, then asks for the owner.
+  - With the owner, it follows your playbook: who answers during evening classes, why missed calls cost enrollments, then the offer of a 20-minute Google Meet.
+  - It never invents statistics and never quotes a price.
+  - A front desk person gets asked for the owner's name and the best time to reach them.
+  - "Don't call again" gets acknowledged out loud and the number is blocked for future AI calls.
+- Timezones: the state sets the prospect's timezone. States that span two zones show a timezone picker. The server refuses calls outside 8 AM–9 PM prospect time.
+- Booking: the agent never works out times itself. Your API reads your Google Calendar and offers open 20-minute slots between 9 AM and 6 PM on weekdays, in the prospect's local time. Slots are at least 2 hours out, with 10 minutes of padding around your events. It reads the email back and waits for a "yes", then creates the event with a Meet link and sends the invite.
+- Results: each call appears live under the Dial page with its outcome (booked, callback, gatekeeper, voicemail, and so on), the booked time with the Meet link, a summary and the recording.
+- Callbacks: schools calling 667 back reach the same agent, with the state and timezone of the original call. Until your names are set, callbacks get a polite "we can't take your call right now".
+
+I used your API rather than Vapi's built-in Google Calendar tools, because Vapi's tools can't create Meet links.
+
+Checked twice
+1. Automated: 150 API, 71 web and 44 shared tests pass, including daylight-saving edge cases. The sync script read the live Vapi setup back and all 17 checks passed.
+2. Live:
+   - Simulated conversations: four scenarios (owner books, gatekeeper, do-not-call, skeptic) ran through GPT-4.1 with the real prompt and slot logic. The first run caught real bugs: booking without confirming the email, and hanging up silently on a do-not-call request. I fixed the prompt, and the second run passed all 9 checks.
+   - Webhook probes: production accepts only Vapi's secret and handles full-size call reports.
+   - Real call: one 69-second call from 667 to your 877 demo line ($0.11). Production correctly stored the status, recording, transcript, summary and a "gatekeeper" outcome. The test row was deleted afterwards.
+   - Transcripts: Vapi's text transcripts drop words (your Harbor Crest ones too). I transcribed the actual audio and every word is spoken correctly.

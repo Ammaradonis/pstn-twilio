@@ -127,6 +127,56 @@ export interface VoiceTokenDto {
   expiresAt: string;
 }
 
+export type AiCallStatus = 'QUEUED' | 'RINGING' | 'IN_PROGRESS' | 'FORWARDING' | 'ENDED' | 'FAILED';
+
+export type AiCallOutcome =
+  | 'booked'
+  | 'callback'
+  | 'not_interested'
+  | 'gatekeeper'
+  | 'voicemail'
+  | 'no_answer'
+  | 'do_not_call'
+  | 'failed'
+  | 'other';
+
+export interface AiCallDto {
+  id: string;
+  direction: 'OUTBOUND' | 'INBOUND';
+  vapiCallId: string | null;
+  customerNumber: string;
+  stateCode: string;
+  timeZone: string;
+  status: AiCallStatus;
+  outcome: AiCallOutcome | null;
+  endedReason: string | null;
+  summary: string | null;
+  schoolName: string | null;
+  contactName: string | null;
+  contactEmail: string | null;
+  consultStartAt: string | null;
+  consultMeetUrl: string | null;
+  callbackTime: string | null;
+  recordingUrl: string | null;
+  startedAt: string | null;
+  endedAt: string | null;
+  createdAt: string;
+}
+
+export interface AiCallingConfigDto {
+  // Everything needed to place a call is configured.
+  ready: boolean;
+  // Human-readable setup steps still outstanding.
+  missing: string[];
+  callerNumber: string | null;
+  defaultStateCode: string;
+  consultMinutes: number;
+  calendar: {
+    connected: boolean;
+    email: string | null;
+  };
+}
+
 export interface OutboundCallPreparationDto {
   outboundIntentId: string;
   selectedNumberId: string;

@@ -2,6 +2,7 @@ import { MiddlewareConsumer, Module, NestModule } from '@nestjs/common';
 import { ConfigModule } from '@nestjs/config';
 import { ThrottlerModule } from '@nestjs/throttler';
 
+import { AiCallsModule } from './ai-calls/ai-calls.module';
 import { AuditModule } from './audit/audit.module';
 import { AuditLogsModule } from './audit-logs/audit-logs.module';
 import { AuthModule } from './auth/auth.module';
@@ -40,6 +41,7 @@ import { WebhooksModule } from './webhooks/webhooks.module';
     WebhooksModule,
     DiagnosticsModule,
     AuditLogsModule,
+    AiCallsModule,
   ],
 })
 export class AppModule implements NestModule {

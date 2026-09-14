@@ -1,4 +1,7 @@
 import type {
+  AiCallDto,
+  AiCallingConfigDto,
+  StartAiCallInput,
   AuditLogDto,
   AvailableNumberDto,
   CallDto,
@@ -244,6 +247,19 @@ export const api = {
         query: { cursor: opts?.cursor, limit: opts?.limit },
       }),
     media: (recordingId: string) => requestBlob(`/voicemail/${recordingId}/media`),
+  },
+
+  aiCalls: {
+    config: () => request<AiCallingConfigDto>('/ai-calls/config'),
+    list: (limit = 10) => request<AiCallDto[]>('/ai-calls', { query: { limit } }),
+    get: (id: string) => request<AiCallDto>(`/ai-calls/${id}`),
+    start: (input: StartAiCallInput) =>
+      request<AiCallDto>('/ai-calls', { method: 'POST', body: input }),
+  },
+
+  googleCalendar: {
+    connectUrl: () => request<{ url: string }>('/integrations/google-calendar/connect-url'),
+    disconnect: () => request<void>('/integrations/google-calendar', { method: 'DELETE' }),
   },
 
   voice: {

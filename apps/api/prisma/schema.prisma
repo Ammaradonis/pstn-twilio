@@ -72,6 +72,20 @@ enum WebhookProvider {
   TWILIO
 }
 
+enum AiCallDirection {
+  OUTBOUND
+  INBOUND
+}
+
+enum AiCallStatus {
+  QUEUED
+  RINGING
+  IN_PROGRESS
+  FORWARDING
+  ENDED
+  FAILED
+}
+
 model User {
   id           String    @id @default(uuid())
   email        String    @unique
@@ -89,6 +103,8 @@ model User {
   outboundCallIntents OutboundCallIntent[]
   auditLogs        AuditLog[]
   updatedSettings  AppSetting[]
+  aiCalls          AiCall[]
+  googleCalendar   GoogleCalendarConnection?
 
   @@map("users")
 }
@@ -343,4 +359,67 @@ model AppSetting {
   user User @relation(fields: [updatedBy], references: [id], onDelete: Cascade)
 
   @@map("app_settings")
+}
+
+// A Vapi AI agent call: outbound to a prospect, or a prospect calling back.
+model AiCall {
+  id             String          @id @default(uuid())
+  userId         String?         @map("user_id")
+  vapiCallId     String?         @unique @map("vapi_call_id")
+  direction      AiCallDirection @default(OUTBOUND)
+  customerE164   String          @map("customer_e164")
+  stateCode      String          @map("state_code")
+  timeZone       String          @map("time_zone")
+  status         AiCallStatus    @default(QUEUED)
+  outcome        String?
+  endedReason    String?         @map("ended_reason")
+  summary        String?
+  structuredData Json?           @map("structured_data")
+  transcript     String?
+  recordingUrl   String?         @map("recording_url")
+  schoolName     String?         @map("school_name")
+  contactName    String?         @map("contact_name")
+  contactEmail   String?         @map("contact_email")
+  callbackTime   String?         @map("callback_time")
+  consultStartAt DateTime?       @map("consult_start_at")
+  consultEventId String?         @map("consult_event_id")
+  consultMeetUrl String?         @map("consult_meet_url")
+  costUsd        Decimal?        @map("cost_usd") @db.Decimal(10, 4)
+  startedAt      DateTime?       @map("started_at")
+  endedAt        DateTime?       @map("ended_at")
+  createdAt      DateTime        @default(now()) @map("created_at")
+  updatedAt      DateTime        @updatedAt @map("updated_at")
+
+  user User? @relation(fields: [userId], references: [id], onDelete: SetNull)
+
+  @@index([userId, createdAt(sort: Desc)])
+  @@index([customerE164, createdAt(sort: Desc)])
+  @@map("ai_calls")
+}
+
+// Numbers that asked not to be called again. AI calls to them are refused.
+model DoNotCallNumber {
+  e164      String   @id
+  reason    String?
+  source    String
+  aiCallId  String?  @map("ai_call_id")
+  createdAt DateTime @default(now()) @map("created_at")
+
+  @@map("do_not_call_numbers")
+}
+
+// OAuth access to a user's Google Calendar, used to book consultations.
+model GoogleCalendarConnection {
+  id                    String   @id @default(uuid())
+  userId                String   @unique @map("user_id")
+  googleEmail           String?  @map("google_email")
+  calendarId            String   @default("primary") @map("calendar_id")
+  refreshTokenEncrypted String   @map("refresh_token_encrypted")
+  scopes                String
+  createdAt             DateTime @default(now()) @map("created_at")
+  updatedAt             DateTime @updatedAt @map("updated_at")
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("google_calendar_connections")
 }

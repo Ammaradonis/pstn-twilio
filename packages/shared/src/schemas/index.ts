@@ -73,6 +73,13 @@ export const prepareOutboundCallSchema = z.object({
   recordCall: z.boolean().optional(),
 });
 
+export const startAiCallSchema = z.object({
+  destinationNumber: dialablePhoneNumberSchema,
+  stateCode: z.string().regex(/^[A-Z]{2}$/, 'Must be a 2-letter US state code'),
+  // Only needed for states that span more than one time zone.
+  timeZone: z.string().min(1).max(64).optional(),
+});
+
 export const voiceTokenRequestSchema = z.object({
   numberId: z.string().uuid().optional(),
 });
@@ -86,5 +93,6 @@ export type NumberSearchInput = z.infer<typeof numberSearchSchema>;
 export type PurchaseNumberInput = z.infer<typeof purchaseNumberSchema>;
 export type SendMessageInput = z.infer<typeof sendMessageSchema>;
 export type PrepareOutboundCallInput = z.infer<typeof prepareOutboundCallSchema>;
+export type StartAiCallInput = z.infer<typeof startAiCallSchema>;
 export type VoiceTokenRequestInput = z.infer<typeof voiceTokenRequestSchema>;
 export type LoginInput = z.infer<typeof loginSchema>;

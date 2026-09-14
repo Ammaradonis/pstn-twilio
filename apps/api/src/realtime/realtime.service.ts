@@ -1,6 +1,7 @@
 import { Injectable } from '@nestjs/common';
 import {
   WS_EVENTS,
+  WsAiCallEvent,
   WsCallEvent,
   WsNumberEvent,
   WsSmsEvent,
@@ -39,6 +40,10 @@ export class RealtimeService {
 
   callStatusUpdated(payload: WsCallEvent): void {
     this.gateway.emit(WS_EVENTS.CALL_STATUS_UPDATED, payload);
+  }
+
+  aiCallUpdated(payload: WsAiCallEvent): void {
+    this.gateway.emit(WS_EVENTS.AI_CALL_UPDATED, payload);
   }
 
   webhookError(payload: WsTwilioWebhookErrorEvent): void {

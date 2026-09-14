@@ -36,6 +36,10 @@ vi.mock('react-router-dom', () => ({
   useParams: () => ({ numberId: 'pn1' }),
 }));
 
+vi.mock('../components/ai-agent-panel', () => ({
+  AiAgentPanel: () => null,
+}));
+
 vi.mock('../lib/recording-downloads', () => ({
   watchRecordingDownload: vi.fn(),
 }));

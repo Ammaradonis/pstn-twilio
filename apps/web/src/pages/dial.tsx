@@ -6,6 +6,7 @@ import {
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useParams } from 'react-router-dom';
 
+import { AiAgentPanel } from '../components/ai-agent-panel';
 import { CallQualityPanel } from '../components/call-quality';
 import { useVoiceDevice } from '../hooks/use-voice-device';
 import { api, ApiError } from '../lib/api-client';
@@ -492,6 +493,8 @@ export function DialPage() {
           <CallQualityPanel quality={voice.callQuality} warnings={voice.qualityWarnings} />
         )}
       </div>
+
+      <AiAgentPanel destination={normalizedDestination} />
 
       {repeatDialWarning && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/40 p-4">

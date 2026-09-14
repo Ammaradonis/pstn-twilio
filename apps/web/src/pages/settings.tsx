@@ -1,5 +1,6 @@
 import { Link } from 'react-router-dom';
 
+import { AiCallingSettings } from '../components/ai-calling-settings';
 import { useAuthStore } from '../lib/auth-store';
 import { formatDate } from '../lib/format';
 
@@ -58,6 +59,8 @@ export function Settings() {
             </li>
           </ul>
         </div>
+
+        <AiCallingSettings />
       </div>
     </section>
   );

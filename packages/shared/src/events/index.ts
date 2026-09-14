@@ -1,4 +1,4 @@
-import type { CallDto, PhoneNumberDto, SmsMessageDto } from '../dto/index';
+import type { AiCallDto, CallDto, PhoneNumberDto, SmsMessageDto } from '../dto/index';
 
 export const WS_EVENTS = {
   // server → client
@@ -11,6 +11,7 @@ export const WS_EVENTS = {
   CALL_INBOUND_RINGING: 'call.inbound.ringing',
   CALL_OUTBOUND_STARTED: 'call.outbound.started',
   CALL_STATUS_UPDATED: 'call.status.updated',
+  AI_CALL_UPDATED: 'ai-call.updated',
   TWILIO_WEBHOOK_ERROR: 'twilio.webhook.error',
   SYSTEM_HEALTH_CHANGED: 'system.health.changed',
 
@@ -40,6 +41,10 @@ export interface WsTwilioWebhookErrorEvent {
   endpoint: string;
   reason: string;
   twilioSid?: string;
+}
+
+export interface WsAiCallEvent {
+  aiCall: AiCallDto;
 }
 
 export interface WsSystemHealthEvent {

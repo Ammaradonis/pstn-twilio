@@ -1,6 +1,7 @@
 import { Logger, RequestMethod, ValidationPipe } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { NestFactory } from '@nestjs/core';
+import type { NestExpressApplication } from '@nestjs/platform-express';
 import cookieParser from 'cookie-parser';
 import helmet from 'helmet';
 
@@ -29,9 +30,12 @@ function corsOrigins(config: ConfigService): string[] {
 }
 
 async function bootstrap() {
-  const app = await NestFactory.create(AppModule, {
+  const app = await NestFactory.create<NestExpressApplication>(AppModule, {
     logger: ['error', 'warn', 'log'],
   });
+  // Vapi end-of-call reports carry full transcripts and message logs, which
+  // exceed the default 100 KB JSON limit.
+  app.useBodyParser('json', { limit: '5mb' });
   const config = app.get(ConfigService);
   const logger = new Logger('Bootstrap');
 
