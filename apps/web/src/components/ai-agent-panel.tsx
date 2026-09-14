@@ -1,5 +1,6 @@
 import {
   findUsState,
+  normalizeDialablePhoneNumber,
   timeZoneLabel,
   US_STATES,
   WS_EVENTS,
@@ -169,7 +170,8 @@ export function AiAgentPanel({ destination }: { destination: string | null }) {
   const [now, setNow] = useState(() => new Date());
   const [starting, setStarting] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [confirmRepeat, setConfirmRepeat] = useState(false);
+  // A number the agent already called, waiting for "Call anyway".
+  const [repeatNumber, setRepeatNumber] = useState<string | null>(null);
 
   useEffect(() => {
     const timer = setInterval(() => setNow(new Date()), 30_000);
@@ -181,16 +183,16 @@ export function AiAgentPanel({ destination }: { destination: string | null }) {
   }, [state]);
 
   useEffect(() => {
-    setConfirmRepeat(false);
+    setRepeatNumber(null);
     setError(null);
   }, [destination, stateCode]);
 
   const local = localTime(timeZone, now);
   const outsideWindow = local.hour < 8 || local.hour >= 21;
   const calls = useMemo(() => callsQuery.data ?? [], [callsQuery.data]);
-  const previousCall = destination
-    ? calls.find((c) => c.customerNumber === destination && c.direction === 'OUTBOUND')
-    : undefined;
+  const previousCallTo = (number: string) =>
+    calls.find((c) => c.customerNumber === number && c.direction === 'OUTBOUND');
+  const repeatPreviousCall = repeatNumber ? previousCallTo(repeatNumber) : undefined;
 
   function chooseState(code: string) {
     setStateCode(code);
@@ -201,17 +203,17 @@ export function AiAgentPanel({ destination }: { destination: string | null }) {
     }
   }
 
-  async function startCall() {
-    if (!destination) return;
-    if (previousCall && !confirmRepeat) {
-      setConfirmRepeat(true);
+  async function startCall(number: string, { force = false } = {}) {
+    if (previousCallTo(number) && !force) {
+      setRepeatNumber(number);
       return;
     }
     setStarting(true);
     setError(null);
+    setRepeatNumber(null);
     try {
       const call = await api.aiCalls.start({
-        destinationNumber: destination,
+        destinationNumber: number,
         stateCode: state.code,
         ...(state.timeZones.length > 1 ? { timeZone } : {}),
       });
@@ -219,7 +221,6 @@ export function AiAgentPanel({ destination }: { destination: string | null }) {
         call,
         ...(prev ?? []).filter((c) => c.id !== call.id),
       ]);
-      setConfirmRepeat(false);
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
     } finally {
@@ -227,8 +228,32 @@ export function AiAgentPanel({ destination }: { destination: string | null }) {
     }
   }
 
+  // Dials the number on the clipboard with the agent, without touching the
+  // manual dialer above.
+  async function pasteAndCall() {
+    setError(null);
+    setRepeatNumber(null);
+    if (!navigator.clipboard?.readText) {
+      setError('Clipboard access is unavailable in this browser.');
+      return;
+    }
+    let pasted: string;
+    try {
+      pasted = await navigator.clipboard.readText();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Clipboard access was denied.');
+      return;
+    }
+    const number = normalizeDialablePhoneNumber(pasted);
+    if (!number) {
+      setError('Clipboard does not contain a dialable phone number.');
+      return;
+    }
+    await startCall(number);
+  }
+
   const notReady = config && !config.ready;
-  const disabled = !destination || starting || outsideWindow || !config?.ready;
+  const cannotCall = starting || outsideWindow || !config?.ready;
 
   return (
     <div className="rounded border border-slate-200 bg-white p-4" aria-label="AI agent">
@@ -278,11 +303,21 @@ export function AiAgentPanel({ destination }: { destination: string | null }) {
         )}
         <button
           type="button"
-          onClick={() => void startCall()}
-          disabled={disabled}
+          onClick={() => destination && void startCall(destination)}
+          disabled={!destination || cannotCall}
           className="rounded bg-indigo-600 px-3 py-1.5 text-sm font-semibold text-white hover:bg-indigo-700 disabled:cursor-not-allowed disabled:opacity-60"
         >
-          {starting ? 'Starting…' : confirmRepeat ? 'Call again with AI' : 'Call with AI agent'}
+          {starting ? 'Starting…' : 'Call with AI agent'}
+        </button>
+        <button
+          type="button"
+          onClick={() => void pasteAndCall()}
+          disabled={cannotCall}
+          aria-label="Paste and call with AI agent"
+          title="Paste a phone number from the clipboard and call it with the AI agent"
+          className="rounded border border-indigo-300 px-3 py-1.5 text-sm font-medium text-indigo-700 hover:bg-indigo-50 disabled:cursor-not-allowed disabled:opacity-60"
+        >
+          Paste
         </button>
       </div>
 
@@ -290,10 +325,18 @@ export function AiAgentPanel({ destination }: { destination: string | null }) {
         It&apos;s {local.text} in {state.name} ({timeZoneLabel(timeZone)}).
         {outsideWindow ? ' The agent only calls between 8 AM and 9 PM local time.' : ''}
       </p>
-      {confirmRepeat && previousCall && (
+      {repeatNumber && repeatPreviousCall && (
         <p className="mt-1 text-xs text-amber-800">
-          The agent already called this number on{' '}
-          {new Date(previousCall.createdAt).toLocaleDateString()}. Press again to call anyway.
+          The agent already called <span className="font-mono">{formatPhone(repeatNumber)}</span> on{' '}
+          {new Date(repeatPreviousCall.createdAt).toLocaleDateString()}.{' '}
+          <button
+            type="button"
+            onClick={() => void startCall(repeatNumber, { force: true })}
+            disabled={cannotCall}
+            className="font-medium underline disabled:opacity-60"
+          >
+            Call anyway
+          </button>
         </p>
       )}
       {notReady && (

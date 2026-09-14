@@ -165,10 +165,100 @@ describe('AiAgentPanel', () => {
     await waitFor(() => expect(button).toBeEnabled());
     fireEvent.click(button);
     expect(api.aiCalls.start).not.toHaveBeenCalled();
-    expect(screen.getByText(/already called this number/)).toBeInTheDocument();
+    expect(screen.getByText(/already called/)).toHaveTextContent('+1 (205) 555-0100');
 
-    fireEvent.click(screen.getByRole('button', { name: 'Call again with AI' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Call anyway' }));
     await waitFor(() => expect(api.aiCalls.start).toHaveBeenCalledTimes(1));
+  });
+
+  describe('Paste', () => {
+    function mockClipboard(readText: () => Promise<string>) {
+      Object.defineProperty(navigator, 'clipboard', {
+        configurable: true,
+        value: { readText: vi.fn(readText) },
+      });
+    }
+
+    it('calls the clipboard number with the agent, without a number in the dialer', async () => {
+      mockClipboard(async () => 'Tiger Karate: (334) 555-0142');
+      renderPanel(null);
+
+      const paste = await screen.findByRole('button', { name: 'Paste and call with AI agent' });
+      expect(screen.getByRole('button', { name: 'Call with AI agent' })).toBeDisabled();
+      await waitFor(() => expect(paste).toBeEnabled());
+      fireEvent.click(paste);
+
+      await waitFor(() =>
+        expect(api.aiCalls.start).toHaveBeenCalledWith({
+          destinationNumber: '+13345550142',
+          stateCode: 'AL',
+        }),
+      );
+    });
+
+    it('uses the pasted number, not the one typed in the manual dialer', async () => {
+      mockClipboard(async () => '334-555-0142');
+      renderPanel('+12055550100');
+
+      const paste = await screen.findByRole('button', { name: 'Paste and call with AI agent' });
+      await waitFor(() => expect(paste).toBeEnabled());
+      fireEvent.click(paste);
+
+      await waitFor(() =>
+        expect(api.aiCalls.start).toHaveBeenCalledWith(
+          expect.objectContaining({ destinationNumber: '+13345550142' }),
+        ),
+      );
+    });
+
+    it('explains clipboard problems instead of calling', async () => {
+      mockClipboard(async () => 'no number here');
+      renderPanel(null);
+
+      const paste = await screen.findByRole('button', { name: 'Paste and call with AI agent' });
+      await waitFor(() => expect(paste).toBeEnabled());
+      fireEvent.click(paste);
+      expect(
+        await screen.findByText('Clipboard does not contain a dialable phone number.'),
+      ).toBeInTheDocument();
+
+      mockClipboard(async () => {
+        throw new Error('Read permission denied.');
+      });
+      fireEvent.click(paste);
+      expect(await screen.findByText('Read permission denied.')).toBeInTheDocument();
+      expect(api.aiCalls.start).not.toHaveBeenCalled();
+    });
+
+    it('asks before calling a pasted number the agent already called', async () => {
+      mockClipboard(async () => '+12055550100');
+      vi.mocked(api.aiCalls.list).mockResolvedValue([
+        aiCall({ outcome: 'voicemail', status: 'ENDED' }),
+      ]);
+      renderPanel(null);
+
+      await screen.findByText('Voicemail');
+      const paste = screen.getByRole('button', { name: 'Paste and call with AI agent' });
+      await waitFor(() => expect(paste).toBeEnabled());
+      fireEvent.click(paste);
+
+      expect(await screen.findByText(/already called/)).toHaveTextContent('+1 (205) 555-0100');
+      expect(api.aiCalls.start).not.toHaveBeenCalled();
+      fireEvent.click(screen.getByRole('button', { name: 'Call anyway' }));
+      await waitFor(() =>
+        expect(api.aiCalls.start).toHaveBeenCalledWith(
+          expect.objectContaining({ destinationNumber: '+12055550100' }),
+        ),
+      );
+    });
+
+    it('is disabled outside the calling window', async () => {
+      vi.setSystemTime(new Date('2026-09-15T02:40:00Z')); // 9:40 PM Central
+      renderPanel(null);
+      expect(
+        await screen.findByRole('button', { name: 'Paste and call with AI agent' }),
+      ).toBeDisabled();
+    });
   });
 
   it('shows server errors from starting a call', async () => {
