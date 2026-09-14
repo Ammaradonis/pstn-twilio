@@ -120,6 +120,7 @@ function build(options: { settings?: Record<string, unknown>; row?: AiCall | nul
   const vapi = {
     createCall: vi.fn().mockResolvedValue({ id: 'call_new', status: 'queued' }),
     getCall: vi.fn(),
+    sendControl: vi.fn().mockResolvedValue(undefined),
   };
   const audit = { log: vi.fn().mockResolvedValue(undefined) };
   const realtime = { aiCallUpdated: vi.fn() };
@@ -170,6 +171,7 @@ describe('AiCallsService.startCall', () => {
           recordingNotice: '',
           demoLine: '(877) 652-4532',
           callContext: 'outbound',
+          callbackNumberKeys: '6672206726',
         },
         metadata: { aiCallId: 'ai1' },
       },
@@ -407,6 +409,59 @@ describe('AiCallsService tools', () => {
   });
 });
 
+describe('AiCallsService.pressKeys', () => {
+  it('tells the agent on a live call to press the keys with its dtmf tool', async () => {
+    const { service, prisma, vapi, audit } = build();
+    prisma.aiCall.findFirst.mockResolvedValue(aiCallRow());
+    vapi.getCall.mockResolvedValue({
+      id: 'call_1',
+      status: 'in-progress',
+      monitor: { controlUrl: 'https://phone-call-websocket.vapi.ai/call_1/control' },
+    });
+
+    await expect(service.pressKeys(actor, 'ai1', '1')).resolves.toEqual({ sent: true });
+
+    expect(prisma.aiCall.findFirst).toHaveBeenCalledWith({ where: { id: 'ai1', userId: 'u1' } });
+    expect(vapi.sendControl).toHaveBeenCalledWith(
+      'https://phone-call-websocket.vapi.ai/call_1/control',
+      {
+        type: 'add-message',
+        message: {
+          role: 'system',
+          content: expect.stringContaining('press the keys "1" now with the dtmf tool'),
+        },
+        triggerResponseEnabled: true,
+      },
+    );
+    expect(audit.log).toHaveBeenCalledWith(
+      expect.objectContaining({ action: 'ai_call.keypad', metadata: { keys: '1' } }),
+    );
+  });
+
+  it('refuses ended calls, calls Vapi reports ended, and invalid keys', async () => {
+    const ended = build();
+    ended.prisma.aiCall.findFirst.mockResolvedValue(aiCallRow({ status: AiCallStatus.ENDED }));
+    await expect(ended.service.pressKeys(actor, 'ai1', '1')).rejects.toBeInstanceOf(
+      ConflictException,
+    );
+    expect(ended.vapi.getCall).not.toHaveBeenCalled();
+
+    const vapiEnded = build();
+    vapiEnded.prisma.aiCall.findFirst.mockResolvedValue(aiCallRow());
+    vapiEnded.vapi.getCall.mockResolvedValue({ id: 'call_1', status: 'ended', monitor: {} });
+    await expect(vapiEnded.service.pressKeys(actor, 'ai1', '1')).rejects.toBeInstanceOf(
+      ConflictException,
+    );
+    expect(vapiEnded.vapi.sendControl).not.toHaveBeenCalled();
+
+    const invalid = build();
+    await expect(invalid.service.pressKeys(actor, 'ai1', '1; drop')).rejects.toThrow(
+      'Keys may only contain',
+    );
+    expect(invalid.prisma.aiCall.findFirst).not.toHaveBeenCalled();
+  });
+});
+
 describe('AiCallsService webhooks', () => {
   it('answers a callback to the 667 line with the earlier call context', async () => {
     const { service, prisma } = build();
@@ -612,6 +667,27 @@ describe('consult booker assistant', () => {
     for (const tool of functions) expect((tool as { server: unknown }).server).toEqual(server);
     expect(assistant.server).toEqual(server);
     expect(assistant.firstMessageMode).toBe('assistant-waits-for-user');
+    // Phone menus: the agent can press keys, and voicemail is judged by the
+    // model so menus offering an operator aren't hung up on.
+    expect(assistant.model.tools.some((t) => t.type === 'dtmf')).toBe(true);
+    expect(assistant.voicemailDetection).toBe('off');
+    expect(assistant.endCallMessage).toBeNull();
+    expect(assistant.voicemailMessage).toBeNull();
+    expect(assistant.silenceTimeoutSeconds).toBeGreaterThanOrEqual(60);
+    expect(assistant.endCallPhrases).toEqual(['have a great day', "we won't call again"]);
+    // Every scripted goodbye ends with a phrase that hangs up.
+    for (const goodbye of [
+      "Thanks, I'll try back then. Have a great day.",
+      "Understood, we won't call again. Sorry to bother you.",
+      'No problem, thanks for your time. Have a great day.',
+    ]) {
+      expect(SYSTEM_PROMPT).toContain(goodbye);
+      expect(
+        assistant.endCallPhrases.some((phrase) => goodbye.toLowerCase().includes(phrase)),
+      ).toBe(true);
+    }
+    expect(SYSTEM_PROMPT).toContain('your whole reply is "{{agentName}}."');
+    expect(SYSTEM_PROMPT).toContain('WW{{callbackNumberKeys}}#WW');
     expect(assistant.serverMessages).toEqual(['status-update', 'end-of-call-report']);
   });
 });

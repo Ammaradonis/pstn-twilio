@@ -12,7 +12,7 @@ const socketHandlers = vi.hoisted(() => new Map<string, (payload: unknown) => vo
 
 vi.mock('../lib/api-client', () => ({
   api: {
-    aiCalls: { config: vi.fn(), list: vi.fn(), start: vi.fn() },
+    aiCalls: { config: vi.fn(), list: vi.fn(), start: vi.fn(), pressKeys: vi.fn() },
   },
 }));
 
@@ -183,6 +183,32 @@ describe('AiAgentPanel', () => {
     expect(
       await screen.findByText('This number asked not to be called again.'),
     ).toBeInTheDocument();
+  });
+
+  it('lets you press keys for the agent on a live call only', async () => {
+    vi.mocked(api.aiCalls.pressKeys).mockResolvedValue({ sent: true });
+    vi.mocked(api.aiCalls.list).mockResolvedValue([
+      aiCall({ id: 'live', status: 'IN_PROGRESS' }),
+      aiCall({ id: 'done', status: 'ENDED', outcome: 'voicemail', customerNumber: '+12055550111' }),
+    ]);
+    renderPanel(null);
+
+    const toggles = await screen.findAllByRole('button', { name: 'Keypad' });
+    expect(toggles).toHaveLength(1);
+    fireEvent.click(toggles[0]!);
+    fireEvent.click(screen.getByRole('button', { name: 'Send 1' }));
+
+    await waitFor(() => expect(api.aiCalls.pressKeys).toHaveBeenCalledWith('live', '1'));
+  });
+
+  it('shows why a keypress could not be relayed', async () => {
+    vi.mocked(api.aiCalls.pressKeys).mockRejectedValue(new Error('This AI call is not live.'));
+    vi.mocked(api.aiCalls.list).mockResolvedValue([aiCall({ status: 'RINGING' })]);
+    renderPanel(null);
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Keypad' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Send #' }));
+    expect(await screen.findByText('This AI call is not live.')).toBeInTheDocument();
   });
 
   it('updates live from realtime events, including a booked consultation', async () => {

@@ -135,8 +135,28 @@ async function main(): Promise<void> {
     live.firstMessageMode === 'assistant-waits-for-user',
     failures,
   );
-  check('voicemail detection on', Boolean(live.voicemailDetection), failures);
+  check(
+    'automatic voicemail detection off (the agent judges greetings and menus)',
+    !live.voicemailDetection || live.voicemailDetection === 'off',
+    failures,
+  );
   check('no voicemail message is left', !live.voicemailMessage, failures);
+  check('no automatic goodbye spoken onto voicemails', !live.endCallMessage, failures);
+  check(
+    'spoken goodbyes hang up the call (endCallPhrases)',
+    JSON.stringify(live.endCallPhrases) === JSON.stringify(desired.endCallPhrases),
+    failures,
+  );
+  check(
+    'keypad (dtmf) tool available for phone menus',
+    liveTools.some((t) => t.type === 'dtmf'),
+    failures,
+  );
+  check(
+    'waits at least 60 seconds of silence for call screeners',
+    Number(live.silenceTimeoutSeconds) >= 60,
+    failures,
+  );
   check(
     'structured call analysis enabled',
     ((live.analysisPlan as Json | undefined)?.structuredDataPlan as Json | undefined)?.enabled ===

@@ -197,6 +197,47 @@ export class AiCallsService {
     }
   }
 
+  // Relays keypad keys from the dial page to the agent on a live call. Vapi's
+  // live control has no DTMF message, so the agent is told to press them with
+  // its dtmf tool.
+  async pressKeys(actor: Actor, id: string, keys: string): Promise<{ sent: true }> {
+    if (!/^[0-9*#wW]{1,32}$/.test(keys)) {
+      throw new BadRequestException('Keys may only contain 0-9, *, #, or w pauses');
+    }
+    const row = await this.prisma.aiCall.findFirst({ where: { id, userId: actor.userId } });
+    if (!row) throw new NotFoundException('AI call not found');
+    if (
+      !row.vapiCallId ||
+      row.status === AiCallStatus.ENDED ||
+      row.status === AiCallStatus.FAILED
+    ) {
+      throw new ConflictException('This AI call is not live.');
+    }
+    const call = await this.vapi.getCall(row.vapiCallId);
+    const controlUrl = call.monitor?.controlUrl;
+    if (!controlUrl || call.status === 'ended') {
+      throw new ConflictException('This AI call is not live.');
+    }
+    await this.vapi.sendControl(controlUrl, {
+      type: 'add-message',
+      message: {
+        role: 'system',
+        content: `Keypad instruction from the person monitoring this call: press the keys "${keys}" now with the dtmf tool, then stay silent.`,
+      },
+      triggerResponseEnabled: true,
+    });
+    await this.audit.log({
+      userId: actor.userId,
+      action: 'ai_call.keypad',
+      entityType: 'AiCall',
+      entityId: row.id,
+      ipAddress: actor.ipAddress,
+      userAgent: actor.userAgent,
+      metadata: { keys },
+    });
+    return { sent: true };
+  }
+
   async list(userId: string, limit = 20): Promise<AiCallDto[]> {
     const rows = await this.prisma.aiCall.findMany({
       where: { userId },
@@ -284,6 +325,9 @@ export class AiCallsService {
       recordingNotice: state.allPartyRecordingConsent ? 'Mention that the call is recorded.' : '',
       demoLine: this.settings.demoNumber ? spokenPhone(this.settings.demoNumber) : '',
       callContext,
+      callbackNumberKeys: (this.settings.callerNumber ?? '')
+        .replace(/\D/g, '')
+        .replace(/^1(?=\d{10}$)/, ''),
     };
   }
 

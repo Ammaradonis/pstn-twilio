@@ -12,7 +12,12 @@ import {
 } from '@nestjs/common';
 import { Throttle } from '@nestjs/throttler';
 import { UserRole } from '@prisma/client';
-import { startAiCallSchema, type StartAiCallInput } from '@pstn-twilio/shared';
+import {
+  aiCallKeypadSchema,
+  startAiCallSchema,
+  type AiCallKeypadInput,
+  type StartAiCallInput,
+} from '@pstn-twilio/shared';
 import type { Request } from 'express';
 
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
@@ -50,6 +55,17 @@ export class AiCallsController {
   @Get(':id')
   getOne(@Req() req: ActorRequest, @Param('id') id: string) {
     return this.aiCalls.get(req.user.id, id);
+  }
+
+  @Post(':id/keypad')
+  @HttpCode(200)
+  @Throttle({ short: { limit: 30, ttl: 60_000 } })
+  pressKeys(
+    @Req() req: ActorRequest,
+    @Param('id') id: string,
+    @Body(new ZodValidationPipe(aiCallKeypadSchema)) body: AiCallKeypadInput,
+  ) {
+    return this.aiCalls.pressKeys(actorFromRequest(req), id, body.keys);
   }
 
   @Post()

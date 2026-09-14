@@ -255,6 +255,8 @@ export const api = {
     get: (id: string) => request<AiCallDto>(`/ai-calls/${id}`),
     start: (input: StartAiCallInput) =>
       request<AiCallDto>('/ai-calls', { method: 'POST', body: input }),
+    pressKeys: (id: string, keys: string) =>
+      request<{ sent: true }>(`/ai-calls/${id}/keypad`, { method: 'POST', body: { keys } }),
   },
 
   googleCalendar: {

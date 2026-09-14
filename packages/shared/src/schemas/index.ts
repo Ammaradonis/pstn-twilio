@@ -80,6 +80,11 @@ export const startAiCallSchema = z.object({
   timeZone: z.string().min(1).max(64).optional(),
 });
 
+// Keypad keys for the AI agent to press on a live call. "w" is a half-second pause.
+export const aiCallKeypadSchema = z.object({
+  keys: z.string().regex(/^[0-9*#wW]{1,32}$/, 'Keys may only contain 0-9, *, #, or w pauses'),
+});
+
 export const voiceTokenRequestSchema = z.object({
   numberId: z.string().uuid().optional(),
 });
@@ -94,5 +99,6 @@ export type PurchaseNumberInput = z.infer<typeof purchaseNumberSchema>;
 export type SendMessageInput = z.infer<typeof sendMessageSchema>;
 export type PrepareOutboundCallInput = z.infer<typeof prepareOutboundCallSchema>;
 export type StartAiCallInput = z.infer<typeof startAiCallSchema>;
+export type AiCallKeypadInput = z.infer<typeof aiCallKeypadSchema>;
 export type VoiceTokenRequestInput = z.infer<typeof voiceTokenRequestSchema>;
 export type LoginInput = z.infer<typeof loginSchema>;

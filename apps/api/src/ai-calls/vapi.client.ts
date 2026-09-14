@@ -23,6 +23,7 @@ export interface VapiCall {
   cost?: number;
   analysis?: { summary?: string; structuredData?: Record<string, unknown> };
   artifact?: { transcript?: string; recordingUrl?: string };
+  monitor?: { controlUrl?: string; listenUrl?: string };
 }
 
 @Injectable()
@@ -35,6 +36,20 @@ export class VapiClient {
 
   async getCall(id: string): Promise<VapiCall> {
     return this.request<VapiCall>('GET', `/call/${encodeURIComponent(id)}`);
+  }
+
+  // Sends a live call control message to the call's monitor.controlUrl.
+  async sendControl(controlUrl: string, message: Record<string, unknown>): Promise<void> {
+    if (!controlUrl.startsWith('https://')) throw new VapiRequestError(500, 'Invalid control URL');
+    const res = await fetch(controlUrl, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(message),
+      signal: AbortSignal.timeout(10_000),
+    });
+    if (!res.ok) {
+      throw new VapiRequestError(res.status, `Vapi live control failed: ${res.status}`);
+    }
   }
 
   private async request<T>(method: string, path: string, body?: unknown): Promise<T> {

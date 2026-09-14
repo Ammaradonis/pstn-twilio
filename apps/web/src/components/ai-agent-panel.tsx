@@ -15,6 +15,8 @@ import { api } from '../lib/api-client';
 import { formatPhone } from '../lib/format';
 import { getSocket } from '../lib/realtime';
 
+import { DtmfKeypad } from './dtmf-keypad';
+
 const STATE_STORAGE_KEY = 'pstn-twilio.ai-target-state';
 const CONFIG_KEY = ['ai-calls', 'config'] as const;
 const LIST_KEY = ['ai-calls', 'list'] as const;
@@ -109,6 +111,46 @@ function useAiCallUpdates(): void {
       socket.off(WS_EVENTS.AI_CALL_UPDATED, onUpdate);
     };
   }, [queryClient]);
+}
+
+const LIVE_STATUSES: AiCallDto['status'][] = ['QUEUED', 'RINGING', 'IN_PROGRESS', 'FORWARDING'];
+
+// Keys pressed here are relayed to the agent, which presses them on the call,
+// e.g. to get past a phone menu it can't navigate on its own.
+function AiCallKeypad({ callId }: { callId: string }) {
+  const [open, setOpen] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  async function press(keys: string) {
+    setError(null);
+    try {
+      await api.aiCalls.pressKeys(callId, keys);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
+    }
+  }
+
+  return (
+    <div className="mt-1">
+      <button
+        type="button"
+        onClick={() => setOpen((v) => !v)}
+        aria-expanded={open}
+        className="rounded border border-slate-300 px-2 py-0.5 text-xs hover:bg-slate-50"
+      >
+        {open ? 'Hide keypad' : 'Keypad'}
+      </button>
+      {open && (
+        <>
+          <p className="mt-1 text-xs text-slate-500">
+            The agent presses the keys you tap, for phone menus it can&apos;t get through.
+          </p>
+          <DtmfKeypad onDigit={(digit) => void press(digit)} />
+        </>
+      )}
+      {error && <p className="mt-1 text-xs text-rose-700">{error}</p>}
+    </div>
+  );
 }
 
 // Starts Vapi AI agent calls to the number in the dialer and lists their results.
@@ -319,6 +361,7 @@ export function AiAgentPanel({ destination }: { destination: string | null }) {
                 {call.callbackTime && !consult && (
                   <p className="mt-1 text-xs text-amber-800">Call back: {call.callbackTime}</p>
                 )}
+                {LIVE_STATUSES.includes(call.status) && <AiCallKeypad callId={call.id} />}
                 {call.summary && <p className="mt-1 text-xs text-slate-600">{call.summary}</p>}
                 {call.recordingUrl && (
                   <a
