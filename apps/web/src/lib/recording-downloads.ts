@@ -49,6 +49,8 @@ const UNANSWERED_GRACE_MS = 20_000;
 const RECORDING_ARRIVAL_TIMEOUT_MS = 5 * 60_000;
 const MAX_WATCH_MS = 6 * 60 * 60_000;
 const DOWNLOADED_VISIBLE_MS = 20_000;
+// How far a call-log entry's start may be from when its download was requested.
+const CALL_LOG_MATCH_WINDOW_MS = 60_000;
 
 const TERMINAL_CALL_STATUSES = new Set<CallStatus>([
   'COMPLETED',
@@ -265,6 +267,41 @@ async function saveRecording(
   }
 }
 
+// NestJS answers an unknown route with a 404 "Cannot GET ...", unlike the
+// lookup's own 404 for an unknown intent.
+function isMissingRoute(err: unknown): boolean {
+  return err instanceof ApiError && err.status === 404 && err.message.startsWith('Cannot GET');
+}
+
+// Finds the call in the recent call log: the outbound call to this
+// destination that started closest to when the download was requested.
+function matchRecentCall(calls: CallDto[], entry: RecordingDownload): CallDto | null {
+  if (entry.callId) return calls.find((c) => c.id === entry.callId) ?? null;
+  let best: CallDto | null = null;
+  let bestGap = Infinity;
+  for (const candidate of calls) {
+    if (candidate.direction !== 'OUTBOUND' || candidate.destination !== entry.destination) continue;
+    const gap = Math.abs(Date.parse(candidate.startedAt) - entry.createdAt);
+    if (gap <= CALL_LOG_MATCH_WINDOW_MS && gap < bestGap) {
+      best = candidate;
+      bestGap = gap;
+    }
+  }
+  return best;
+}
+
+async function findCall(entry: RecordingDownload): Promise<CallDto | null> {
+  try {
+    return await api.calls.byOutboundIntent(entry.numberId, entry.outboundIntentId);
+  } catch (err) {
+    // An API released before the intent lookup existed (the website and API
+    // deploy separately).
+    if (!isMissingRoute(err)) throw err;
+    const page = await api.calls.list(entry.numberId, { limit: 25, direction: 'OUTBOUND' });
+    return matchRecentCall(page.items, entry);
+  }
+}
+
 async function check(id: string): Promise<void> {
   clearPollTimer(id);
   const entry = entries.get(id);
@@ -277,7 +314,7 @@ async function check(id: string): Promise<void> {
     listenForCallEvents();
     let call: CallDto | null;
     try {
-      call = await api.calls.byOutboundIntent(entry.numberId, id);
+      call = await findCall(entry);
     } catch (err) {
       if (err instanceof ApiError && (err.status === 403 || err.status === 404)) {
         finish(id, 'unavailable', 'This call is no longer available.');

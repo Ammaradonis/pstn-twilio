@@ -1,6 +1,7 @@
 import { useEffect } from 'react';
 import { useParams } from 'react-router-dom';
 
+import { CallQualityPanel } from '../components/call-quality';
 import { DtmfKeypad } from '../components/dtmf-keypad';
 import { useVoiceDevice } from '../hooks/use-voice-device';
 
@@ -163,6 +164,7 @@ export function AnswerPage() {
               Hangup
             </button>
           </div>
+          <CallQualityPanel quality={voice.callQuality} warnings={voice.qualityWarnings} />
           <DtmfKeypad onDigit={voice.sendDigits} disabled={!voice.canSendDigits} />
         </div>
       ) : (

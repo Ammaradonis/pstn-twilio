@@ -6,6 +6,7 @@ import {
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useParams } from 'react-router-dom';
 
+import { CallQualityPanel } from '../components/call-quality';
 import { useVoiceDevice } from '../hooks/use-voice-device';
 import { api, ApiError } from '../lib/api-client';
 import { formatDate, formatPhone } from '../lib/format';
@@ -487,6 +488,9 @@ export function DialPage() {
         <p className="mt-3 text-xs text-slate-500">
           Live state: <span className="font-mono">{voice.connectionState}</span>
         </p>
+        {inCallMode && (
+          <CallQualityPanel quality={voice.callQuality} warnings={voice.qualityWarnings} />
+        )}
       </div>
 
       {repeatDialWarning && (

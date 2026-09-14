@@ -168,7 +168,7 @@ describe('useVoiceDevice', () => {
 
   it('passes validated fallback edges and signaling recovery options to the Twilio device', async () => {
     vi.mocked(api.voice.deviceConfig).mockResolvedValue({
-      codecPreferences: ['pcmu', 'opus'],
+      codecPreferences: ['opus', 'pcmu'],
       edge: ['frankfurt', 'dublin', 'ashburn'],
       dscp: true,
       closeProtection: true,
@@ -188,7 +188,7 @@ describe('useVoiceDevice', () => {
     expect(device).toBeDefined();
     if (!device) throw new Error('Mock Twilio Device was not created');
     expect(device.options).toEqual({
-      codecPreferences: ['pcmu', 'opus'],
+      codecPreferences: ['opus', 'pcmu'],
       edge: ['frankfurt', 'dublin', 'ashburn'],
       dscp: true,
       closeProtection: true,
@@ -434,14 +434,14 @@ describe('useVoiceDevice', () => {
       },
       audioConstraints: {
         echoCancellation: true,
-        noiseSuppression: false,
-        autoGainControl: false,
+        noiseSuppression: true,
+        autoGainControl: true,
       },
       rtcConstraints: {
         audio: {
           echoCancellation: true,
-          noiseSuppression: false,
-          autoGainControl: false,
+          noiseSuppression: true,
+          autoGainControl: true,
         },
       },
     });
@@ -477,14 +477,14 @@ describe('useVoiceDevice', () => {
       },
       audioConstraints: {
         echoCancellation: true,
-        noiseSuppression: false,
-        autoGainControl: false,
+        noiseSuppression: true,
+        autoGainControl: true,
       },
       rtcConstraints: {
         audio: {
           echoCancellation: true,
-          noiseSuppression: false,
-          autoGainControl: false,
+          noiseSuppression: true,
+          autoGainControl: true,
         },
       },
     });
@@ -521,14 +521,14 @@ describe('useVoiceDevice', () => {
     expect(call.accept).toHaveBeenCalledWith({
       audioConstraints: {
         echoCancellation: true,
-        noiseSuppression: false,
-        autoGainControl: false,
+        noiseSuppression: true,
+        autoGainControl: true,
       },
       rtcConstraints: {
         audio: {
           echoCancellation: true,
-          noiseSuppression: false,
-          autoGainControl: false,
+          noiseSuppression: true,
+          autoGainControl: true,
         },
       },
     });
@@ -565,6 +565,59 @@ describe('useVoiceDevice', () => {
 
     expect(call.sendDigits).not.toHaveBeenCalledWith('+');
     expect(current!.error).toContain('DTMF digits');
+  });
+
+  it('tracks live call quality samples and warnings until the call ends', async () => {
+    render(<Harness onChange={(voice) => (current = voice)} />);
+
+    await act(async () => {
+      await current!.init('pn1');
+      await Promise.resolve();
+    });
+
+    const device = voiceSdkMock.instances[0];
+    if (!device) throw new Error('Mock Twilio Device was not created');
+    const handlers = new Map<string, (...args: unknown[]) => void>();
+    const call = {
+      on: vi.fn((event: string, handler: (...args: unknown[]) => void) => {
+        handlers.set(event, handler);
+      }),
+      isMuted: vi.fn().mockReturnValue(false),
+    };
+    device.connect.mockReturnValue(call);
+
+    await act(async () => {
+      await current!.makeCall('pn1', '+1 555-111-1111');
+    });
+
+    act(() => {
+      handlers.get('sample')?.({
+        rtt: 412,
+        jitter: 18.4,
+        packetsLostFraction: 2.5,
+        mos: 3.4,
+        codecName: 'opus',
+      });
+      handlers.get('warning')?.('high-rtt', null);
+      handlers.get('warning')?.('high-packet-loss', null);
+      handlers.get('warning')?.('high-rtt', null);
+    });
+
+    expect(current!.callQuality).toEqual({
+      rttMs: 412,
+      jitterMs: 18.4,
+      packetLossPct: 2.5,
+      mos: 3.4,
+      codec: 'opus',
+    });
+    expect(current!.qualityWarnings).toEqual(['high-rtt', 'high-packet-loss']);
+
+    act(() => handlers.get('warning-cleared')?.('high-rtt'));
+    expect(current!.qualityWarnings).toEqual(['high-packet-loss']);
+
+    act(() => handlers.get('disconnect')?.());
+    expect(current!.callQuality).toBeNull();
+    expect(current!.qualityWarnings).toEqual([]);
   });
 
   it('handles Twilio 31401 user media denied error and marks micPermission as denied', async () => {

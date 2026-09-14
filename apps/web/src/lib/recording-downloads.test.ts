@@ -30,6 +30,7 @@ vi.mock('./api-client', () => {
     api: {
       calls: {
         byOutboundIntent: vi.fn(),
+        list: vi.fn(),
         recordingMedia: vi.fn(),
       },
     },
@@ -223,6 +224,39 @@ describe('recording downloads', () => {
 
     expect(saveBlob).toHaveBeenCalledTimes(1);
     expect(result.current[0]).toMatchObject({ state: 'downloaded' });
+  });
+
+  it('finds the call in the call log when the API predates the intent lookup', async () => {
+    vi.mocked(api.calls.byOutboundIntent).mockRejectedValue(
+      new ApiError(404, 'Cannot GET /api/numbers/pn1/outbound-intents/intent1/call'),
+    );
+    const now = Date.now();
+    vi.mocked(api.calls.list).mockResolvedValue({
+      items: [
+        // Same destination, but from an earlier call.
+        call({
+          id: 'old',
+          startedAt: new Date(now - 10 * 60_000).toISOString(),
+          recordings: [recording({ id: 'old-rec' })],
+        }),
+        call({ id: 'other', destination: '+15550000000', startedAt: new Date(now).toISOString() }),
+        call({
+          id: 'c1',
+          startedAt: new Date(now + 1_500).toISOString(),
+          recordings: [recording({ id: 'rec1' })],
+        }),
+      ],
+      nextCursor: null,
+    });
+    const { result } = renderHook(() => useRecordingDownloads());
+
+    act(() => watch());
+    await flush();
+
+    expect(api.calls.list).toHaveBeenCalledWith('pn1', { limit: 25, direction: 'OUTBOUND' });
+    expect(api.calls.recordingMedia).toHaveBeenCalledWith('pn1', 'c1', 'rec1');
+    expect(saveBlob).toHaveBeenCalledTimes(1);
+    expect(result.current[0]).toMatchObject({ state: 'downloaded', callId: 'c1' });
   });
 
   it('stops when the call is not visible to the user', async () => {

@@ -25,6 +25,8 @@ function setVoice(overrides: Record<string, unknown> = {}) {
     error: null,
     isMuted: false,
     canSendDigits: true,
+    callQuality: null,
+    qualityWarnings: [],
     micPermission: 'granted',
     browserSupported: true,
     init: vi.fn(),

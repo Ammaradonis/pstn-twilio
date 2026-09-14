@@ -68,6 +68,24 @@ type IncomingCall = {
 
 type MicPermission = 'unknown' | 'granted' | 'denied' | 'prompt';
 
+// Network quality of the live call, from the SDK's once-a-second WebRTC sample.
+export interface CallQuality {
+  rttMs: number | null;
+  jitterMs: number | null;
+  // Share of inbound packets lost over the last sample, 0-100.
+  packetLossPct: number | null;
+  mos: number | null;
+  codec: string | null;
+}
+
+type RtcSample = {
+  rtt?: unknown;
+  jitter?: unknown;
+  packetsLostFraction?: unknown;
+  mos?: unknown;
+  codecName?: unknown;
+};
+
 export interface MakeCallOptions {
   // Whether Twilio records the call. Left unset, the API records it.
   recordCall?: boolean;
@@ -89,6 +107,9 @@ type VoiceRuntimeState = {
   isMuted: boolean;
   canSendDigits: boolean;
   micPermission: MicPermission;
+  callQuality: CallQuality | null;
+  // Active SDK call-quality warnings, e.g. 'high-rtt' or 'high-packet-loss'.
+  qualityWarnings: string[];
 };
 
 interface UseVoiceDevice extends VoiceRuntimeState {
@@ -121,7 +142,11 @@ const INITIAL_RUNTIME_STATE: VoiceRuntimeState = {
   isMuted: false,
   canSendDigits: false,
   micPermission: 'unknown',
+  callQuality: null,
+  qualityWarnings: [],
 };
+
+const NO_CALL_QUALITY = { callQuality: null, qualityWarnings: [] as string[] };
 
 const RECONNECTABLE_ERROR_CODES = new Set([
   20101, 20104, 31005, 31009, 31203, 31204, 31205, 31207, 53001,
@@ -146,10 +171,13 @@ const MAX_STALLED_REGISTRATION_RECONNECT_ATTEMPTS = 8;
 // waiting out the stalled-registration schedule above.
 const RESUME_RECOVERY_GRACE_MS = 4_000;
 const DTMF_DIGITS_PATTERN = /^[0-9*#w]+$/;
+// The browser's full voice processing. Echo cancellation stops the callee
+// hearing themselves through the user's speakers; automatic gain keeps a
+// quiet microphone audible; noise suppression removes background hiss.
 const DEFAULT_AUDIO_CONSTRAINTS: MediaTrackConstraints = {
   echoCancellation: true,
-  noiseSuppression: false,
-  autoGainControl: false,
+  noiseSuppression: true,
+  autoGainControl: true,
 };
 
 const subscribers = new Set<() => void>();
@@ -218,6 +246,10 @@ function setRuntimeState(patch: Partial<VoiceRuntimeState>): void {
   next.reconnecting = !next.registered && runtime.hasRegistered;
   runtime.state = next;
   emit();
+}
+
+function finiteOrNull(value: unknown): number | null {
+  return typeof value === 'number' && Number.isFinite(value) ? value : null;
 }
 
 function callCanSendDigits(call: VoiceCall | null): boolean {
@@ -584,9 +616,34 @@ function attachCallListeners(conn: VoiceCall): void {
     connectionState: 'pending',
     isMuted: Boolean(conn?.isMuted?.()),
     canSendDigits: callCanSendDigits(conn),
+    ...NO_CALL_QUALITY,
   });
 
   conn.on?.('ringing', () => setRuntimeState({ connectionState: 'ringing' }));
+  conn.on?.('sample', (sample) => {
+    if (runtime.call !== conn) return;
+    const s = (sample ?? {}) as RtcSample;
+    setRuntimeState({
+      callQuality: {
+        rttMs: finiteOrNull(s.rtt),
+        jitterMs: finiteOrNull(s.jitter),
+        packetLossPct: finiteOrNull(s.packetsLostFraction),
+        mos: finiteOrNull(s.mos),
+        codec: typeof s.codecName === 'string' ? s.codecName : null,
+      },
+    });
+  });
+  conn.on?.('warning', (name) => {
+    if (runtime.call !== conn || typeof name !== 'string') return;
+    if (runtime.state.qualityWarnings.includes(name)) return;
+    setRuntimeState({ qualityWarnings: [...runtime.state.qualityWarnings, name] });
+  });
+  conn.on?.('warning-cleared', (name) => {
+    if (runtime.call !== conn || typeof name !== 'string') return;
+    setRuntimeState({
+      qualityWarnings: runtime.state.qualityWarnings.filter((warning) => warning !== name),
+    });
+  });
   conn.on?.('accept', () =>
     setRuntimeState({
       connectionState: 'open',
@@ -602,6 +659,7 @@ function attachCallListeners(conn: VoiceCall): void {
       active: false,
       isMuted: false,
       canSendDigits: false,
+      ...NO_CALL_QUALITY,
     });
   });
   conn.on?.('cancel', () => {
@@ -610,6 +668,7 @@ function attachCallListeners(conn: VoiceCall): void {
       connectionState: 'closed',
       active: false,
       canSendDigits: false,
+      ...NO_CALL_QUALITY,
     });
   });
   conn.on?.('reject', () => {
@@ -618,6 +677,7 @@ function attachCallListeners(conn: VoiceCall): void {
       connectionState: 'closed',
       active: false,
       canSendDigits: false,
+      ...NO_CALL_QUALITY,
     });
   });
   conn.on?.('reconnecting', (err) =>
@@ -640,6 +700,7 @@ function attachCallListeners(conn: VoiceCall): void {
         active: false,
         connectionState: 'closed',
         canSendDigits: false,
+        ...NO_CALL_QUALITY,
         ...(isDenied ? { micPermission: 'denied' as const } : {}),
       });
     }
@@ -941,6 +1002,7 @@ function hangupCall(): void {
       isMuted: false,
       connectionState: 'closed',
       canSendDigits: false,
+      ...NO_CALL_QUALITY,
     });
   }
 }

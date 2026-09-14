@@ -69,7 +69,9 @@ export class VoiceService {
 
   getDeviceConfig() {
     return {
-      codecPreferences: ['pcmu', 'opus'],
+      // Opus first: its forward error correction and jitter tolerance keep
+      // audio from breaking up on lossy networks, where PCMU leaves gaps.
+      codecPreferences: ['opus', 'pcmu'],
       edge: ['frankfurt', 'dublin', 'ashburn'],
       dscp: true,
       logLevel: 1,
