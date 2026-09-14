@@ -82,7 +82,7 @@ export class VoiceService {
 
   async prepareOutbound(
     actor: ActorContext,
-    input: { selectedNumberId: string; destinationNumber: string },
+    input: { selectedNumberId: string; destinationNumber: string; recordCall?: boolean },
   ): Promise<OutboundCallPreparationDto> {
     const phoneNumber = await this.assertOwnership(actor, input.selectedNumberId);
     if (!phoneNumber.capabilitiesVoice) {
@@ -98,6 +98,7 @@ export class VoiceService {
     }
     const identity = this.twilio.voiceIdentity(actor.userId, phoneNumber.id);
     await this.ensureVoiceIdentity(actor.userId, phoneNumber.id, identity);
+    const recordCall = input.recordCall ?? true;
 
     const intent = await this.prisma.outboundCallIntent.create({
       data: {
@@ -107,6 +108,7 @@ export class VoiceService {
         destinationE164: destinationNumber,
         selectedCallerId: phoneNumber.phoneNumberE164,
         expiresAt: new Date(Date.now() + OUTBOUND_INTENT_TTL_MS),
+        recordCall,
       },
     });
 
@@ -120,6 +122,7 @@ export class VoiceService {
       metadata: {
         numberId: phoneNumber.id,
         destinationNumber,
+        recordCall,
       },
     });
 
@@ -130,6 +133,7 @@ export class VoiceService {
       destinationNumber,
       identity,
       expiresAt: intent.expiresAt.toISOString(),
+      recordCall,
     };
   }
 

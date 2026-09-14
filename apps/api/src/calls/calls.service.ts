@@ -127,6 +127,33 @@ export class CallsService {
     return mapCall(call);
   }
 
+  // The call placed from a prepared outbound intent, once Twilio has requested
+  // its TwiML. Null until then, so the browser can poll for the call's
+  // recording right after connecting.
+  async findByOutboundIntent(
+    actor: ActorContext,
+    numberId: string,
+    intentId: string,
+  ): Promise<CallDto | null> {
+    await this.assertOwnership(actor, numberId);
+    const intent = await this.prisma.outboundCallIntent.findUnique({ where: { id: intentId } });
+    if (
+      !intent ||
+      intent.phoneNumberId !== numberId ||
+      (actor.role !== UserRole.OWNER && intent.userId !== actor.userId)
+    ) {
+      throw new NotFoundException(`Outbound call ${intentId} not found`);
+    }
+    if (!intent.consumedByCallSid) return null;
+
+    const call = await this.prisma.call.findUnique({
+      where: { twilioCallSid: intent.consumedByCallSid },
+      include: CALL_RECORDINGS_INCLUDE,
+    });
+    if (!call || call.phoneNumberId !== numberId) return null;
+    return mapCall(call);
+  }
+
   async findLastDial(
     actor: ActorContext,
     numberId: string,

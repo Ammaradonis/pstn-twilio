@@ -92,6 +92,103 @@ describe('CallsService.list', () => {
   });
 });
 
+describe('CallsService.findByOutboundIntent', () => {
+  const intent = {
+    id: 'intent1',
+    userId: 'u1',
+    phoneNumberId: 'pn1',
+    consumedByCallSid: 'CA1',
+  };
+  const call = {
+    id: 'c1',
+    phoneNumberId: 'pn1',
+    twilioCallSid: 'CA1',
+    direction: CallDirection.OUTBOUND,
+    fromE164: 'user_u1_number_pn1',
+    toE164: '+15551111111',
+    selectedCallerId: '+15552222222',
+    destinationE164: '+15551111111',
+    status: CallStatus.COMPLETED,
+    durationSeconds: 12,
+    startedAt: new Date('2026-09-14T00:00:00Z'),
+    answeredAt: new Date('2026-09-14T00:00:02Z'),
+    endedAt: new Date('2026-09-14T00:00:14Z'),
+    createdAt: new Date('2026-09-14T00:00:00Z'),
+    recordings: [
+      {
+        id: 'rec1',
+        twilioCallSid: 'CA1',
+        twilioRecordingSid: 'RE1',
+        recordingUrl: null,
+        status: RecordingStatus.COMPLETED,
+        durationSeconds: 12,
+        channels: 2,
+        source: 'DialVerb',
+        track: 'both',
+        startedAt: null,
+        createdAt: new Date('2026-09-14T00:00:15Z'),
+      },
+    ],
+  };
+
+  function prismaWith(intentRow: unknown, callRow: unknown = call) {
+    return {
+      phoneNumber: { findUnique: vi.fn().mockResolvedValue({ id: 'pn1', userId: 'u1' }) },
+      outboundCallIntent: { findUnique: vi.fn().mockResolvedValue(intentRow) },
+      call: { findUnique: vi.fn().mockResolvedValue(callRow) },
+    };
+  }
+
+  it('returns the call and its recordings once Twilio has consumed the intent', async () => {
+    const prisma = prismaWith(intent);
+    const { service } = buildService({ prisma });
+
+    const result = await service.findByOutboundIntent(
+      { userId: 'u1', role: UserRole.ADMIN },
+      'pn1',
+      'intent1',
+    );
+
+    expect(prisma.call.findUnique).toHaveBeenCalledWith(
+      expect.objectContaining({ where: { twilioCallSid: 'CA1' } }),
+    );
+    expect(result).toEqual(
+      expect.objectContaining({
+        id: 'c1',
+        recordings: [expect.objectContaining({ id: 'rec1', status: RecordingStatus.COMPLETED })],
+      }),
+    );
+  });
+
+  it('returns null while the call has not reached Twilio yet', async () => {
+    const prisma = prismaWith({ ...intent, consumedByCallSid: null });
+    const { service } = buildService({ prisma });
+
+    await expect(
+      service.findByOutboundIntent({ userId: 'u1', role: UserRole.ADMIN }, 'pn1', 'intent1'),
+    ).resolves.toBeNull();
+    expect(prisma.call.findUnique).not.toHaveBeenCalled();
+  });
+
+  it('hides an outbound intent created by another user', async () => {
+    const prisma = prismaWith({ ...intent, userId: 'someone-else' });
+    const { service } = buildService({ prisma });
+
+    await expect(
+      service.findByOutboundIntent({ userId: 'u1', role: UserRole.ADMIN }, 'pn1', 'intent1'),
+    ).rejects.toBeInstanceOf(NotFoundException);
+  });
+
+  it('rejects an intent that belongs to a different number', async () => {
+    const prisma = prismaWith({ ...intent, phoneNumberId: 'pn2' });
+    const { service } = buildService({ prisma });
+
+    await expect(
+      service.findByOutboundIntent({ userId: 'u1', role: UserRole.OWNER }, 'pn1', 'intent1'),
+    ).rejects.toBeInstanceOf(NotFoundException);
+  });
+});
+
 describe('CallsService.findLastDial', () => {
   it('returns the most recent outbound dial to the normalized destination', async () => {
     const createdAt = new Date('2026-06-07T18:31:57.652Z');

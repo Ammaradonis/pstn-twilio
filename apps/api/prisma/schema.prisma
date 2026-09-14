@@ -286,6 +286,7 @@ model OutboundCallIntent {
   expiresAt         DateTime  @map("expires_at")
   consumedAt        DateTime? @map("consumed_at")
   consumedByCallSid String?   @map("consumed_by_call_sid")
+  recordCall        Boolean   @default(true) @map("record_call")
   createdAt         DateTime  @default(now()) @map("created_at")
   updatedAt         DateTime  @updatedAt @map("updated_at")
 

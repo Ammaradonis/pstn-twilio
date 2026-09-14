@@ -1,12 +1,36 @@
-import { normalizeDialablePhoneNumber, type LastDialDto } from '@pstn-twilio/shared';
+import {
+  normalizeDialablePhoneNumber,
+  type LastDialDto,
+  type OutboundCallPreparationDto,
+} from '@pstn-twilio/shared';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useParams } from 'react-router-dom';
 
 import { useVoiceDevice } from '../hooks/use-voice-device';
 import { api, ApiError } from '../lib/api-client';
 import { formatDate, formatPhone } from '../lib/format';
+import { watchRecordingDownload } from '../lib/recording-downloads';
 
 const DIALPAD_KEYS = ['1', '2', '3', '4', '5', '6', '7', '8', '9', '*', '0', '#', '+'] as const;
+const RECORD_CALLS_STORAGE_KEY = 'pstn-twilio.record-calls';
+
+// Calls were always recorded before this setting existed, so recording stays
+// on until the user turns it off.
+function readRecordCallsPreference(): boolean {
+  try {
+    return window.localStorage.getItem(RECORD_CALLS_STORAGE_KEY) !== 'false';
+  } catch {
+    return true;
+  }
+}
+
+function writeRecordCallsPreference(value: boolean): void {
+  try {
+    window.localStorage.setItem(RECORD_CALLS_STORAGE_KEY, String(value));
+  } catch {
+    // Not persisted; the toggle still applies to this page.
+  }
+}
 
 function isMissingLastDialEndpointError(err: unknown): boolean {
   return err instanceof ApiError && err.status === 404;
@@ -36,6 +60,8 @@ export function DialPage() {
   const [pageError, setPageError] = useState<string | null>(null);
   const [sentTones, setSentTones] = useState('');
   const [repeatDialWarning, setRepeatDialWarning] = useState<LastDialDto | null>(null);
+  const [recordCall, setRecordCall] = useState<boolean>(readRecordCallsPreference);
+  const [activeCallRecorded, setActiveCallRecorded] = useState(false);
   const voice = useVoiceDevice();
   const inCallMode =
     voice.active ||
@@ -89,7 +115,15 @@ export function DialPage() {
   useEffect(() => {
     if (inCallMode) return;
     setSentTones('');
+    setActiveCallRecorded(false);
   }, [inCallMode]);
+
+  function toggleRecordCall() {
+    setRecordCall((prev) => {
+      writeRecordCallsPreference(!prev);
+      return !prev;
+    });
+  }
 
   useEffect(() => {
     if (!inCallMode) return;
@@ -164,7 +198,23 @@ export function DialPage() {
           return;
         }
       }
-      await voice.makeCall(numberId, destinationNumber);
+      const prepared: { current: OutboundCallPreparationDto | null } = { current: null };
+      const call = await voice.makeCall(numberId, destinationNumber, {
+        recordCall,
+        onPrepared: (p) => {
+          prepared.current = p;
+        },
+      });
+      // An API that predates the setting omits recordCall and always records.
+      if (call && prepared.current && prepared.current.recordCall !== false) {
+        setActiveCallRecorded(true);
+        watchRecordingDownload({
+          outboundIntentId: prepared.current.outboundIntentId,
+          numberId,
+          destination: prepared.current.destinationNumber,
+          intentExpiresAt: prepared.current.expiresAt,
+        });
+      }
     } catch (err) {
       setPageError(err instanceof Error ? err.message : String(err));
     } finally {
@@ -357,6 +407,51 @@ export function DialPage() {
             Tones: <span className="font-mono">{sentTones}</span>
           </p>
         )}
+
+        <div className="mt-4 flex items-center justify-between gap-3 rounded border border-slate-200 px-3 py-2">
+          <div className="min-w-0">
+            <p id="record-call-label" className="text-sm font-medium text-slate-800">
+              Record call
+              {inCallMode && activeCallRecorded && (
+                <span className="ml-2 inline-flex items-center gap-1 rounded-full bg-rose-100 px-2 py-0.5 text-xs font-medium text-rose-700">
+                  <span
+                    className="h-1.5 w-1.5 animate-pulse rounded-full bg-rose-600"
+                    aria-hidden="true"
+                  />
+                  Recording
+                </span>
+              )}
+            </p>
+            <p id="record-call-hint" className="text-xs text-slate-500">
+              {inCallMode
+                ? activeCallRecorded
+                  ? 'The MP3 downloads automatically after the call ends.'
+                  : 'Changes apply to your next call.'
+                : recordCall
+                  ? 'The call is recorded and the MP3 downloads automatically when it ends.'
+                  : 'The call will not be recorded.'}
+            </p>
+          </div>
+          <button
+            type="button"
+            role="switch"
+            aria-checked={recordCall}
+            aria-labelledby="record-call-label"
+            aria-describedby="record-call-hint"
+            onClick={toggleRecordCall}
+            disabled={inCallMode || submitting}
+            className={`relative inline-flex h-6 w-11 shrink-0 items-center rounded-full transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-slate-500 focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-60 ${
+              recordCall ? 'bg-rose-600' : 'bg-slate-300'
+            }`}
+          >
+            <span
+              aria-hidden="true"
+              className={`inline-block h-5 w-5 rounded-full bg-white shadow transition-transform ${
+                recordCall ? 'translate-x-5' : 'translate-x-0.5'
+              }`}
+            />
+          </button>
+        </div>
 
         <div className="mt-4 flex flex-wrap gap-2">
           <button

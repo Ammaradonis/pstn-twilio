@@ -5,6 +5,7 @@ import { useAuthStore } from '../lib/auth-store';
 
 import { ConnectionStatusBar } from './connection-status';
 import { NumberSwitcher } from './number-switcher';
+import { RecordingDownloadTray } from './recording-downloads';
 
 const PRIMARY_NAV = [
   { to: '/dashboard', label: 'Dashboard' },
@@ -105,6 +106,7 @@ export function AppLayout() {
           <Outlet />
         </main>
       </div>
+      <RecordingDownloadTray />
     </div>
   );
 }

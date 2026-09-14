@@ -68,6 +68,9 @@ export const prepareOutboundCallSchema = z.object({
   selectedNumberId: z.string().uuid(),
   destinationNumber: dialablePhoneNumberSchema,
   callContextId: z.string().uuid().optional(),
+  // Twilio records the call when true. Omitted by older clients, which keeps
+  // the previous always-record behavior.
+  recordCall: z.boolean().optional(),
 });
 
 export const voiceTokenRequestSchema = z.object({

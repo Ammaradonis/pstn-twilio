@@ -5,6 +5,7 @@ import { useParams } from 'react-router-dom';
 
 import { useRealtimeCalls } from '../hooks/use-realtime-calls';
 import { api } from '../lib/api-client';
+import { callRecordingFilename, saveBlob } from '../lib/download';
 
 export function CallsPage() {
   const { numberId } = useParams<{ numberId: string }>();
@@ -92,12 +93,7 @@ function RecordingCell({ numberId, call }: { numberId: string; call: CallDto }) 
   return (
     <div className="flex min-w-48 flex-col gap-2">
       {call.recordings.map((recording) => (
-        <RecordingAudio
-          key={recording.id}
-          numberId={numberId}
-          callId={call.id}
-          recording={recording}
-        />
+        <RecordingAudio key={recording.id} numberId={numberId} call={call} recording={recording} />
       ))}
     </div>
   );
@@ -105,15 +101,16 @@ function RecordingCell({ numberId, call }: { numberId: string; call: CallDto }) 
 
 function RecordingAudio({
   numberId,
-  callId,
+  call,
   recording,
 }: {
   numberId: string;
-  callId: string;
+  call: CallDto;
   recording: CallRecordingDto;
 }) {
+  const [blob, setBlob] = useState<Blob | null>(null);
   const [src, setSrc] = useState<string | null>(null);
-  const [loading, setLoading] = useState(false);
+  const [busy, setBusy] = useState<'play' | 'download' | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
@@ -122,20 +119,38 @@ function RecordingAudio({
     };
   }, [src]);
 
-  async function loadRecording() {
-    setLoading(true);
+  async function fetchBlob(): Promise<Blob> {
+    if (blob) return blob;
+    const fetched = await api.calls.recordingMedia(numberId, call.id, recording.id);
+    setBlob(fetched);
+    return fetched;
+  }
+
+  async function run(action: 'play' | 'download') {
+    setBusy(action);
     setError(null);
     try {
-      const blob = await api.calls.recordingMedia(numberId, callId, recording.id);
-      const url = URL.createObjectURL(blob);
-      setSrc((prev) => {
-        if (prev) URL.revokeObjectURL(prev);
-        return url;
-      });
+      const media = await fetchBlob();
+      if (action === 'play') {
+        const url = URL.createObjectURL(media);
+        setSrc((prev) => {
+          if (prev) URL.revokeObjectURL(prev);
+          return url;
+        });
+      } else {
+        saveBlob(
+          media,
+          callRecordingFilename({
+            prefix: recording.source === 'voicemail' ? 'voicemail' : 'call',
+            counterpart: call.direction === 'OUTBOUND' ? (call.destination ?? call.to) : call.from,
+            startedAt: call.startedAt,
+          }),
+        );
+      }
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Recording unavailable');
     } finally {
-      setLoading(false);
+      setBusy(null);
     }
   }
 
@@ -143,20 +158,30 @@ function RecordingAudio({
     return <span className="text-xs text-slate-500">{recording.status}</span>;
   }
 
-  if (src) {
-    return <audio controls preload="metadata" src={src} className="h-8 w-64 max-w-full" />;
-  }
-
   return (
     <div className="flex flex-col gap-1">
-      <button
-        type="button"
-        onClick={loadRecording}
-        disabled={loading}
-        className="w-fit rounded border border-slate-300 px-2 py-1 text-xs disabled:cursor-not-allowed disabled:opacity-60"
-      >
-        {loading ? 'Loading…' : 'Play'}
-      </button>
+      {src ? <audio controls preload="metadata" src={src} className="h-8 w-64 max-w-full" /> : null}
+      <div className="flex gap-1">
+        {!src && (
+          <button
+            type="button"
+            onClick={() => void run('play')}
+            disabled={busy !== null}
+            className="w-fit rounded border border-slate-300 px-2 py-1 text-xs disabled:cursor-not-allowed disabled:opacity-60"
+          >
+            {busy === 'play' ? 'Loading…' : 'Play'}
+          </button>
+        )}
+        <button
+          type="button"
+          onClick={() => void run('download')}
+          disabled={busy !== null}
+          aria-label="Download recording as MP3"
+          className="w-fit rounded border border-slate-300 px-2 py-1 text-xs disabled:cursor-not-allowed disabled:opacity-60"
+        >
+          {busy === 'download' ? 'Downloading…' : 'Download MP3'}
+        </button>
+      </div>
       {error ? <span className="max-w-48 text-xs text-red-600">{error}</span> : null}
     </div>
   );

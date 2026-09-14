@@ -1,3 +1,4 @@
+import type { OutboundCallPreparationDto } from '@pstn-twilio/shared';
 import { useCallback, useEffect, useState } from 'react';
 
 import { api } from '../lib/api-client';
@@ -67,6 +68,13 @@ type IncomingCall = {
 
 type MicPermission = 'unknown' | 'granted' | 'denied' | 'prompt';
 
+export interface MakeCallOptions {
+  // Whether Twilio records the call. Left unset, the API records it.
+  recordCall?: boolean;
+  // Called once the API has authorized the call, before the Device connects.
+  onPrepared?: (prepared: OutboundCallPreparationDto) => void;
+}
+
 type VoiceRuntimeState = {
   ready: boolean;
   registered: boolean;
@@ -93,7 +101,11 @@ interface UseVoiceDevice extends VoiceRuntimeState {
   hangup: () => void;
   toggleMute: () => void;
   sendDigits: (digits: string) => void;
-  makeCall: (selectedNumberId: string, destinationNumber: string) => Promise<VoiceCall | null>;
+  makeCall: (
+    selectedNumberId: string,
+    destinationNumber: string,
+    options?: MakeCallOptions,
+  ) => Promise<VoiceCall | null>;
   requestMicPermission: () => Promise<boolean>;
 }
 
@@ -805,6 +817,7 @@ async function initVoiceDevice(
 async function makeVoiceCall(
   selectedNumberId: string,
   destinationNumber: string,
+  options: MakeCallOptions = {},
 ): Promise<VoiceCall | null> {
   if (runtime.state.micPermission === 'denied') {
     setRuntimeState({
@@ -827,11 +840,16 @@ async function makeVoiceCall(
 
   let prepared;
   try {
-    prepared = await api.voice.prepareOutbound(selectedNumberId, destinationNumber);
+    prepared = await api.voice.prepareOutbound(
+      selectedNumberId,
+      destinationNumber,
+      options.recordCall,
+    );
   } catch (err) {
     setRuntimeState({ error: err instanceof Error ? err.message : String(err) });
     return null;
   }
+  options.onPrepared?.(prepared);
 
   const device = await ensureDeviceForOutbound(prepared.selectedNumberId, prepared.identity);
   if (!device) {

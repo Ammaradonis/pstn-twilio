@@ -221,6 +221,9 @@ export const api = {
       }),
     get: (numberId: string, callId: string) =>
       request<CallDto>(`/numbers/${numberId}/calls/${callId}`),
+    // Null until Twilio has picked up the call placed from this outbound intent.
+    byOutboundIntent: (numberId: string, outboundIntentId: string) =>
+      request<CallDto | null>(`/numbers/${numberId}/outbound-intents/${outboundIntentId}/call`),
     lastDial: (numberId: string, destination: string) =>
       request<LastDialDto | null>(`/numbers/${numberId}/last-dial`, {
         query: { destination },
@@ -251,10 +254,10 @@ export const api = {
         query: numberId ? { numberId } : undefined,
       }),
     deviceConfig: () => request<Record<string, unknown>>('/voice/device-config'),
-    prepareOutbound: (selectedNumberId: string, destinationNumber: string) =>
+    prepareOutbound: (selectedNumberId: string, destinationNumber: string, recordCall?: boolean) =>
       request<OutboundCallPreparationDto>('/calls/prepare-outbound', {
         method: 'POST',
-        body: { selectedNumberId, destinationNumber },
+        body: { selectedNumberId, destinationNumber, recordCall },
       }),
   },
 

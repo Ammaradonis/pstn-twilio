@@ -68,6 +68,7 @@ export class VoiceController {
     return this.voice.prepareOutbound(actorFromRequest(req), {
       selectedNumberId: body.selectedNumberId,
       destinationNumber: body.destinationNumber,
+      recordCall: body.recordCall,
     });
   }
 }

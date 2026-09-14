@@ -61,6 +61,7 @@ function makeOutboundIntent(
     expiresAt: new Date(Date.now() + 60_000),
     consumedAt: null,
     consumedByCallSid: null,
+    recordCall: true,
     createdAt: new Date('2026-05-19T00:00:00Z'),
     updatedAt: new Date('2026-05-19T00:00:00Z'),
     phoneNumber,
@@ -351,6 +352,65 @@ describe('VoiceWebhookService.handleOutbound', () => {
     );
     await flushAsyncWork();
     expect(realtime.callStatusUpdated).toHaveBeenCalled();
+  });
+
+  it('dials without recording when the outbound intent opted out of recording', async () => {
+    const phoneNumber = {
+      id: 'pn1',
+      userId: 'u1',
+      phoneNumberE164: '+15552222222',
+      active: true,
+      capabilitiesVoice: true,
+    };
+    const prisma = {
+      webhookEvent: {
+        findUnique: vi.fn().mockResolvedValue(null),
+        create: vi.fn().mockResolvedValue({}),
+      },
+      call: {
+        findUnique: vi.fn().mockResolvedValue(null),
+        create: vi.fn().mockResolvedValue({
+          id: 'c1',
+          phoneNumberId: 'pn1',
+          twilioCallSid: 'CA1',
+          direction: CallDirection.OUTBOUND,
+          fromE164: 'user_u1_number_pn1',
+          toE164: '+15551111111',
+          selectedCallerId: '+15552222222',
+          destinationE164: '+15551111111',
+          status: CallStatus.INITIATED,
+          durationSeconds: null,
+          startedAt: new Date('2026-05-19T00:00:00Z'),
+          answeredAt: null,
+          endedAt: null,
+          createdAt: new Date('2026-05-19T00:00:00Z'),
+        }),
+        update: vi.fn(),
+      },
+      outboundCallIntent: {
+        findUnique: vi
+          .fn()
+          .mockResolvedValue(makeOutboundIntent(phoneNumber, { recordCall: false })),
+        updateMany: vi.fn().mockResolvedValue({ count: 1 }),
+      },
+    };
+    const { service } = buildService({ prisma });
+
+    const xml = await service.handleOutbound(
+      {
+        CallSid: 'CA1',
+        selectedNumberId: 'pn1',
+        destinationNumber: '+15551111111',
+        outboundIntentId: 'intent1',
+      },
+      'user_u1_number_pn1',
+    );
+    await flushAsyncWork();
+
+    expect(xml).toContain('callerId="+15552222222"');
+    expect(xml).toContain('>+15551111111</Number>');
+    expect(xml).not.toContain('record=');
+    expect(xml).not.toContain('recordingStatusCallback');
   });
 
   it('allows a Twilio retry for the same consumed outbound intent and CallSid', async () => {

@@ -79,6 +79,15 @@ export class CallsController {
     return this.calls.findLastDial(actorFromRequest(req), numberId, query.destination);
   }
 
+  @Get('numbers/:numberId/outbound-intents/:intentId/call')
+  findByOutboundIntent(
+    @Req() req: ActorRequest,
+    @Param('numberId') numberId: string,
+    @Param('intentId') intentId: string,
+  ) {
+    return this.calls.findByOutboundIntent(actorFromRequest(req), numberId, intentId);
+  }
+
   @Get('numbers/:numberId/calls/:callId')
   getOne(
     @Req() req: ActorRequest,

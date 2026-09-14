@@ -275,6 +275,7 @@ describe('VoiceService.prepareOutbound', () => {
       destinationNumber: '+15551111111',
       identity: 'user_u1_number_pn1',
       expiresAt: expect.any(String),
+      recordCall: true,
     });
     expect(prisma.outboundCallIntent.create).toHaveBeenCalledWith(
       expect.objectContaining({
@@ -285,6 +286,7 @@ describe('VoiceService.prepareOutbound', () => {
           destinationE164: '+15551111111',
           selectedCallerId: '+15552222222',
           expiresAt: expect.any(Date),
+          recordCall: true,
         }),
       }),
     );
@@ -293,6 +295,34 @@ describe('VoiceService.prepareOutbound', () => {
         action: 'voice.outbound_prepared',
         entityType: 'OutboundCallIntent',
         entityId: 'intent1',
+      }),
+    );
+  });
+
+  it('stores an opt-out of call recording on the outbound intent', async () => {
+    const prisma = {
+      phoneNumber: { findUnique: vi.fn().mockResolvedValue(phoneNumber) },
+      voiceIdentity: { upsert: vi.fn() },
+      outboundCallIntent: {
+        create: vi.fn().mockResolvedValue({
+          id: 'intent1',
+          expiresAt: new Date(Date.now() + 120_000),
+        }),
+      },
+    };
+    const { service, audit } = buildService({ prisma });
+    const result = await service.prepareOutbound(
+      { userId: 'u1', role: UserRole.OWNER },
+      { selectedNumberId: 'pn1', destinationNumber: '+15551111111', recordCall: false },
+    );
+
+    expect(result.recordCall).toBe(false);
+    expect(prisma.outboundCallIntent.create).toHaveBeenCalledWith(
+      expect.objectContaining({ data: expect.objectContaining({ recordCall: false }) }),
+    );
+    expect(audit.log).toHaveBeenCalledWith(
+      expect.objectContaining({
+        metadata: expect.objectContaining({ recordCall: false }),
       }),
     );
   });

@@ -134,6 +134,7 @@ export interface OutboundCallPreparationDto {
   destinationNumber: string;
   identity: string;
   expiresAt: string;
+  recordCall: boolean;
 }
 
 export interface HealthStatusDto {

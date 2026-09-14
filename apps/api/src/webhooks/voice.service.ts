@@ -276,7 +276,7 @@ export class VoiceWebhookService {
     const dial = response.dial({
       callerId: phoneNumber.phoneNumberE164,
       answerOnBridge: true,
-      ...this.recordingDialAttributes(),
+      ...(intent.recordCall ? this.recordingDialAttributes() : {}),
     });
     dial.number(
       {

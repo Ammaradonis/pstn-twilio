@@ -116,6 +116,7 @@ describe('useVoiceDevice', () => {
       destinationNumber: '+15551111111',
       identity: 'user_u1_number_pn1',
       expiresAt: new Date(Date.now() + 120_000).toISOString(),
+      recordCall: true,
     });
   });
 
@@ -414,13 +415,17 @@ describe('useVoiceDevice', () => {
     if (!device) throw new Error('Mock Twilio Device was not created');
     const call = { on: vi.fn(), isMuted: vi.fn().mockReturnValue(false) };
     device.connect.mockReturnValue(call);
+    const onPrepared = vi.fn();
 
     await act(async () => {
-      await current!.makeCall('pn1', '+1 555-111-1111');
+      await current!.makeCall('pn1', '+1 555-111-1111', { recordCall: false, onPrepared });
       await Promise.resolve();
     });
 
-    expect(api.voice.prepareOutbound).toHaveBeenCalledWith('pn1', '+1 555-111-1111');
+    expect(api.voice.prepareOutbound).toHaveBeenCalledWith('pn1', '+1 555-111-1111', false);
+    expect(onPrepared).toHaveBeenCalledWith(
+      expect.objectContaining({ outboundIntentId: 'intent1', selectedNumberId: 'pn1' }),
+    );
     expect(device.connect).toHaveBeenCalledWith({
       params: {
         selectedNumberId: 'pn1',
@@ -463,7 +468,7 @@ describe('useVoiceDevice', () => {
       await Promise.resolve();
     });
 
-    expect(api.voice.prepareOutbound).toHaveBeenCalledWith('pn1', '+1 555-111-1111');
+    expect(api.voice.prepareOutbound).toHaveBeenCalledWith('pn1', '+1 555-111-1111', undefined);
     expect(device.connect).toHaveBeenCalledWith({
       params: {
         selectedNumberId: 'pn1',
