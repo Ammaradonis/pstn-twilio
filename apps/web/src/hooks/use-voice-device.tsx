@@ -179,6 +179,12 @@ const DEFAULT_AUDIO_CONSTRAINTS: MediaTrackConstraints = {
   noiseSuppression: true,
   autoGainControl: true,
 };
+// Chrome on Android lists these synthetic microphones, and choosing one routes
+// the whole call (microphone and playback) to that Android communication
+// device. Without a request it picks a connected headset, else the
+// loudspeaker, whose sound the phone's microphone picks back up as echo.
+const ANDROID_EARPIECE_INPUT_LABEL = 'Headset earpiece';
+const ANDROID_HEADSET_INPUT_LABELS = new Set(['Wired headset', 'Bluetooth headset', 'USB audio']);
 
 const subscribers = new Set<() => void>();
 
@@ -435,6 +441,27 @@ function disposeCurrentDevice(resetState: boolean): void {
     };
     emit();
   }
+}
+
+// Microphone constraints for a call. On an Android phone with no headset this
+// requests the earpiece, so the other party is heard through the top speaker
+// held to the ear. Everywhere else the browser's default device is kept.
+async function callAudioConstraints(): Promise<MediaTrackConstraints> {
+  let inputs: MediaDeviceInfo[] = [];
+  try {
+    const devices = (await navigator.mediaDevices?.enumerateDevices?.()) ?? [];
+    inputs = devices.filter((device) => device.kind === 'audioinput');
+  } catch {
+    return DEFAULT_AUDIO_CONSTRAINTS;
+  }
+  if (inputs.some((device) => ANDROID_HEADSET_INPUT_LABELS.has(device.label))) {
+    return DEFAULT_AUDIO_CONSTRAINTS;
+  }
+  const earpiece = inputs.find((device) => device.label === ANDROID_EARPIECE_INPUT_LABEL);
+  if (!earpiece?.deviceId) return DEFAULT_AUDIO_CONSTRAINTS;
+  // `ideal` rather than `exact`: if the earpiece disappears, fall back to
+  // another microphone instead of failing the call.
+  return { ...DEFAULT_AUDIO_CONSTRAINTS, deviceId: { ideal: earpiece.deviceId } };
 }
 
 async function refreshVoiceToken(numberId: string | undefined): Promise<void> {
@@ -922,16 +949,15 @@ async function makeVoiceCall(
   }
 
   try {
+    const audio = await callAudioConstraints();
     const result = device.connect({
       params: {
         selectedNumberId: prepared.selectedNumberId,
         destinationNumber: prepared.destinationNumber,
         outboundIntentId: prepared.outboundIntentId,
       },
-      audioConstraints: DEFAULT_AUDIO_CONSTRAINTS,
-      rtcConstraints: {
-        audio: DEFAULT_AUDIO_CONSTRAINTS,
-      },
+      audioConstraints: audio,
+      rtcConstraints: { audio },
     });
     const conn = isPromiseLike(result) ? await result : result;
     attachCallListeners(conn);
@@ -960,13 +986,11 @@ async function acceptIncomingCall(): Promise<void> {
     return;
   }
   try {
+    const audio = await callAudioConstraints();
+    // The caller may have hung up while the devices were being listed.
+    if (runtime.state.incoming?.connection !== conn) return;
     attachCallListeners(conn);
-    conn.accept?.({
-      audioConstraints: DEFAULT_AUDIO_CONSTRAINTS,
-      rtcConstraints: {
-        audio: DEFAULT_AUDIO_CONSTRAINTS,
-      },
-    });
+    conn.accept?.({ audioConstraints: audio, rtcConstraints: { audio } });
     setRuntimeState({ incoming: null });
   } catch (err) {
     const isDenied = isMicDeniedError(err);

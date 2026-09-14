@@ -535,6 +535,110 @@ describe('useVoiceDevice', () => {
     expect(current!.incoming).toBeNull();
   });
 
+  describe('on an Android phone', () => {
+    function androidInputs(...labels: string[]) {
+      const devices = ['default', ...labels].map((label, i) => ({
+        kind: 'audioinput',
+        label: label === 'default' ? '' : label,
+        deviceId: label === 'default' ? 'default' : `id-${i}`,
+        groupId: '',
+      }));
+      Object.defineProperty(navigator, 'mediaDevices', {
+        configurable: true,
+        value: {
+          getUserMedia: mediaMock.getUserMedia,
+          enumerateDevices: vi.fn().mockResolvedValue(devices),
+        },
+      });
+    }
+
+    async function initDevice() {
+      render(<Harness onChange={(voice) => (current = voice)} />);
+      await act(async () => {
+        await current!.init('pn1');
+        await Promise.resolve();
+      });
+      const device = voiceSdkMock.instances[0];
+      if (!device) throw new Error('Mock Twilio Device was not created');
+      return device;
+    }
+
+    it('plays outbound call audio through the earpiece instead of the loudspeaker', async () => {
+      androidInputs('Speakerphone', 'Headset earpiece');
+      const device = await initDevice();
+      device.connect.mockReturnValue({ on: vi.fn(), isMuted: vi.fn().mockReturnValue(false) });
+
+      await act(async () => {
+        await current!.makeCall('pn1', '+1 555-111-1111');
+      });
+
+      const earpiece = {
+        echoCancellation: true,
+        noiseSuppression: true,
+        autoGainControl: true,
+        deviceId: { ideal: 'id-2' },
+      };
+      expect(device.connect).toHaveBeenCalledWith(
+        expect.objectContaining({
+          audioConstraints: earpiece,
+          rtcConstraints: { audio: earpiece },
+        }),
+      );
+    });
+
+    it('answers inbound calls on the earpiece too', async () => {
+      androidInputs('Speakerphone', 'Headset earpiece');
+      const device = await initDevice();
+      const call = { on: vi.fn(), isMuted: vi.fn().mockReturnValue(false), accept: vi.fn() };
+      act(() => device.emit('incoming', call));
+
+      await act(async () => {
+        await current!.accept();
+      });
+
+      expect(call.accept).toHaveBeenCalledWith(
+        expect.objectContaining({
+          rtcConstraints: { audio: expect.objectContaining({ deviceId: { ideal: 'id-2' } }) },
+        }),
+      );
+    });
+
+    it('leaves a connected headset in charge of call audio', async () => {
+      androidInputs('Speakerphone', 'Headset earpiece', 'Bluetooth headset');
+      const device = await initDevice();
+      device.connect.mockReturnValue({ on: vi.fn(), isMuted: vi.fn().mockReturnValue(false) });
+
+      await act(async () => {
+        await current!.makeCall('pn1', '+1 555-111-1111');
+      });
+
+      const { rtcConstraints } = device.connect.mock.calls[0]![0] as {
+        rtcConstraints: { audio: MediaTrackConstraints };
+      };
+      expect(rtcConstraints.audio).not.toHaveProperty('deviceId');
+    });
+
+    it('does not answer a call the caller abandoned while choosing the earpiece', async () => {
+      androidInputs('Speakerphone', 'Headset earpiece');
+      const device = await initDevice();
+      const handlers = new Map<string, () => void>();
+      const call = {
+        on: vi.fn((event: string, handler: () => void) => handlers.set(event, handler)),
+        isMuted: vi.fn().mockReturnValue(false),
+        accept: vi.fn(),
+      };
+      act(() => device.emit('incoming', call));
+
+      await act(async () => {
+        const accepting = current!.accept();
+        handlers.get('cancel')?.();
+        await accepting;
+      });
+
+      expect(call.accept).not.toHaveBeenCalled();
+    });
+  });
+
   it('sends DTMF digits on the active Twilio call', async () => {
     render(<Harness onChange={(voice) => (current = voice)} />);
 
