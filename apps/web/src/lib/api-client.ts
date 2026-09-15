@@ -1,6 +1,8 @@
 import type {
   AiCallDto,
   AiCallingConfigDto,
+  AiInboundMode,
+  AiInboundStatusDto,
   StartAiCallInput,
   AuditLogDto,
   AvailableNumberDto,
@@ -51,7 +53,7 @@ function handleAuthFailure(status: number): void {
 interface RequestOptions {
   query?: Record<string, string | number | boolean | undefined>;
   body?: unknown;
-  method?: 'GET' | 'POST' | 'PATCH' | 'DELETE';
+  method?: 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE';
 }
 
 export class ApiError extends Error {
@@ -255,6 +257,9 @@ export const api = {
     get: (id: string) => request<AiCallDto>(`/ai-calls/${id}`),
     start: (input: StartAiCallInput) =>
       request<AiCallDto>('/ai-calls', { method: 'POST', body: input }),
+    inbound: () => request<AiInboundStatusDto>('/ai-calls/inbound'),
+    setInbound: (mode: AiInboundMode) =>
+      request<AiInboundStatusDto>('/ai-calls/inbound', { method: 'PUT', body: { mode } }),
     queue: () => request<AiCallDto[]>('/ai-calls/queue'),
     removeFromQueue: (id: string) => request<void>(`/ai-calls/${id}`, { method: 'DELETE' }),
     clearQueue: () => request<{ removed: number }>('/ai-calls/queue', { method: 'DELETE' }),

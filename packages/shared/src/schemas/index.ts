@@ -85,6 +85,10 @@ export const aiCallKeypadSchema = z.object({
   keys: z.string().regex(/^[0-9*#wW]{1,32}$/, 'Keys may only contain 0-9, *, #, or w pauses'),
 });
 
+export const aiInboundModeSchema = z.object({
+  mode: z.enum(['agent', 'blocked']),
+});
+
 export const voiceTokenRequestSchema = z.object({
   numberId: z.string().uuid().optional(),
 });

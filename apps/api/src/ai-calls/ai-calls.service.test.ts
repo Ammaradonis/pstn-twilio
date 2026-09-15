@@ -1,6 +1,6 @@
 import { BadGatewayException, ConflictException, UnauthorizedException } from '@nestjs/common';
 import { AiCallDirection, AiCallStatus, UserRole, type AiCall } from '@prisma/client';
-import { describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import {
   decryptSecret,
@@ -351,6 +351,15 @@ describe('AiCallsService.startCall', () => {
 });
 
 describe('AiCallsService queue', () => {
+  // Webhook-triggered queue steps read the clock; pin it inside the calling window.
+  beforeEach(() => {
+    vi.useFakeTimers({ toFake: ['Date'] });
+    vi.setSystemTime(NOW);
+  });
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
   const live = (overrides: Partial<AiCall> = {}) =>
     aiCallRow({
       id: 'live1',
@@ -987,6 +996,39 @@ describe('consult booker assistant', () => {
     expect(SYSTEM_PROMPT).toContain('your whole reply is "{{agentName}}."');
     expect(SYSTEM_PROMPT).toContain('WW{{callbackNumberKeys}}#WW');
     expect(assistant.serverMessages).toEqual(['status-update', 'end-of-call-report']);
+  });
+
+  it('keeps the prompt cacheable and the turn-taking fast', () => {
+    const assistant = buildConsultBookerAssistant({ webhookUrl: 'https://x', webhookSecret: 'x' });
+    // Per-call details come last so every call shares one cached prompt prefix.
+    const perCall = [
+      '{{callContext}}',
+      '{{prospectLocalNow}}',
+      '{{customer.number}}',
+      '{{recordingNotice}}',
+    ];
+    const detailsStart = SYSTEM_PROMPT.indexOf('# This call');
+    expect(detailsStart).toBeGreaterThan(SYSTEM_PROMPT.indexOf('# Critical rules'));
+    for (const variable of perCall) {
+      expect(SYSTEM_PROMPT.indexOf(variable)).toBeGreaterThan(detailsStart);
+    }
+    expect(assistant.model.promptCacheKey).toBe('matboss-consult-booker');
+    expect(assistant.model.promptCacheRetention).toBe('24h');
+    expect(assistant.startSpeakingPlan.waitSeconds).toBeLessThanOrEqual(0.2);
+    expect(assistant.startSpeakingPlan.smartEndpointingPlan.waitFunction).not.toContain('t <');
+    expect(assistant.voice.optimizeStreamingLatency).toBe(4);
+    expect(assistant.voice.chunkPlan.minCharacters).toBeLessThan(30);
+  });
+
+  it('opens with who is calling and reveals the AI as the hook by the second reply', () => {
+    expect(SYSTEM_PROMPT).toContain(
+      '"Hey Mike, it\'s {{agentName}} with {{businessName}}. Quick one, are you the owner over there?"',
+    );
+    expect(SYSTEM_PROMPT).toContain(
+      "I'll be straight with you, I'm an AI, and that's kind of the point.",
+    );
+    expect(SYSTEM_PROMPT).toContain('no later than your second reply');
+    expect(SYSTEM_PROMPT).toContain('Never pretend to be human.');
   });
 });
 

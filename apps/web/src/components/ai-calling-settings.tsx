@@ -3,6 +3,85 @@ import { useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
 
 import { api } from '../lib/api-client';
+import { formatPhone } from '../lib/format';
+
+const INBOUND_KEY = ['ai-calls', 'inbound'] as const;
+
+// Blocks incoming calls to the AI caller line, or lets the agent answer them.
+function IncomingCallsToggle() {
+  const queryClient = useQueryClient();
+  const inboundQuery = useQuery({ queryKey: INBOUND_KEY, queryFn: () => api.aiCalls.inbound() });
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const status = inboundQuery.data;
+
+  async function setMode(mode: 'agent' | 'blocked') {
+    setBusy(true);
+    setError(null);
+    try {
+      queryClient.setQueryData(INBOUND_KEY, await api.aiCalls.setInbound(mode));
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  if (inboundQuery.isError) {
+    return (
+      <p className="mt-3 text-xs text-rose-700">
+        Couldn&apos;t load incoming call settings: {(inboundQuery.error as Error).message}
+      </p>
+    );
+  }
+
+  const description = !status
+    ? 'Checking…'
+    : status.mode === 'blocked'
+      ? 'Blocked. Callers hear a busy signal and the agent never answers.'
+      : status.mode === 'agent'
+        ? 'The agent answers. Schools calling back reach it with their earlier call details.'
+        : 'Routed somewhere else in Twilio. Choose an option to take control.';
+
+  return (
+    <div className="mt-3 flex flex-wrap items-center justify-between gap-2 border-t border-slate-100 pt-3 text-sm">
+      <div>
+        <p className="text-slate-700">
+          Incoming calls
+          {status && (
+            <>
+              {' '}
+              to <span className="font-mono text-xs">{formatPhone(status.phoneNumber)}</span>
+            </>
+          )}
+        </p>
+        <p className="text-xs text-slate-500">{description}</p>
+        <p className="text-xs text-slate-500">Outbound AI calls work either way.</p>
+      </div>
+      {status && status.mode !== 'blocked' && (
+        <button
+          type="button"
+          onClick={() => void setMode('blocked')}
+          disabled={busy}
+          className="rounded border border-rose-300 px-3 py-1.5 text-sm text-rose-700 hover:bg-rose-50 disabled:opacity-60"
+        >
+          Block incoming calls
+        </button>
+      )}
+      {status && status.mode !== 'agent' && (
+        <button
+          type="button"
+          onClick={() => void setMode('agent')}
+          disabled={busy}
+          className="rounded bg-slate-900 px-3 py-1.5 text-sm font-semibold text-white hover:bg-slate-700 disabled:opacity-60"
+        >
+          Let the agent answer
+        </button>
+      )}
+      {error && <p className="w-full text-xs text-rose-700">{error}</p>}
+    </div>
+  );
+}
 
 // Google Calendar connection and remaining setup for the AI booking agent.
 export function AiCallingSettings() {
@@ -117,6 +196,8 @@ export function AiCallingSettings() {
           </ul>
         </div>
       )}
+      <IncomingCallsToggle />
+
       {config?.ready && (
         <p className="mt-3 text-xs text-emerald-700">Ready to place AI calls from the Dial page.</p>
       )}

@@ -12,6 +12,7 @@ import {
 import { AiCallsController, GoogleCalendarController } from './ai-calls.controller';
 import { AiCallsService } from './ai-calls.service';
 import { GoogleCalendarService } from './google-calendar.service';
+import { InboundCallsService } from './inbound-calls.service';
 import { VapiClient } from './vapi.client';
 
 @Module({
@@ -22,6 +23,13 @@ import { VapiClient } from './vapi.client';
     VapiWebhookController,
     GoogleCalendarOAuthController,
   ],
-  providers: [AiCallingConfig, AiCallsService, GoogleCalendarService, VapiClient, VapiSecretGuard],
+  providers: [
+    AiCallingConfig,
+    AiCallsService,
+    GoogleCalendarService,
+    InboundCallsService,
+    VapiClient,
+    VapiSecretGuard,
+  ],
 })
 export class AiCallsModule {}

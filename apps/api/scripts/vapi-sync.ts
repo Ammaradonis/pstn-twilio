@@ -162,6 +162,26 @@ async function main(): Promise<void> {
     Number(live.silenceTimeoutSeconds) >= 60,
     failures,
   );
+  const liveVoice = (live.voice ?? {}) as Json;
+  const liveStart = (live.startSpeakingPlan ?? {}) as Json;
+  check(
+    'fast turn-taking (start speaking plan)',
+    JSON.stringify(liveStart) === JSON.stringify({ ...liveStart, ...desired.startSpeakingPlan }),
+    failures,
+  );
+  check(
+    'voice streams at lowest latency',
+    liveVoice.optimizeStreamingLatency === desired.voice.optimizeStreamingLatency &&
+      (liveVoice.chunkPlan as Json | undefined)?.minCharacters ===
+        desired.voice.chunkPlan.minCharacters,
+    failures,
+  );
+  check(
+    'prompt cache key and 24h retention',
+    liveModel.promptCacheKey === desired.model.promptCacheKey &&
+      liveModel.promptCacheRetention === desired.model.promptCacheRetention,
+    failures,
+  );
   check(
     'structured call analysis enabled',
     ((live.analysisPlan as Json | undefined)?.structuredDataPlan as Json | undefined)?.enabled ===

@@ -6,6 +6,7 @@ import {
   HttpCode,
   Param,
   Post,
+  Put,
   Query,
   Req,
   Res,
@@ -14,18 +15,23 @@ import {
 import { Throttle } from '@nestjs/throttler';
 import { UserRole } from '@prisma/client';
 import {
+  aiInboundModeSchema,
   aiCallKeypadSchema,
   startAiCallSchema,
   type AiCallKeypadInput,
+  type AiInboundMode,
   type StartAiCallInput,
 } from '@pstn-twilio/shared';
 import type { Request, Response } from 'express';
 
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
+import { Roles } from '../auth/roles.decorator';
+import { RolesGuard } from '../auth/roles.guard';
 import { ZodValidationPipe } from '../common/zod.pipe';
 
 import { AiCallsService } from './ai-calls.service';
 import { GoogleCalendarService } from './google-calendar.service';
+import { InboundCallsService } from './inbound-calls.service';
 
 type ActorRequest = Request & { user: { id: string; email: string; role: UserRole } };
 
@@ -41,7 +47,10 @@ function actorFromRequest(req: ActorRequest) {
 @Controller('ai-calls')
 @UseGuards(JwtAuthGuard)
 export class AiCallsController {
-  constructor(private readonly aiCalls: AiCallsService) {}
+  constructor(
+    private readonly aiCalls: AiCallsService,
+    private readonly inbound: InboundCallsService,
+  ) {}
 
   @Get('config')
   config(@Req() req: ActorRequest) {
@@ -51,6 +60,21 @@ export class AiCallsController {
   @Get()
   list(@Req() req: ActorRequest, @Query('limit') limit?: string) {
     return this.aiCalls.list(req.user.id, limit ? Number.parseInt(limit, 10) || 20 : 20);
+  }
+
+  @Get('inbound')
+  inboundStatus() {
+    return this.inbound.status();
+  }
+
+  @Put('inbound')
+  @UseGuards(RolesGuard)
+  @Roles(UserRole.OWNER, UserRole.ADMIN)
+  setInboundMode(
+    @Req() req: ActorRequest,
+    @Body(new ZodValidationPipe(aiInboundModeSchema)) body: { mode: AiInboundMode },
+  ) {
+    return this.inbound.setMode(actorFromRequest(req), body.mode);
   }
 
   @Get('queue')

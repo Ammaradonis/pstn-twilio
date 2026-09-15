@@ -95,6 +95,15 @@ export class VoiceWebhookController {
     }
   }
 
+  // Busy signal without answering: used to block incoming calls to the AI
+  // caller line (see InboundCallsService).
+  @Post('reject')
+  @HttpCode(200)
+  @Header('Content-Type', 'text/xml')
+  reject(): string {
+    return '<?xml version="1.0" encoding="UTF-8"?><Response><Reject reason="busy"/></Response>';
+  }
+
   @Post('fallback')
   @HttpCode(200)
   @Header('Content-Type', 'text/xml')
