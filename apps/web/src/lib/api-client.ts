@@ -255,6 +255,10 @@ export const api = {
     get: (id: string) => request<AiCallDto>(`/ai-calls/${id}`),
     start: (input: StartAiCallInput) =>
       request<AiCallDto>('/ai-calls', { method: 'POST', body: input }),
+    queue: () => request<AiCallDto[]>('/ai-calls/queue'),
+    removeFromQueue: (id: string) => request<void>(`/ai-calls/${id}`, { method: 'DELETE' }),
+    clearQueue: () => request<{ removed: number }>('/ai-calls/queue', { method: 'DELETE' }),
+    recording: (id: string) => requestBlob(`/ai-calls/${id}/recording`),
     pressKeys: (id: string, keys: string) =>
       request<{ sent: true }>(`/ai-calls/${id}/keypad`, { method: 'POST', body: { keys } }),
   },

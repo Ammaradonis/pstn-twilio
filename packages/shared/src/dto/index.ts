@@ -127,7 +127,18 @@ export interface VoiceTokenDto {
   expiresAt: string;
 }
 
-export type AiCallStatus = 'QUEUED' | 'RINGING' | 'IN_PROGRESS' | 'FORWARDING' | 'ENDED' | 'FAILED';
+// WAITING: in the app's queue, not yet sent to Vapi.
+export type AiCallStatus =
+  | 'WAITING'
+  | 'QUEUED'
+  | 'RINGING'
+  | 'IN_PROGRESS'
+  | 'FORWARDING'
+  | 'ENDED'
+  | 'FAILED';
+
+// Most schools that can wait in the AI call queue at once.
+export const AI_CALL_QUEUE_LIMIT = 100;
 
 export type AiCallOutcome =
   | 'booked'
@@ -157,7 +168,8 @@ export interface AiCallDto {
   consultStartAt: string | null;
   consultMeetUrl: string | null;
   callbackTime: string | null;
-  recordingUrl: string | null;
+  // Download through GET /ai-calls/:id/recording; Vapi's storage links are private.
+  hasRecording: boolean;
   startedAt: string | null;
   endedAt: string | null;
   createdAt: string;

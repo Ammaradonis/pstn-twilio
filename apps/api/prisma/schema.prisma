@@ -78,6 +78,7 @@ enum AiCallDirection {
 }
 
 enum AiCallStatus {
+  WAITING
   QUEUED
   RINGING
   IN_PROGRESS
@@ -394,6 +395,7 @@ model AiCall {
 
   @@index([userId, createdAt(sort: Desc)])
   @@index([customerE164, createdAt(sort: Desc)])
+  @@index([status, createdAt])
   @@map("ai_calls")
 }
 

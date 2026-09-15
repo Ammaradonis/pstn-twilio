@@ -141,6 +141,11 @@ async function main(): Promise<void> {
     failures,
   );
   check('no voicemail message is left', !live.voicemailMessage, failures);
+  check(
+    'recordings saved as MP3',
+    (live.artifactPlan as Json | undefined)?.recordingFormat === 'mp3',
+    failures,
+  );
   check('no automatic goodbye spoken onto voicemails', !live.endCallMessage, failures);
   check(
     'spoken goodbyes hang up the call (endCallPhrases)',

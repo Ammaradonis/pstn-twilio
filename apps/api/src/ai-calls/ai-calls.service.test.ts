@@ -85,6 +85,99 @@ function aiCallRow(overrides: Partial<AiCall> = {}): AiCall {
   };
 }
 
+// In-memory ai_calls table covering the queries the queue uses.
+function aiCallStore(initial: AiCall[] = []) {
+  const rows = new Map(initial.map((r) => [r.id, { ...r }]));
+  let seq = 0;
+  const matches = (r: AiCall, where: Record<string, unknown> = {}) =>
+    Object.entries(where).every(([key, cond]) => {
+      const value = (r as Record<string, unknown>)[key];
+      if (cond && typeof cond === 'object' && !(cond instanceof Date)) {
+        const c = cond as Record<string, unknown>;
+        if ('in' in c) return (c.in as unknown[]).includes(value);
+        if ('not' in c) return value !== c.not;
+        if ('lt' in c) return (value as Date) < (c.lt as Date);
+        if ('startsWith' in c) return String(value).startsWith(String(c.startsWith));
+      }
+      return value === cond;
+    });
+  const sorted = () =>
+    [...rows.values()].sort((a, b) => a.createdAt.getTime() - b.createdAt.getTime());
+  return {
+    rows,
+    create: vi.fn(async ({ data }: { data: Partial<AiCall> }) => {
+      seq += 1;
+      const row = aiCallRow({
+        id: `ai${seq}`,
+        vapiCallId: null,
+        status: AiCallStatus.QUEUED,
+        createdAt: new Date(NOW.getTime() + seq),
+        ...data,
+      });
+      rows.set(row.id, row);
+      return row;
+    }),
+    update: vi.fn(async ({ where, data }: { where: { id: string }; data: Partial<AiCall> }) => {
+      const next = { ...rows.get(where.id)!, ...data };
+      rows.set(where.id, next);
+      return next;
+    }),
+    updateMany: vi.fn(
+      async ({ where, data }: { where: Record<string, unknown>; data: Partial<AiCall> }) => {
+        let count = 0;
+        for (const r of sorted()) {
+          if (!matches(r, where)) continue;
+          rows.set(r.id, { ...r, ...data });
+          count += 1;
+        }
+        return { count };
+      },
+    ),
+    deleteMany: vi.fn(async ({ where }: { where: Record<string, unknown> }) => {
+      let count = 0;
+      for (const r of sorted()) if (matches(r, where) && rows.delete(r.id)) count += 1;
+      return { count };
+    }),
+    findUnique: vi.fn(
+      async ({ where }: { where: Record<string, unknown> }) =>
+        sorted().find((r) => matches(r, where)) ?? null,
+    ),
+    findFirst: vi.fn(
+      async ({ where }: { where: Record<string, unknown> }) =>
+        sorted().find((r) => matches(r, where)) ?? null,
+    ),
+    findMany: vi.fn(
+      async ({
+        where,
+        orderBy,
+        distinct,
+      }: { where?: Record<string, unknown>; orderBy?: unknown; distinct?: string[] } = {}) => {
+        let list = sorted().filter((r) => matches(r, where));
+        if (JSON.stringify(orderBy)?.includes('desc')) list = list.reverse();
+        if (distinct?.includes('userId')) {
+          const seen = new Set();
+          list = list.filter((r) => !seen.has(r.userId) && seen.add(r.userId));
+        }
+        return list;
+      },
+    ),
+    count: vi.fn(
+      async ({ where }: { where: Record<string, unknown> }) =>
+        sorted().filter((r) => matches(r, where)).length,
+    ),
+    upsert: vi.fn(),
+  };
+}
+
+function buildWithStore(initial: AiCall[] = [], settingsOverrides: Record<string, unknown> = {}) {
+  const built = build({ settings: settingsOverrides });
+  const store = aiCallStore(initial);
+  Object.assign(built.prisma.aiCall, store);
+  let n = 0;
+  built.vapi.createCall.mockImplementation(async () => ({ id: `call_${++n}`, status: 'queued' }));
+  return { ...built, store };
+}
+
 function build(options: { settings?: Record<string, unknown>; row?: AiCall | null } = {}) {
   const row = options.row === undefined ? aiCallRow() : options.row;
   const prisma = {
@@ -121,6 +214,7 @@ function build(options: { settings?: Record<string, unknown>; row?: AiCall | nul
     createCall: vi.fn().mockResolvedValue({ id: 'call_new', status: 'queued' }),
     getCall: vi.fn(),
     sendControl: vi.fn().mockResolvedValue(undefined),
+    downloadRecording: vi.fn(),
   };
   const audit = { log: vi.fn().mockResolvedValue(undefined) };
   const realtime = { aiCallUpdated: vi.fn() };
@@ -139,7 +233,7 @@ const actor = { userId: 'u1', role: UserRole.OWNER };
 
 describe('AiCallsService.startCall', () => {
   it('places the Vapi call from the 667 line with Alabama variables', async () => {
-    const { service, vapi, prisma, realtime } = build();
+    const { service, vapi, prisma, realtime } = buildWithStore();
 
     const dto = await service.startCall(
       actor,
@@ -176,12 +270,12 @@ describe('AiCallsService.startCall', () => {
         metadata: { aiCallId: 'ai1' },
       },
     });
-    expect(dto).toMatchObject({ vapiCallId: 'call_new', status: 'QUEUED' });
+    expect(dto).toMatchObject({ vapiCallId: 'call_1', status: 'QUEUED' });
     expect(realtime.aiCallUpdated).toHaveBeenCalled();
   });
 
   it('asks for the recording notice in all-party consent states and uses the chosen zone', async () => {
-    const { service, vapi } = build();
+    const { service, vapi } = buildWithStore();
     await service.startCall(
       actor,
       { destinationNumber: '+13055550100', stateCode: 'FL', timeZone: 'America/Chicago' },
@@ -247,15 +341,219 @@ describe('AiCallsService.startCall', () => {
   });
 
   it('marks the call failed when Vapi rejects it', async () => {
-    const { service, vapi, prisma } = build();
+    const { service, vapi, store } = buildWithStore();
     vapi.createCall.mockRejectedValue(new VapiRequestError(400, 'customer.number must be valid'));
     await expect(
       service.startCall(actor, { destinationNumber: '+12055550100', stateCode: 'AL' }, NOW),
     ).rejects.toBeInstanceOf(BadGatewayException);
-    expect(prisma.aiCall.update).toHaveBeenCalledWith({
-      where: { id: 'ai1' },
-      data: expect.objectContaining({ status: 'FAILED', outcome: 'failed' }),
+    expect(store.rows.get('ai1')).toMatchObject({ status: 'FAILED', outcome: 'failed' });
+  });
+});
+
+describe('AiCallsService queue', () => {
+  const live = (overrides: Partial<AiCall> = {}) =>
+    aiCallRow({
+      id: 'live1',
+      vapiCallId: 'call_live',
+      customerE164: '+12055550999',
+      status: AiCallStatus.IN_PROGRESS,
+      createdAt: new Date(NOW.getTime() - 60_000),
+      updatedAt: NOW,
+      ...overrides,
     });
+
+  it('queues schools while the agent is on a call instead of calling them', async () => {
+    const { service, vapi, store } = buildWithStore([live()]);
+
+    const first = await service.startCall(
+      actor,
+      { destinationNumber: '+12055550101', stateCode: 'AL' },
+      NOW,
+    );
+    const second = await service.startCall(
+      actor,
+      { destinationNumber: '+12055550102', stateCode: 'AL' },
+      NOW,
+    );
+
+    expect(first.status).toBe('WAITING');
+    expect(second.status).toBe('WAITING');
+    expect(vapi.createCall).not.toHaveBeenCalled();
+    expect((await service.queue('u1')).map((c) => c.customerNumber)).toEqual([
+      '+12055550101',
+      '+12055550102',
+    ]);
+    expect((await service.list('u1')).map((c) => c.id)).toEqual(['live1']);
+    expect(store.rows.size).toBe(3);
+  });
+
+  it('calls the next school in order when the current call ends, one at a time', async () => {
+    const { service, vapi, store } = buildWithStore([live()]);
+    await service.startCall(actor, { destinationNumber: '+12055550101', stateCode: 'AL' }, NOW);
+    await service.startCall(actor, { destinationNumber: '+12055550102', stateCode: 'AL' }, NOW);
+
+    await service.handleWebhook({
+      type: 'status-update',
+      status: 'ended',
+      call: { id: 'call_live' },
+    });
+    await vi.waitFor(() => expect(vapi.createCall).toHaveBeenCalledTimes(1));
+
+    expect(vapi.createCall.mock.calls[0]![0].customer).toEqual({ number: '+12055550101' });
+    // The end-of-call report for the same call must not start a second call.
+    await service.handleWebhook({
+      type: 'end-of-call-report',
+      endedReason: 'customer-ended-call',
+      call: { id: 'call_live' },
+    });
+    await service.processQueue('u1', NOW);
+    expect(vapi.createCall).toHaveBeenCalledTimes(1);
+    expect([...store.rows.values()].filter((r) => r.status === 'WAITING')).toHaveLength(1);
+  });
+
+  it('refuses duplicates and a full queue of 100', async () => {
+    const waiting = Array.from({ length: 100 }, (_, i) =>
+      aiCallRow({
+        id: `w${i}`,
+        vapiCallId: null,
+        customerE164: `+1205555${String(i).padStart(4, '0')}`,
+        status: AiCallStatus.WAITING,
+        createdAt: new Date(NOW.getTime() - 1000 + i),
+      }),
+    );
+    const { service, vapi } = buildWithStore([live(), ...waiting]);
+
+    await expect(
+      service.startCall(actor, { destinationNumber: '+12055550005', stateCode: 'AL' }, NOW),
+    ).rejects.toThrow('already in the queue');
+    await expect(
+      service.startCall(actor, { destinationNumber: '+12055550999', stateCode: 'AL' }, NOW),
+    ).rejects.toThrow('already calling this number');
+    await expect(
+      service.startCall(actor, { destinationNumber: '+13345550100', stateCode: 'AL' }, NOW),
+    ).rejects.toThrow('The queue is full (100 schools)');
+    expect(vapi.createCall).not.toHaveBeenCalled();
+  });
+
+  it('lets a school outside its calling window wait while later ones are called', async () => {
+    const { service, vapi, store } = buildWithStore([
+      // Queued first, but Hawaii is still before 8 AM.
+      aiCallRow({
+        id: 'late',
+        vapiCallId: null,
+        status: AiCallStatus.WAITING,
+        timeZone: 'Pacific/Honolulu',
+        stateCode: 'HI',
+        customerE164: '+18085550100',
+        createdAt: new Date(NOW.getTime() - 2000),
+      }),
+      aiCallRow({
+        id: 'ok',
+        vapiCallId: null,
+        status: AiCallStatus.WAITING,
+        customerE164: '+12055550100',
+        createdAt: new Date(NOW.getTime() - 1000),
+      }),
+    ]);
+    // 8:30 AM in Alabama, 3:30 AM in Hawaii.
+    const morning = new Date('2026-09-14T13:30:00Z');
+
+    await service.processQueue('u1', morning);
+
+    expect(vapi.createCall).toHaveBeenCalledTimes(1);
+    expect(vapi.createCall.mock.calls[0]![0].customer).toEqual({ number: '+12055550100' });
+    expect(store.rows.get('late')!.status).toBe('WAITING');
+  });
+
+  it('skips a waiting school that asked not to be called and moves on', async () => {
+    const { service, vapi, store, prisma } = buildWithStore([
+      aiCallRow({
+        id: 'dnc',
+        vapiCallId: null,
+        status: AiCallStatus.WAITING,
+        customerE164: '+12055550100',
+        createdAt: new Date(NOW.getTime() - 2000),
+      }),
+      aiCallRow({
+        id: 'next',
+        vapiCallId: null,
+        status: AiCallStatus.WAITING,
+        customerE164: '+12055550101',
+        createdAt: new Date(NOW.getTime() - 1000),
+      }),
+    ]);
+    prisma.doNotCallNumber.findUnique.mockImplementation(
+      async ({ where }: { where: { e164: string } }) =>
+        where.e164 === '+12055550100' ? { e164: where.e164 } : null,
+    );
+
+    await service.processQueue('u1', NOW);
+
+    expect(store.rows.get('dnc')).toMatchObject({ status: 'ENDED', outcome: 'do_not_call' });
+    expect(vapi.createCall).toHaveBeenCalledTimes(1);
+    expect(vapi.createCall.mock.calls[0]![0].customer).toEqual({ number: '+12055550101' });
+  });
+
+  it('holds the queue while setup is incomplete', async () => {
+    const { service, vapi, store } = buildWithStore(
+      [aiCallRow({ id: 'w', vapiCallId: null, status: AiCallStatus.WAITING })],
+      { missingServerSettings: () => ['Set AI_HOST_NAME.'] },
+    );
+    await service.processQueue('u1', NOW);
+    expect(vapi.createCall).not.toHaveBeenCalled();
+    expect(store.rows.get('w')!.status).toBe('WAITING');
+  });
+
+  it('removes one waiting school or clears the whole queue, never a started call', async () => {
+    const { service, store } = buildWithStore([
+      live(),
+      aiCallRow({
+        id: 'a',
+        vapiCallId: null,
+        status: AiCallStatus.WAITING,
+        customerE164: '+12055550101',
+      }),
+      aiCallRow({
+        id: 'b',
+        vapiCallId: null,
+        status: AiCallStatus.WAITING,
+        customerE164: '+12055550102',
+      }),
+      aiCallRow({
+        id: 'c',
+        vapiCallId: null,
+        status: AiCallStatus.WAITING,
+        customerE164: '+12055550103',
+      }),
+    ]);
+
+    await service.removeFromQueue('u1', 'a');
+    await expect(service.removeFromQueue('u1', 'live1')).rejects.toThrow('no longer waiting');
+    await expect(service.clearQueue('u1')).resolves.toEqual({ removed: 2 });
+    expect([...store.rows.keys()]).toEqual(['live1']);
+  });
+
+  it('recovers a call whose end webhook was missed, then advances the queue', async () => {
+    const { service, vapi, store } = buildWithStore([
+      live({ updatedAt: new Date(NOW.getTime() - 13 * 60_000) }),
+      aiCallRow({
+        id: 'w',
+        vapiCallId: null,
+        status: AiCallStatus.WAITING,
+        customerE164: '+12055550101',
+      }),
+    ]);
+    vapi.getCall.mockResolvedValue({
+      id: 'call_live',
+      status: 'ended',
+      endedReason: 'customer-ended-call',
+    });
+
+    await service.sweepQueues(NOW);
+    await vi.waitFor(() => expect(vapi.createCall).toHaveBeenCalledTimes(1));
+
+    expect(store.rows.get('live1')!.status).toBe('ENDED');
+    expect(store.rows.get('w')!.status).toBe('QUEUED');
   });
 });
 
@@ -689,5 +987,51 @@ describe('consult booker assistant', () => {
     expect(SYSTEM_PROMPT).toContain('your whole reply is "{{agentName}}."');
     expect(SYSTEM_PROMPT).toContain('WW{{callbackNumberKeys}}#WW');
     expect(assistant.serverMessages).toEqual(['status-update', 'end-of-call-report']);
+  });
+});
+
+describe('AiCallsService.recording', () => {
+  it('serves a Vapi WAV recording as an MP3 download', async () => {
+    const { service, prisma, vapi } = build();
+    prisma.aiCall.findFirst.mockResolvedValue(
+      aiCallRow({
+        recordingUrl: 'https://r2.example/private.wav',
+        startedAt: new Date('2026-09-14T18:40:00Z'),
+      }),
+    );
+    const pcm = Buffer.alloc(44 + 16000 * 2);
+    pcm.write('RIFF', 0, 'ascii');
+    pcm.writeUInt32LE(36 + 32000, 4);
+    pcm.write('WAVEfmt ', 8, 'ascii');
+    pcm.writeUInt32LE(16, 16);
+    pcm.writeUInt16LE(1, 20);
+    pcm.writeUInt16LE(1, 22);
+    pcm.writeUInt32LE(16000, 24);
+    pcm.writeUInt32LE(32000, 28);
+    pcm.writeUInt16LE(2, 32);
+    pcm.writeUInt16LE(16, 34);
+    pcm.write('data', 36, 'ascii');
+    pcm.writeUInt32LE(32000, 40);
+    vapi.downloadRecording.mockResolvedValue({ body: pcm, contentType: 'audio/wav' });
+
+    const media = await service.recording('u1', 'ai1');
+
+    expect(vapi.downloadRecording).toHaveBeenCalledWith('call_1');
+    expect(media.contentType).toBe('audio/mpeg');
+    expect(media.body[0]).toBe(0xff);
+    expect(media.filename).toBe('ai-call-12055550100-2026-09-14_13-40.mp3');
+  });
+
+  it('passes native MP3 recordings through and 404s calls without one', async () => {
+    const { service, prisma, vapi } = build();
+    const mp3 = Buffer.from([0xff, 0xfb, 0x90, 0x00, 1, 2, 3]);
+    vapi.downloadRecording.mockResolvedValue({ body: mp3, contentType: 'audio/mpeg' });
+    prisma.aiCall.findFirst.mockResolvedValueOnce(
+      aiCallRow({ recordingUrl: 'https://r2.example/x.mp3' }),
+    );
+    await expect(service.recording('u1', 'ai1')).resolves.toMatchObject({ body: mp3 });
+
+    prisma.aiCall.findFirst.mockResolvedValueOnce(aiCallRow({ recordingUrl: null }));
+    await expect(service.recording('u1', 'ai1')).rejects.toThrow('No recording for this call.');
   });
 });

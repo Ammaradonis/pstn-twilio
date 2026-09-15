@@ -5,6 +5,7 @@ import { MemoryRouter } from 'react-router-dom';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { api } from '../lib/api-client';
+import { saveBlob } from '../lib/download';
 
 import { AiAgentPanel } from './ai-agent-panel';
 
@@ -12,9 +13,20 @@ const socketHandlers = vi.hoisted(() => new Map<string, (payload: unknown) => vo
 
 vi.mock('../lib/api-client', () => ({
   api: {
-    aiCalls: { config: vi.fn(), list: vi.fn(), start: vi.fn(), pressKeys: vi.fn() },
+    aiCalls: {
+      config: vi.fn(),
+      list: vi.fn(),
+      start: vi.fn(),
+      pressKeys: vi.fn(),
+      queue: vi.fn(),
+      removeFromQueue: vi.fn(),
+      clearQueue: vi.fn(),
+      recording: vi.fn(),
+    },
   },
 }));
+
+vi.mock('../lib/download', () => ({ saveBlob: vi.fn() }));
 
 vi.mock('../lib/realtime', () => ({
   getSocket: () => ({
@@ -50,7 +62,7 @@ function aiCall(overrides: Partial<AiCallDto> = {}): AiCallDto {
     consultStartAt: null,
     consultMeetUrl: null,
     callbackTime: null,
-    recordingUrl: null,
+    hasRecording: false,
     startedAt: null,
     endedAt: null,
     createdAt: '2026-09-14T18:33:00.000Z',
@@ -79,6 +91,7 @@ describe('AiAgentPanel', () => {
     vi.mocked(api.aiCalls.config).mockResolvedValue(readyConfig);
     vi.mocked(api.aiCalls.list).mockResolvedValue([]);
     vi.mocked(api.aiCalls.start).mockResolvedValue(aiCall());
+    vi.mocked(api.aiCalls.queue).mockResolvedValue([]);
   });
 
   afterEach(() => {
@@ -301,6 +314,102 @@ describe('AiAgentPanel', () => {
     expect(await screen.findByText('This AI call is not live.')).toBeInTheDocument();
   });
 
+  describe('queue', () => {
+    const waitingCall = (i: number) =>
+      aiCall({
+        id: `w${i}`,
+        status: 'WAITING',
+        customerNumber: `+1334555${String(i).padStart(4, '0')}`,
+      });
+
+    it('tells you a pasted school joined the queue while the agent is busy', async () => {
+      Object.defineProperty(navigator, 'clipboard', {
+        configurable: true,
+        value: { readText: vi.fn(async () => '(334) 555-0002') },
+      });
+      vi.mocked(api.aiCalls.list).mockResolvedValue([aiCall({ status: 'IN_PROGRESS' })]);
+      vi.mocked(api.aiCalls.start).mockResolvedValue(waitingCall(2));
+      vi.mocked(api.aiCalls.queue)
+        .mockResolvedValueOnce([waitingCall(1)])
+        .mockResolvedValue([waitingCall(1), waitingCall(2)]);
+      renderPanel(null);
+
+      const paste = await screen.findByRole('button', { name: 'Paste and call with AI agent' });
+      await waitFor(() => expect(paste).toBeEnabled());
+      fireEvent.click(paste);
+
+      expect(
+        await screen.findByText('The agent is on a call. +1 (334) 555-0002 is #2 in the queue.'),
+      ).toBeInTheDocument();
+      expect(await screen.findByText('Queue · 2 of 100 waiting')).toBeInTheDocument();
+      // Queued schools aren't listed with the finished and live calls.
+      expect(screen.getAllByText('+1 (334) 555-0002')).toHaveLength(1);
+    });
+
+    it('removes a school, clears the queue, and shows all past the first five', async () => {
+      const seven = Array.from({ length: 7 }, (_, i) => waitingCall(i + 1));
+      vi.mocked(api.aiCalls.queue).mockResolvedValue(seven);
+      vi.mocked(api.aiCalls.removeFromQueue).mockResolvedValue(undefined);
+      vi.mocked(api.aiCalls.clearQueue).mockResolvedValue({ removed: 6 });
+      renderPanel(null);
+
+      expect(await screen.findByText('Queue · 7 of 100 waiting')).toBeInTheDocument();
+      expect(screen.getAllByRole('button', { name: /from the queue/ })).toHaveLength(5);
+      fireEvent.click(screen.getByRole('button', { name: 'Show all 7' }));
+      expect(screen.getAllByRole('button', { name: /from the queue/ })).toHaveLength(7);
+
+      fireEvent.click(
+        screen.getByRole('button', { name: 'Remove +1 (334) 555-0003 from the queue' }),
+      );
+      await waitFor(() => expect(api.aiCalls.removeFromQueue).toHaveBeenCalledWith('w3'));
+
+      fireEvent.click(screen.getByRole('button', { name: 'Clear queue' }));
+      await waitFor(() => expect(api.aiCalls.clearQueue).toHaveBeenCalled());
+      expect(vi.mocked(api.aiCalls.queue).mock.calls.length).toBeGreaterThanOrEqual(3);
+    });
+  });
+
+  describe('recordings', () => {
+    it('plays and downloads the recording as MP3 through the API, not a storage link', async () => {
+      const mp3 = new Blob(['mp3'], { type: 'audio/mpeg' });
+      vi.mocked(api.aiCalls.recording).mockResolvedValue(mp3);
+      const createObjectURL = vi.fn(() => 'blob:recording');
+      Object.assign(URL, { createObjectURL, revokeObjectURL: vi.fn() });
+      vi.mocked(api.aiCalls.list).mockResolvedValue([
+        aiCall({
+          status: 'ENDED',
+          outcome: 'gatekeeper',
+          hasRecording: true,
+          startedAt: '2026-09-14T18:40:00.000Z',
+        }),
+      ]);
+      renderPanel(null);
+
+      expect(screen.queryByRole('link', { name: /recording/i })).not.toBeInTheDocument();
+      fireEvent.click(await screen.findByRole('button', { name: 'Download MP3' }));
+      await waitFor(() =>
+        expect(saveBlob).toHaveBeenCalledWith(mp3, 'ai-call-12055550100-2026-09-14.mp3'),
+      );
+
+      fireEvent.click(screen.getByRole('button', { name: 'Play recording' }));
+      await waitFor(() => expect(createObjectURL).toHaveBeenCalledWith(mp3));
+      expect(document.querySelector('audio')).toHaveAttribute('src', 'blob:recording');
+      // Fetched once, reused for both.
+      expect(api.aiCalls.recording).toHaveBeenCalledTimes(1);
+    });
+
+    it('shows why a recording could not load', async () => {
+      vi.mocked(api.aiCalls.recording).mockRejectedValue(new Error('No recording for this call.'));
+      vi.mocked(api.aiCalls.list).mockResolvedValue([
+        aiCall({ status: 'ENDED', outcome: 'voicemail', hasRecording: true }),
+      ]);
+      renderPanel(null);
+
+      fireEvent.click(await screen.findByRole('button', { name: 'Play recording' }));
+      expect(await screen.findByText('No recording for this call.')).toBeInTheDocument();
+    });
+  });
+
   it('updates live from realtime events, including a booked consultation', async () => {
     vi.mocked(api.aiCalls.list).mockResolvedValue([aiCall({ status: 'IN_PROGRESS' })]);
     renderPanel(null);
@@ -316,7 +425,7 @@ describe('AiAgentPanel', () => {
           consultStartAt: '2026-09-15T14:00:00.000Z',
           consultMeetUrl: 'https://meet.google.com/abc-defg-hij',
           summary: 'Owner booked a consultation.',
-          recordingUrl: 'https://storage.vapi.ai/rec.wav',
+          hasRecording: true,
         }),
       });
     });
@@ -329,7 +438,7 @@ describe('AiAgentPanel', () => {
       'href',
       'https://meet.google.com/abc-defg-hij',
     );
-    expect(screen.getByRole('link', { name: 'Recording' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Download MP3' })).toBeInTheDocument();
     expect(screen.getByText('Owner booked a consultation.')).toBeInTheDocument();
     // No destination entered yet.
     expect(screen.getByRole('button', { name: 'Call with AI agent' })).toBeDisabled();

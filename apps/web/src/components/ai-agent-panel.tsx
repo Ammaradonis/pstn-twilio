@@ -1,4 +1,5 @@
 import {
+  AI_CALL_QUEUE_LIMIT,
   findUsState,
   normalizeDialablePhoneNumber,
   timeZoneLabel,
@@ -9,10 +10,11 @@ import {
   type WsAiCallEvent,
 } from '@pstn-twilio/shared';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
 
 import { api } from '../lib/api-client';
+import { saveBlob } from '../lib/download';
 import { formatPhone } from '../lib/format';
 import { getSocket } from '../lib/realtime';
 
@@ -21,6 +23,8 @@ import { DtmfKeypad } from './dtmf-keypad';
 const STATE_STORAGE_KEY = 'pstn-twilio.ai-target-state';
 const CONFIG_KEY = ['ai-calls', 'config'] as const;
 const LIST_KEY = ['ai-calls', 'list'] as const;
+const QUEUE_KEY = ['ai-calls', 'queue'] as const;
+const QUEUE_PREVIEW = 5;
 
 function readStoredState(fallback: string): string {
   try {
@@ -67,6 +71,7 @@ function statusBadge(call: AiCallDto): { label: string; className: string } {
     return { label: OUTCOME_LABELS[call.outcome], className: tone };
   }
   const live: Record<AiCallDto['status'], string> = {
+    WAITING: 'In queue',
     QUEUED: 'Queued',
     RINGING: 'Ringing',
     IN_PROGRESS: 'On the call',
@@ -98,6 +103,9 @@ function useAiCallUpdates(): void {
   useEffect(() => {
     const socket = getSocket();
     const onUpdate = ({ aiCall }: WsAiCallEvent) => {
+      // A queued school starting its call leaves the queue.
+      void queryClient.invalidateQueries({ queryKey: QUEUE_KEY });
+      if (aiCall.status === 'WAITING') return;
       queryClient.setQueryData<AiCallDto[]>(LIST_KEY, (prev) => {
         if (!prev) return prev;
         const index = prev.findIndex((c) => c.id === aiCall.id);
@@ -115,6 +123,134 @@ function useAiCallUpdates(): void {
 }
 
 const LIVE_STATUSES: AiCallDto['status'][] = ['QUEUED', 'RINGING', 'IN_PROGRESS', 'FORWARDING'];
+
+// Plays or downloads a call recording as MP3 through the API (Vapi's own
+// storage links are private).
+function AiRecording({ call }: { call: AiCallDto }) {
+  const [src, setSrc] = useState<string | null>(null);
+  const [busy, setBusy] = useState<'play' | 'download' | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const blobRef = useRef<Blob | null>(null);
+
+  useEffect(
+    () => () => {
+      if (src) URL.revokeObjectURL(src);
+    },
+    [src],
+  );
+
+  async function run(action: 'play' | 'download') {
+    setBusy(action);
+    setError(null);
+    try {
+      blobRef.current ??= await api.aiCalls.recording(call.id);
+      if (action === 'play') {
+        setSrc(URL.createObjectURL(blobRef.current));
+      } else {
+        const started = new Date(call.startedAt ?? call.createdAt);
+        const pad = (n: number) => String(n).padStart(2, '0');
+        saveBlob(
+          blobRef.current,
+          `ai-call-${call.customerNumber.replace(/\D/g, '')}-${started.getFullYear()}-${pad(started.getMonth() + 1)}-${pad(started.getDate())}.mp3`,
+        );
+      }
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Recording unavailable');
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  return (
+    <div className="mt-1">
+      {src && <audio controls autoPlay src={src} className="h-8 w-64 max-w-full" />}
+      <div className="flex gap-1">
+        {!src && (
+          <button
+            type="button"
+            onClick={() => void run('play')}
+            disabled={busy !== null}
+            className="rounded border border-slate-300 px-2 py-0.5 text-xs disabled:opacity-60"
+          >
+            {busy === 'play' ? 'Loading…' : 'Play recording'}
+          </button>
+        )}
+        <button
+          type="button"
+          onClick={() => void run('download')}
+          disabled={busy !== null}
+          className="rounded border border-slate-300 px-2 py-0.5 text-xs disabled:opacity-60"
+        >
+          {busy === 'download' ? 'Downloading…' : 'Download MP3'}
+        </button>
+      </div>
+      {error && <p className="mt-1 text-xs text-rose-700">{error}</p>}
+    </div>
+  );
+}
+
+// Schools waiting for the agent to finish its current call.
+function AiCallQueue({ waiting }: { waiting: AiCallDto[] }) {
+  const queryClient = useQueryClient();
+  const [expanded, setExpanded] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const shown = expanded ? waiting : waiting.slice(0, QUEUE_PREVIEW);
+
+  async function change(action: () => Promise<unknown>) {
+    setError(null);
+    try {
+      await action();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
+    } finally {
+      await queryClient.invalidateQueries({ queryKey: QUEUE_KEY });
+    }
+  }
+
+  return (
+    <div className="mt-3 rounded border border-slate-200 p-2" aria-label="AI call queue">
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <p className="text-xs font-medium text-slate-700">
+          Queue · {waiting.length} of {AI_CALL_QUEUE_LIMIT} waiting
+        </p>
+        <button
+          type="button"
+          onClick={() => void change(() => api.aiCalls.clearQueue())}
+          className="text-xs text-rose-700 underline"
+        >
+          Clear queue
+        </button>
+      </div>
+      <ol className="mt-1 space-y-0.5">
+        {shown.map((call, index) => (
+          <li key={call.id} className="flex items-center gap-2 text-xs text-slate-600">
+            <span className="w-5 text-right text-slate-400">{index + 1}.</span>
+            <span className="font-mono">{formatPhone(call.customerNumber)}</span>
+            <span>{call.stateCode}</span>
+            <button
+              type="button"
+              onClick={() => void change(() => api.aiCalls.removeFromQueue(call.id))}
+              aria-label={`Remove ${formatPhone(call.customerNumber)} from the queue`}
+              className="ml-auto text-slate-400 hover:text-slate-700"
+            >
+              ✕
+            </button>
+          </li>
+        ))}
+      </ol>
+      {waiting.length > QUEUE_PREVIEW && (
+        <button
+          type="button"
+          onClick={() => setExpanded((v) => !v)}
+          className="mt-1 text-xs text-slate-600 underline"
+        >
+          {expanded ? 'Show less' : `Show all ${waiting.length}`}
+        </button>
+      )}
+      {error && <p className="mt-1 text-xs text-rose-700">{error}</p>}
+    </div>
+  );
+}
 
 // Keys pressed here are relayed to the agent, which presses them on the call,
 // e.g. to get past a phone menu it can't navigate on its own.
@@ -159,6 +295,9 @@ export function AiAgentPanel({ destination }: { destination: string | null }) {
   const queryClient = useQueryClient();
   const configQuery = useQuery({ queryKey: CONFIG_KEY, queryFn: () => api.aiCalls.config() });
   const callsQuery = useQuery({ queryKey: LIST_KEY, queryFn: () => api.aiCalls.list(10) });
+  const queueQuery = useQuery({ queryKey: QUEUE_KEY, queryFn: () => api.aiCalls.queue() });
+  const waiting = queueQuery.data ?? [];
+  const [notice, setNotice] = useState<string | null>(null);
   useAiCallUpdates();
 
   const config = configQuery.data;
@@ -210,6 +349,7 @@ export function AiAgentPanel({ destination }: { destination: string | null }) {
     }
     setStarting(true);
     setError(null);
+    setNotice(null);
     setRepeatNumber(null);
     try {
       const call = await api.aiCalls.start({
@@ -217,10 +357,21 @@ export function AiAgentPanel({ destination }: { destination: string | null }) {
         stateCode: state.code,
         ...(state.timeZones.length > 1 ? { timeZone } : {}),
       });
-      queryClient.setQueryData<AiCallDto[]>(LIST_KEY, (prev) => [
-        call,
-        ...(prev ?? []).filter((c) => c.id !== call.id),
-      ]);
+      if (call.status === 'WAITING') {
+        const queue = await queryClient.fetchQuery({
+          queryKey: QUEUE_KEY,
+          queryFn: () => api.aiCalls.queue(),
+        });
+        const position = queue.findIndex((c) => c.id === call.id) + 1;
+        setNotice(
+          `The agent is on a call. ${formatPhone(number)} is #${position || queue.length} in the queue.`,
+        );
+      } else {
+        queryClient.setQueryData<AiCallDto[]>(LIST_KEY, (prev) => [
+          call,
+          ...(prev ?? []).filter((c) => c.id !== call.id),
+        ]);
+      }
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
     } finally {
@@ -357,6 +508,12 @@ export function AiAgentPanel({ destination }: { destination: string | null }) {
           {error}
         </p>
       )}
+      {notice && !error && (
+        <p className="mt-2 rounded border border-sky-200 bg-sky-50 p-2 text-xs text-sky-900">
+          {notice}
+        </p>
+      )}
+      {waiting.length > 0 && <AiCallQueue waiting={waiting} />}
 
       {calls.length > 0 && (
         <ul className="mt-4 divide-y divide-slate-100" aria-label="Recent AI calls">
@@ -406,16 +563,7 @@ export function AiAgentPanel({ destination }: { destination: string | null }) {
                 )}
                 {LIVE_STATUSES.includes(call.status) && <AiCallKeypad callId={call.id} />}
                 {call.summary && <p className="mt-1 text-xs text-slate-600">{call.summary}</p>}
-                {call.recordingUrl && (
-                  <a
-                    href={call.recordingUrl}
-                    target="_blank"
-                    rel="noreferrer"
-                    className="mt-1 inline-block text-xs text-slate-600 underline"
-                  >
-                    Recording
-                  </a>
-                )}
+                {call.hasRecording && <AiRecording call={call} />}
               </li>
             );
           })}

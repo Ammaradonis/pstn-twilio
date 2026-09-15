@@ -5,9 +5,12 @@ import {
   Injectable,
   Logger,
   NotFoundException,
+  OnModuleDestroy,
+  OnModuleInit,
 } from '@nestjs/common';
 import { AiCall, AiCallDirection, AiCallStatus, Prisma, UserRole } from '@prisma/client';
 import {
+  AI_CALL_QUEUE_LIMIT,
   findUsState,
   normalizeDialablePhoneNumber,
   timeZoneLabel,
@@ -31,6 +34,7 @@ import {
 import { freeConsultSlots, isBookableSlot, pickSlotOptions, type PartOfDay } from './consult-slots';
 import { CalendarUnavailableError, GoogleCalendarService } from './google-calendar.service';
 import { VapiClient, VapiRequestError } from './vapi.client';
+import { isMp3, isWav, wavToMp3 } from './wav-to-mp3';
 import { localNowText, spokenDateTime, zonedParts } from './zoned-time';
 
 interface Actor {
@@ -91,9 +95,25 @@ const NO_ANSWER_REASONS = [
 ];
 const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/;
 
+// Outbound calls that occupy the agent. Only one runs at a time per user.
+const LIVE_STATUSES: AiCallStatus[] = [
+  AiCallStatus.QUEUED,
+  AiCallStatus.RINGING,
+  AiCallStatus.IN_PROGRESS,
+  AiCallStatus.FORWARDING,
+];
+const QUEUE_SWEEP_MS = 30_000;
+// A live call this quiet has likely lost its end-of-call webhook (calls are
+// capped at 10 minutes).
+const STALE_LIVE_CALL_MS = 12 * 60_000;
+
 @Injectable()
-export class AiCallsService {
+export class AiCallsService implements OnModuleInit, OnModuleDestroy {
   private readonly logger = new Logger(AiCallsService.name);
+  // Serializes queue processing per user. The API runs as a single machine;
+  // the WAITING-to-QUEUED claim is also atomic in the database.
+  private readonly queueRuns = new Map<string, Promise<void>>();
+  private sweepTimer: ReturnType<typeof setInterval> | null = null;
 
   constructor(
     private readonly prisma: PrismaService,
@@ -118,6 +138,17 @@ export class AiCallsService {
     };
   }
 
+  onModuleInit(): void {
+    this.sweepTimer = setInterval(() => void this.sweepQueues(), QUEUE_SWEEP_MS);
+    this.sweepTimer.unref?.();
+  }
+
+  onModuleDestroy(): void {
+    if (this.sweepTimer) clearInterval(this.sweepTimer);
+  }
+
+  // Adds a school to the user's queue. If the agent is free it's called right
+  // away; otherwise it waits for the calls ahead of it.
   async startCall(actor: Actor, input: StartAiCallInput, now = new Date()): Promise<AiCallDto> {
     const state = findUsState(input.stateCode);
     if (!state) throw new BadRequestException('Unknown US state.');
@@ -148,6 +179,30 @@ export class AiCallsService {
       throw new ConflictException(`AI calling isn't set up yet: ${setup.missing.join(' ')}`);
     }
 
+    const pending = await this.prisma.aiCall.findFirst({
+      where: {
+        userId: actor.userId,
+        customerE164: destination,
+        direction: AiCallDirection.OUTBOUND,
+        status: { in: [AiCallStatus.WAITING, ...LIVE_STATUSES] },
+      },
+    });
+    if (pending) {
+      throw new ConflictException(
+        pending.status === AiCallStatus.WAITING
+          ? 'This number is already in the queue.'
+          : 'The agent is already calling this number.',
+      );
+    }
+    const waiting = await this.prisma.aiCall.count({
+      where: { userId: actor.userId, status: AiCallStatus.WAITING },
+    });
+    if (waiting >= AI_CALL_QUEUE_LIMIT) {
+      throw new ConflictException(
+        `The queue is full (${AI_CALL_QUEUE_LIMIT} schools). Wait for calls to finish or remove some.`,
+      );
+    }
+
     const aiCall = await this.prisma.aiCall.create({
       data: {
         userId: actor.userId,
@@ -155,46 +210,226 @@ export class AiCallsService {
         customerE164: destination,
         stateCode: state.code,
         timeZone,
+        status: AiCallStatus.WAITING,
       },
     });
+    await this.audit.log({
+      userId: actor.userId,
+      action: 'ai_call.queued',
+      entityType: 'AiCall',
+      entityId: aiCall.id,
+      ipAddress: actor.ipAddress,
+      userAgent: actor.userAgent,
+      metadata: { destination, stateCode: state.code, timeZone },
+    });
+
+    await this.processQueue(actor.userId, now);
+    const current = (await this.prisma.aiCall.findUnique({ where: { id: aiCall.id } })) ?? aiCall;
+    if (current.status === AiCallStatus.FAILED) {
+      throw new BadGatewayException(
+        `Vapi couldn't start the call: ${current.endedReason ?? 'unknown error'}`,
+      );
+    }
+    return this.publish(current);
+  }
+
+  // Starts the next waiting call if the agent is free. Safe to call at any time.
+  async processQueue(userId: string, now = new Date()): Promise<void> {
+    const previous = this.queueRuns.get(userId) ?? Promise.resolve();
+    const run = previous
+      .then(() => this.processQueueNow(userId, now))
+      .catch((err) => this.logger.error(`AI call queue failed: ${(err as Error).message}`));
+    this.queueRuns.set(userId, run);
+    await run;
+    if (this.queueRuns.get(userId) === run) this.queueRuns.delete(userId);
+  }
+
+  private async processQueueNow(userId: string, now: Date): Promise<void> {
+    // Bounded so a run of failing numbers can't spin.
+    for (let attempt = 0; attempt < 5; attempt++) {
+      const live = await this.prisma.aiCall.count({
+        where: { userId, direction: AiCallDirection.OUTBOUND, status: { in: LIVE_STATUSES } },
+      });
+      if (live > 0) return;
+
+      const waiting = await this.prisma.aiCall.findMany({
+        where: { userId, status: AiCallStatus.WAITING },
+        orderBy: { createdAt: 'asc' },
+        take: AI_CALL_QUEUE_LIMIT,
+      });
+      // Schools whose local time is outside the calling window wait their turn.
+      const next = waiting.find((row) => this.inCallWindow(row.timeZone, now));
+      if (!next) return;
+      if (!(await this.config(userId)).ready) return;
+
+      const claimed = await this.prisma.aiCall.updateMany({
+        where: { id: next.id, status: AiCallStatus.WAITING },
+        data: { status: AiCallStatus.QUEUED },
+      });
+      if (claimed.count !== 1) continue;
+      if (await this.launch({ ...next, status: AiCallStatus.QUEUED }, now)) return;
+    }
+  }
+
+  private inCallWindow(timeZone: string, now: Date): boolean {
+    const { hour } = zonedParts(now, timeZone);
+    const { startHour, endHour } = this.settings.callWindow;
+    return hour >= startHour && hour < endHour;
+  }
+
+  // Places the Vapi call for a claimed queue entry. False if it didn't start.
+  private async launch(row: AiCall, now: Date): Promise<boolean> {
+    const state = findUsState(row.stateCode);
+    const blocked = await this.prisma.doNotCallNumber.findUnique({
+      where: { e164: row.customerE164 },
+    });
+    if (!state || blocked) {
+      await this.publish(
+        await this.prisma.aiCall.update({
+          where: { id: row.id },
+          data: blocked
+            ? {
+                status: AiCallStatus.ENDED,
+                outcome: 'do_not_call',
+                endedReason: 'Asked not to be called before its turn',
+              }
+            : { status: AiCallStatus.FAILED, outcome: 'failed', endedReason: 'Unknown state' },
+        }),
+      );
+      return false;
+    }
 
     try {
       const call = await this.vapi.createCall({
         assistantId: this.settings.vapiAssistantId,
         phoneNumberId: this.settings.vapiPhoneNumberId,
-        customer: { number: destination },
+        customer: { number: row.customerE164 },
         assistantOverrides: {
-          variableValues: this.variableValues(state, timeZone, 'outbound', now),
-          metadata: { aiCallId: aiCall.id },
+          variableValues: this.variableValues(state, row.timeZone, 'outbound', now),
+          metadata: { aiCallId: row.id },
         },
       });
       const updated = await this.prisma.aiCall.update({
-        where: { id: aiCall.id },
+        where: { id: row.id },
         data: { vapiCallId: call.id, status: STATUS_MAP[call.status ?? ''] ?? AiCallStatus.QUEUED },
       });
       await this.audit.log({
-        userId: actor.userId,
+        userId: row.userId ?? undefined,
         action: 'ai_call.started',
         entityType: 'AiCall',
-        entityId: aiCall.id,
-        ipAddress: actor.ipAddress,
-        userAgent: actor.userAgent,
-        metadata: { destination, stateCode: state.code, timeZone, vapiCallId: call.id },
-      });
-      return this.publish(updated);
-    } catch (err) {
-      const message = err instanceof VapiRequestError ? err.message : 'Vapi request failed';
-      await this.prisma.aiCall.update({
-        where: { id: aiCall.id },
-        data: {
-          status: AiCallStatus.FAILED,
-          outcome: 'failed',
-          endedReason: message.slice(0, 500),
+        entityId: row.id,
+        metadata: {
+          destination: row.customerE164,
+          stateCode: row.stateCode,
+          timeZone: row.timeZone,
+          vapiCallId: call.id,
         },
       });
+      await this.publish(updated);
+      return true;
+    } catch (err) {
+      const message = err instanceof VapiRequestError ? err.message : 'Vapi request failed';
+      await this.publish(
+        await this.prisma.aiCall.update({
+          where: { id: row.id },
+          data: {
+            status: AiCallStatus.FAILED,
+            outcome: 'failed',
+            endedReason: message.slice(0, 500),
+          },
+        }),
+      );
       this.logger.warn(`Vapi call creation failed: ${message}`);
-      throw new BadGatewayException(`Vapi couldn't start the call: ${message}`);
+      return false;
     }
+  }
+
+  async queue(userId: string): Promise<AiCallDto[]> {
+    const rows = await this.prisma.aiCall.findMany({
+      where: { userId, status: AiCallStatus.WAITING },
+      orderBy: { createdAt: 'asc' },
+      take: AI_CALL_QUEUE_LIMIT,
+    });
+    return rows.map(toAiCallDto);
+  }
+
+  async removeFromQueue(userId: string, id: string): Promise<void> {
+    const removed = await this.prisma.aiCall.deleteMany({
+      where: { id, userId, status: AiCallStatus.WAITING },
+    });
+    if (removed.count === 0)
+      throw new NotFoundException('That number is no longer waiting in the queue.');
+  }
+
+  async clearQueue(userId: string): Promise<{ removed: number }> {
+    const removed = await this.prisma.aiCall.deleteMany({
+      where: { userId, status: AiCallStatus.WAITING },
+    });
+    return { removed: removed.count };
+  }
+
+  // Recovers from missed end-of-call webhooks, then advances every queue.
+  async sweepQueues(now = new Date()): Promise<void> {
+    try {
+      const owners = await this.prisma.aiCall.findMany({
+        where: { status: AiCallStatus.WAITING },
+        distinct: ['userId'],
+        select: { userId: true },
+      });
+      for (const { userId } of owners) {
+        if (!userId) continue;
+        const stale = await this.prisma.aiCall.findMany({
+          where: {
+            userId,
+            direction: AiCallDirection.OUTBOUND,
+            status: { in: LIVE_STATUSES },
+            updatedAt: { lt: new Date(now.getTime() - STALE_LIVE_CALL_MS) },
+          },
+        });
+        for (const row of stale) await this.refreshStaleCall(row);
+        await this.processQueue(userId, now);
+      }
+    } catch (err) {
+      this.logger.error(`AI call queue sweep failed: ${(err as Error).message}`);
+    }
+  }
+
+  private async refreshStaleCall(row: AiCall): Promise<void> {
+    if (!row.vapiCallId) {
+      await this.prisma.aiCall.update({
+        where: { id: row.id },
+        data: { status: AiCallStatus.FAILED, outcome: 'failed', endedReason: 'Never reached Vapi' },
+      });
+      return;
+    }
+    const call = await this.vapi.getCall(row.vapiCallId);
+    if (call.status !== 'ended') return;
+    await this.applyEndOfCall(row, {
+      endedReason: call.endedReason,
+      startedAt: call.startedAt,
+      endedAt: call.endedAt,
+      cost: call.cost,
+      analysis: call.analysis,
+      artifact: call.artifact,
+    });
+  }
+
+  async recording(
+    userId: string,
+    id: string,
+  ): Promise<{ body: Buffer; contentType: string; filename: string }> {
+    const row = await this.prisma.aiCall.findFirst({ where: { id, userId } });
+    if (!row?.vapiCallId || !row.recordingUrl)
+      throw new NotFoundException('No recording for this call.');
+    const media = await this.vapi.downloadRecording(row.vapiCallId);
+    let body = media.body;
+    if (isWav(body)) body = await wavToMp3(body);
+    else if (!isMp3(body))
+      throw new BadGatewayException('Vapi returned a recording in an unexpected format.');
+    const started = zonedParts(row.startedAt ?? row.createdAt, row.timeZone);
+    const pad = (n: number) => String(n).padStart(2, '0');
+    const filename = `ai-call-${row.customerE164.replace(/\D/g, '')}-${started.year}-${pad(started.month)}-${pad(started.day)}_${pad(started.hour)}-${pad(started.minute)}.mp3`;
+    return { body, contentType: 'audio/mpeg', filename };
   }
 
   // Relays keypad keys from the dial page to the agent on a live call. Vapi's
@@ -240,7 +475,7 @@ export class AiCallsService {
 
   async list(userId: string, limit = 20): Promise<AiCallDto[]> {
     const rows = await this.prisma.aiCall.findMany({
-      where: { userId },
+      where: { userId, status: { not: AiCallStatus.WAITING } },
       orderBy: { createdAt: 'desc' },
       take: Math.min(Math.max(limit, 1), 100),
     });
@@ -295,6 +530,8 @@ export class AiCallsService {
               },
             }),
           );
+          // The agent is free as soon as the call ends; the report comes later.
+          if (status === AiCallStatus.ENDED && row.userId) void this.processQueue(row.userId);
         }
         return {};
       }
@@ -609,6 +846,9 @@ export class AiCallsService {
         update: {},
       });
     }
+    // Not awaited: this can run inside a queue step for the same user.
+    if (row.userId && row.direction === AiCallDirection.OUTBOUND)
+      void this.processQueue(row.userId);
     return this.publishRow(updated);
   }
 
@@ -687,7 +927,7 @@ export function toAiCallDto(row: AiCall): AiCallDto {
     consultStartAt: row.consultStartAt?.toISOString() ?? null,
     consultMeetUrl: row.consultMeetUrl,
     callbackTime: row.callbackTime,
-    recordingUrl: row.recordingUrl,
+    hasRecording: Boolean(row.recordingUrl && row.vapiCallId),
     startedAt: row.startedAt?.toISOString() ?? null,
     endedAt: row.endedAt?.toISOString() ?? null,
     createdAt: row.createdAt.toISOString(),

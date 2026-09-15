@@ -338,6 +338,7 @@ export function buildConsultBookerAssistant({ webhookUrl, webhookSecret }: Assis
       structuredDataPlan: { enabled: true, schema: ANALYSIS_SCHEMA },
       successEvaluationPlan: { enabled: true, rubric: 'PassFail' },
     },
+    artifactPlan: { recordingEnabled: true, recordingFormat: 'mp3' },
     serverMessages: ['status-update', 'end-of-call-report'],
     server,
   };

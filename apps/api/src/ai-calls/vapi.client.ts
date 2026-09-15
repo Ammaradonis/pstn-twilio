@@ -38,6 +38,24 @@ export class VapiClient {
     return this.request<VapiCall>('GET', `/call/${encodeURIComponent(id)}`);
   }
 
+  // Vapi redirects to a short-lived presigned storage URL; fetch drops the
+  // Authorization header on that cross-origin redirect.
+  async downloadRecording(callId: string): Promise<{ body: Buffer; contentType: string }> {
+    const key = this.settings.vapiPrivateKey;
+    if (!key) throw new VapiRequestError(500, 'VAPI_PRIVATE_KEY is not set');
+    const res = await fetch(`${VAPI_BASE_URL}/call/${encodeURIComponent(callId)}/mono-recording`, {
+      headers: { Authorization: `Bearer ${key}` },
+      signal: AbortSignal.timeout(60_000),
+    });
+    if (!res.ok) {
+      throw new VapiRequestError(res.status, `Vapi recording download failed: ${res.status}`);
+    }
+    return {
+      body: Buffer.from(await res.arrayBuffer()),
+      contentType: res.headers.get('content-type') ?? 'application/octet-stream',
+    };
+  }
+
   // Sends a live call control message to the call's monitor.controlUrl.
   async sendControl(controlUrl: string, message: Record<string, unknown>): Promise<void> {
     if (!controlUrl.startsWith('https://')) throw new VapiRequestError(500, 'Invalid control URL');

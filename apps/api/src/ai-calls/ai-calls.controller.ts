@@ -8,6 +8,7 @@ import {
   Post,
   Query,
   Req,
+  Res,
   UseGuards,
 } from '@nestjs/common';
 import { Throttle } from '@nestjs/throttler';
@@ -18,7 +19,7 @@ import {
   type AiCallKeypadInput,
   type StartAiCallInput,
 } from '@pstn-twilio/shared';
-import type { Request } from 'express';
+import type { Request, Response } from 'express';
 
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { ZodValidationPipe } from '../common/zod.pipe';
@@ -52,9 +53,34 @@ export class AiCallsController {
     return this.aiCalls.list(req.user.id, limit ? Number.parseInt(limit, 10) || 20 : 20);
   }
 
+  @Get('queue')
+  queue(@Req() req: ActorRequest) {
+    return this.aiCalls.queue(req.user.id);
+  }
+
+  @Delete('queue')
+  clearQueue(@Req() req: ActorRequest) {
+    return this.aiCalls.clearQueue(req.user.id);
+  }
+
   @Get(':id')
   getOne(@Req() req: ActorRequest, @Param('id') id: string) {
     return this.aiCalls.get(req.user.id, id);
+  }
+
+  @Delete(':id')
+  @HttpCode(204)
+  async removeFromQueue(@Req() req: ActorRequest, @Param('id') id: string): Promise<void> {
+    await this.aiCalls.removeFromQueue(req.user.id, id);
+  }
+
+  @Get(':id/recording')
+  async recording(@Req() req: ActorRequest, @Param('id') id: string, @Res() res: Response) {
+    const media = await this.aiCalls.recording(req.user.id, id);
+    res.setHeader('Content-Type', media.contentType);
+    res.setHeader('Content-Disposition', `inline; filename="${media.filename}"`);
+    res.setHeader('Cache-Control', 'private, no-store');
+    res.send(media.body);
   }
 
   @Post(':id/keypad')
