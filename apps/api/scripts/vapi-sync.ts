@@ -86,6 +86,9 @@ async function main(): Promise<void> {
     await vapi<Json>('PATCH', `/phone-number/${phoneNumberId}`, {
       assistantId: null,
       server: { url: webhookUrl, headers: { 'x-vapi-secret': webhookSecret }, timeoutSeconds: 20 },
+      // Otherwise Vapi points the Twilio number's SMS URL at itself and the app
+      // stops receiving texts (Twilio's fallback never runs because Vapi answers 200).
+      smsEnabled: false,
     });
     console.log(`Phone number ${phoneNumberId} now asks the API which assistant answers.`);
   }
@@ -191,6 +194,11 @@ async function main(): Promise<void> {
 
   const phone = await vapi<Json>('GET', `/phone-number/${phoneNumberId}`);
   check(`phone number is ${phone.number}`, typeof phone.number === 'string', failures);
+  check(
+    'phone number leaves SMS to the app (smsEnabled false)',
+    phone.smsEnabled === false,
+    failures,
+  );
   check(
     'phone number has no fixed assistant (callbacks use assistant-request)',
     !phone.assistantId,
