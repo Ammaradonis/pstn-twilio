@@ -204,7 +204,11 @@ export class VoiceService implements OnModuleInit, OnModuleDestroy {
     // Fast path: skip the Twilio REST call for 60 seconds after a known-good
     // validation. This removes ~200 ms from every outbound call setup while
     // still detecting number deactivation within a minute.
-    const cacheKey = `twilio:callerid:valid:${phoneNumber.id}`;
+    // Include the Twilio account and resource identity so a Redis instance
+    // shared across environments cannot reuse another account's validation.
+    const cacheKey =
+      `twilio:callerid:valid:${this.twilio.accountSid}:` +
+      `${phoneNumber.twilioIncomingPhoneNumberSid}:${phoneNumber.phoneNumberE164}`;
     try {
       const cached = await this.redis.client.get(cacheKey);
       if (cached === 'true') return;

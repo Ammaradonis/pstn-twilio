@@ -269,7 +269,10 @@ export class VoiceWebhookService {
       twilioCallSid: callSid,
       phoneNumberId: phoneNumber.id,
       direction: CallDirection.OUTBOUND,
-      fromE164: identity ?? '',
+      // Store the PSTN caller ID in the E.164 field; keep the SDK identity in
+      // browserIdentity so call history and downstream integrations receive a
+      // valid phone number for `from`.
+      fromE164: phoneNumber.phoneNumberE164,
       toE164: destinationNumber,
       selectedCallerId: phoneNumber.phoneNumberE164,
       destinationE164: destinationNumber,
