@@ -7,7 +7,7 @@ import { formatPhone } from '../lib/format';
 
 const INBOUND_KEY = ['ai-calls', 'inbound'] as const;
 
-// Blocks incoming calls to the AI caller line, or lets the agent answer them.
+// Incoming calls must be answered manually; outbound AI calls are independent.
 function IncomingCallsToggle() {
   const queryClient = useQueryClient();
   const inboundQuery = useQuery({ queryKey: INBOUND_KEY, queryFn: () => api.aiCalls.inbound() });
@@ -15,7 +15,7 @@ function IncomingCallsToggle() {
   const [error, setError] = useState<string | null>(null);
   const status = inboundQuery.data;
 
-  async function setMode(mode: 'agent' | 'blocked') {
+  async function setMode(mode: 'browser' | 'blocked') {
     setBusy(true);
     setError(null);
     try {
@@ -39,8 +39,8 @@ function IncomingCallsToggle() {
     ? 'Checking…'
     : status.mode === 'blocked'
       ? 'Blocked. Callers hear a busy signal and the agent never answers.'
-      : status.mode === 'agent'
-        ? 'The agent answers. Schools calling back reach it with their earlier call details.'
+      : status.mode === 'browser'
+        ? 'Calls ring your browser. Only you can answer; voicemail is disabled.'
         : 'Routed somewhere else in Twilio. Choose an option to take control.';
 
   return (
@@ -68,14 +68,14 @@ function IncomingCallsToggle() {
           Block incoming calls
         </button>
       )}
-      {status && status.mode !== 'agent' && (
+      {status && status.mode !== 'browser' && (
         <button
           type="button"
-          onClick={() => void setMode('agent')}
+          onClick={() => void setMode('browser')}
           disabled={busy}
           className="rounded bg-slate-900 px-3 py-1.5 text-sm font-semibold text-white hover:bg-slate-700 disabled:opacity-60"
         >
-          Let the agent answer
+          Ring my browser
         </button>
       )}
       {error && <p className="w-full text-xs text-rose-700">{error}</p>}

@@ -59,7 +59,7 @@ export class VoiceWebhookController {
     }
   }
 
-  @Post('voicemail')
+  @Post(['dial-complete', 'voicemail'])
   @HttpCode(200)
   @Header('Content-Type', 'text/xml')
   async voicemail(@Body() body: VoicemailParams): Promise<string> {

@@ -1,10 +1,17 @@
-import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+import { fireEvent, render as renderBase, screen, waitFor } from '@testing-library/react';
+import type { ReactElement } from 'react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { api, ApiError } from '../lib/api-client';
 import { watchRecordingDownload } from '../lib/recording-downloads';
 
 import { DialPage } from './dial';
+
+function render(ui: ReactElement) {
+  const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+  return renderBase(<QueryClientProvider client={client}>{ui}</QueryClientProvider>);
+}
 
 const voiceMock = vi.hoisted(() => ({
   current: {
@@ -65,6 +72,7 @@ vi.mock('../lib/api-client', () => {
     api: {
       calls: {
         lastDial: vi.fn().mockResolvedValue(null),
+        outboundAnalytics: vi.fn(() => new Promise(() => {})),
       },
       numbers: {
         get: vi.fn(() => new Promise(() => {})),

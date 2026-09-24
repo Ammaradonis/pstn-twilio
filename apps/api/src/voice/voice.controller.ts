@@ -1,7 +1,23 @@
-import { Body, Controller, Get, HttpCode, Post, Query, Req, UseGuards } from '@nestjs/common';
+import {
+  Body,
+  Controller,
+  Get,
+  HttpCode,
+  Param,
+  ParseUUIDPipe,
+  Post,
+  Put,
+  Query,
+  Req,
+  UseGuards,
+} from '@nestjs/common';
 import { Throttle } from '@nestjs/throttler';
 import { UserRole } from '@prisma/client';
-import { prepareOutboundCallSchema, voiceTokenRequestSchema } from '@pstn-twilio/shared';
+import {
+  prepareOutboundCallSchema,
+  recordingPreferenceSchema,
+  voiceTokenRequestSchema,
+} from '@pstn-twilio/shared';
 import type { Request } from 'express';
 import { z } from 'zod';
 
@@ -55,6 +71,24 @@ export class VoiceController {
   @Get('voice/device-config')
   deviceConfig() {
     return this.voice.getDeviceConfig();
+  }
+
+  @Get('voice/numbers/:numberId/recording-preference')
+  recordingPreference(
+    @Req() req: ActorRequest,
+    @Param('numberId', ParseUUIDPipe) numberId: string,
+  ) {
+    return this.voice.getRecordingPreference(actorFromRequest(req), numberId);
+  }
+
+  @Put('voice/numbers/:numberId/recording-preference')
+  setRecordingPreference(
+    @Req() req: ActorRequest,
+    @Param('numberId', ParseUUIDPipe) numberId: string,
+    @Body(new ZodValidationPipe(recordingPreferenceSchema))
+    body: z.infer<typeof recordingPreferenceSchema>,
+  ) {
+    return this.voice.setRecordingPreference(actorFromRequest(req), numberId, body.recordCall);
   }
 
   @Post('calls/prepare-outbound')

@@ -38,6 +38,9 @@ type VoiceDevice = {
   updateToken?: (token: string) => void;
   audio?: {
     setAudioConstraints: (constraints: MediaTrackConstraints) => Promise<void>;
+    setInputDevice?: (deviceId: string) => Promise<void>;
+    unsetInputDevice?: () => Promise<void>;
+    on?: (event: string, handler: (...args: unknown[]) => void) => void;
   };
   connect: (options: {
     params: { selectedNumberId: string; destinationNumber: string; outboundIntentId: string };
@@ -110,6 +113,11 @@ type VoiceRuntimeState = {
   callQuality: CallQuality | null;
   // Active SDK call-quality warnings, e.g. 'high-rtt' or 'high-packet-loss'.
   qualityWarnings: string[];
+  microphoneInputs: Array<{ deviceId: string; label: string }>;
+  selectedMicrophoneId: string;
+  microphoneBusy: boolean;
+  microphoneError: string | null;
+  wakeLockHeld: boolean;
 };
 
 interface UseVoiceDevice extends VoiceRuntimeState {
@@ -128,6 +136,9 @@ interface UseVoiceDevice extends VoiceRuntimeState {
     options?: MakeCallOptions,
   ) => Promise<VoiceCall | null>;
   requestMicPermission: () => Promise<boolean>;
+  refreshMicrophones: () => Promise<void>;
+  selectMicrophone: (deviceId: string) => Promise<void>;
+  wakeLockSupported: boolean;
 }
 
 const INITIAL_RUNTIME_STATE: VoiceRuntimeState = {
@@ -144,6 +155,11 @@ const INITIAL_RUNTIME_STATE: VoiceRuntimeState = {
   micPermission: 'unknown',
   callQuality: null,
   qualityWarnings: [],
+  microphoneInputs: [],
+  selectedMicrophoneId: '',
+  microphoneBusy: false,
+  microphoneError: null,
+  wakeLockHeld: false,
 };
 
 const NO_CALL_QUALITY = { callQuality: null, qualityWarnings: [] as string[] };
@@ -185,6 +201,17 @@ const DEFAULT_AUDIO_CONSTRAINTS: MediaTrackConstraints = {
 // loudspeaker, whose sound the phone's microphone picks back up as echo.
 const ANDROID_EARPIECE_INPUT_LABEL = 'Headset earpiece';
 const ANDROID_HEADSET_INPUT_LABELS = new Set(['Wired headset', 'Bluetooth headset', 'USB audio']);
+const MICROPHONE_STORAGE_KEY = 'pstn-twilio.microphone';
+
+type WakeLockSentinelLike = {
+  released: boolean;
+  release: () => Promise<void>;
+  addEventListener?: (type: 'release', listener: () => void) => void;
+};
+
+type WakeLockApiLike = {
+  request: (type: 'screen') => Promise<WakeLockSentinelLike>;
+};
 
 const subscribers = new Set<() => void>();
 
@@ -207,6 +234,9 @@ const runtime: {
   reconnectAttempt: number;
   signalingRecoveryPending: boolean;
   tokenRejected: boolean;
+  wakeLock: WakeLockSentinelLike | null;
+  wakeLockWanted: boolean;
+  wakeLockRequest: Promise<void> | null;
 } = {
   state: INITIAL_RUNTIME_STATE,
   device: null,
@@ -225,6 +255,9 @@ const runtime: {
   reconnectAttempt: 0,
   signalingRecoveryPending: false,
   tokenRejected: false,
+  wakeLock: null,
+  wakeLockWanted: false,
+  wakeLockRequest: null,
 };
 
 function isPromiseLike<T>(value: T | Promise<T>): value is Promise<T> {
@@ -236,6 +269,56 @@ function isBrowserSupported(): boolean {
   if (!window.RTCPeerConnection) return false;
   if (!navigator.mediaDevices?.getUserMedia) return false;
   return true;
+}
+
+function wakeLockApi(): WakeLockApiLike | null {
+  if (typeof navigator === 'undefined') return null;
+  return (navigator as Navigator & { wakeLock?: WakeLockApiLike }).wakeLock ?? null;
+}
+
+function releaseScreenWakeLock(): void {
+  const sentinel = runtime.wakeLock;
+  runtime.wakeLock = null;
+  setRuntimeState({ wakeLockHeld: false });
+  if (sentinel && !sentinel.released) void sentinel.release().catch(() => undefined);
+}
+
+async function syncScreenWakeLock(wanted: boolean): Promise<void> {
+  runtime.wakeLockWanted = wanted;
+  if (!wanted || document.visibilityState !== 'visible') {
+    releaseScreenWakeLock();
+    return;
+  }
+  const api = wakeLockApi();
+  if (!api || runtime.wakeLock?.released === false) return;
+  if (runtime.wakeLockRequest) return runtime.wakeLockRequest;
+
+  runtime.wakeLockRequest = (async () => {
+    try {
+      const sentinel = await api.request('screen');
+      if (!runtime.wakeLockWanted || document.visibilityState !== 'visible') {
+        await sentinel.release().catch(() => undefined);
+        return;
+      }
+      runtime.wakeLock = sentinel;
+      setRuntimeState({ wakeLockHeld: true });
+      sentinel.addEventListener?.('release', () => {
+        if (runtime.wakeLock !== sentinel) return;
+        runtime.wakeLock = null;
+        setRuntimeState({ wakeLockHeld: false });
+        if (runtime.wakeLockWanted && document.visibilityState === 'visible') {
+          void syncScreenWakeLock(true);
+        }
+      });
+    } catch {
+      // Chrome can refuse a wake lock when the battery is low or the page is
+      // not visible. Calls remain usable; the UI simply does not claim a lock.
+      setRuntimeState({ wakeLockHeld: false });
+    }
+  })().finally(() => {
+    runtime.wakeLockRequest = null;
+  });
+  return runtime.wakeLockRequest;
 }
 
 function subscribe(listener: () => void): () => void {
@@ -404,6 +487,8 @@ function markDeviceRegistering(): void {
 
 function disposeCurrentDevice(resetState: boolean): void {
   runtime.intentionallyDestroyed = true;
+  runtime.wakeLockWanted = false;
+  releaseScreenWakeLock();
   clearTimer(runtime.tokenRefreshTimer);
   clearTimer(runtime.reconnectTimer);
   clearTimer(runtime.resumeTimer);
@@ -438,6 +523,8 @@ function disposeCurrentDevice(resetState: boolean): void {
     runtime.state = {
       ...INITIAL_RUNTIME_STATE,
       micPermission: runtime.state.micPermission,
+      microphoneInputs: runtime.state.microphoneInputs,
+      selectedMicrophoneId: runtime.state.selectedMicrophoneId,
     };
     emit();
   }
@@ -446,13 +533,27 @@ function disposeCurrentDevice(resetState: boolean): void {
 // Microphone constraints for a call. On an Android phone with no headset this
 // requests the earpiece, so the other party is heard through the top speaker
 // held to the ear. Everywhere else the browser's default device is kept.
-async function callAudioConstraints(): Promise<MediaTrackConstraints> {
+async function callAudioConstraints(
+  selectedId = runtime.state.selectedMicrophoneId,
+): Promise<MediaTrackConstraints> {
   let inputs: MediaDeviceInfo[] = [];
   try {
     const devices = (await navigator.mediaDevices?.enumerateDevices?.()) ?? [];
     inputs = devices.filter((device) => device.kind === 'audioinput');
   } catch {
+    if (selectedId)
+      throw new Error(
+        'Could not check the selected microphone. Refresh microphones or choose Automatic.',
+      );
     return DEFAULT_AUDIO_CONSTRAINTS;
+  }
+  if (selectedId) {
+    if (!inputs.some((device) => device.deviceId === selectedId)) {
+      throw new Error(
+        'The selected microphone is unavailable. Choose another microphone or Automatic.',
+      );
+    }
+    return { ...DEFAULT_AUDIO_CONSTRAINTS, deviceId: { exact: selectedId } };
   }
   if (inputs.some((device) => ANDROID_HEADSET_INPUT_LABELS.has(device.label))) {
     return DEFAULT_AUDIO_CONSTRAINTS;
@@ -462,6 +563,87 @@ async function callAudioConstraints(): Promise<MediaTrackConstraints> {
   // `ideal` rather than `exact`: if the earpiece disappears, fall back to
   // another microphone instead of failing the call.
   return { ...DEFAULT_AUDIO_CONSTRAINTS, deviceId: { ideal: earpiece.deviceId } };
+}
+
+async function refreshMicrophones(): Promise<void> {
+  try {
+    const devices = (await navigator.mediaDevices?.enumerateDevices?.()) ?? [];
+    setRuntimeState({
+      microphoneInputs: devices
+        .filter((device) => device.kind === 'audioinput' && device.deviceId)
+        .map((device, i) => ({
+          deviceId: device.deviceId,
+          label: device.label || `Microphone ${i + 1}`,
+        })),
+    });
+  } catch {
+    setRuntimeState({
+      microphoneError: 'Could not list microphones. Check browser permissions and try again.',
+    });
+  }
+}
+
+function requestedInputDevice(constraints: MediaTrackConstraints): string | undefined {
+  const selected = constraints.deviceId as { exact?: string; ideal?: string } | undefined;
+  return selected?.exact ?? selected?.ideal;
+}
+
+async function selectMicrophone(deviceId: string): Promise<void> {
+  if (runtime.state.microphoneBusy) return;
+  setRuntimeState({ microphoneBusy: true, microphoneError: null });
+  try {
+    const constraints = await callAudioConstraints(deviceId);
+    if (runtime.state.active) {
+      const audio = runtime.device?.audio;
+      if (!audio?.setInputDevice)
+        throw new Error(
+          'This browser cannot switch microphones during a call. Try again after hanging up.',
+        );
+      const requestedDeviceId = requestedInputDevice(constraints);
+      if (requestedDeviceId) {
+        // Automatic keeps the Android earpiece policy when Chrome exposes it;
+        // an attached headset is left to Chrome's default route.
+        await audio.setInputDevice(requestedDeviceId);
+      } else if (audio.unsetInputDevice) {
+        await audio.unsetInputDevice();
+      } else {
+        await audio.setInputDevice('default');
+      }
+    }
+    setRuntimeState({ selectedMicrophoneId: deviceId });
+    try {
+      window.localStorage.setItem(MICROPHONE_STORAGE_KEY, deviceId);
+    } catch {
+      /* session only */
+    }
+  } catch (err) {
+    setRuntimeState({ microphoneError: err instanceof Error ? err.message : String(err) });
+  } finally {
+    setRuntimeState({ microphoneBusy: false });
+  }
+}
+
+function releaseMicrophone(): void {
+  void runtime.device?.audio?.unsetInputDevice?.().catch(() => undefined);
+}
+
+async function prepareCallAudio(device: VoiceDevice): Promise<MediaTrackConstraints> {
+  const constraints = await callAudioConstraints();
+  const requestedDeviceId = requestedInputDevice(constraints);
+  if (requestedDeviceId) {
+    if (!device.audio?.setInputDevice) {
+      if (runtime.state.selectedMicrophoneId) {
+        throw new Error(
+          'Chrome could not select the requested microphone. Choose Automatic and try again.',
+        );
+      }
+      return constraints;
+    }
+    // Twilio recommends selecting the device before connect/accept. Passing a
+    // deviceId inside rtcConstraints can race the SDK's own media acquisition.
+    await device.audio.setInputDevice(requestedDeviceId);
+  }
+  return DEFAULT_AUDIO_CONSTRAINTS;
 }
 
 async function refreshVoiceToken(numberId: string | undefined): Promise<void> {
@@ -638,6 +820,7 @@ async function ensureDeviceForOutbound(
 
 function attachCallListeners(conn: VoiceCall): void {
   runtime.call = conn;
+  void syncScreenWakeLock(true);
   setRuntimeState({
     active: true,
     connectionState: 'pending',
@@ -680,6 +863,8 @@ function attachCallListeners(conn: VoiceCall): void {
     }),
   );
   conn.on?.('disconnect', () => {
+    releaseMicrophone();
+    void syncScreenWakeLock(false);
     runtime.call = null;
     setRuntimeState({
       connectionState: 'closed',
@@ -690,6 +875,8 @@ function attachCallListeners(conn: VoiceCall): void {
     });
   });
   conn.on?.('cancel', () => {
+    releaseMicrophone();
+    void syncScreenWakeLock(false);
     runtime.call = null;
     setRuntimeState({
       connectionState: 'closed',
@@ -699,6 +886,8 @@ function attachCallListeners(conn: VoiceCall): void {
     });
   });
   conn.on?.('reject', () => {
+    releaseMicrophone();
+    void syncScreenWakeLock(false);
     runtime.call = null;
     setRuntimeState({
       connectionState: 'closed',
@@ -721,6 +910,8 @@ function attachCallListeners(conn: VoiceCall): void {
       // signaling; the 'disconnect' handler cleans up if recovery fails.
       setRuntimeState({ error: formatVoiceError(err) });
     } else {
+      releaseMicrophone();
+      void syncScreenWakeLock(false);
       runtime.call = null;
       setRuntimeState({
         error: formatVoiceError(err),
@@ -775,6 +966,10 @@ function attachDeviceListeners(device: VoiceDevice, numberId: string | undefined
     disposeCurrentDevice(false);
     void initVoiceDevice(numberId, isBrowserSupported());
   });
+
+  // Twilio's AudioHelper observes Android route changes (for example a
+  // Bluetooth headset being connected) more reliably than the browser event.
+  device.audio?.on?.('deviceChange', () => void refreshMicrophones());
 
   device.on('tokenWillExpire', async () => {
     if (runtime.device !== device) return;
@@ -949,7 +1144,7 @@ async function makeVoiceCall(
   }
 
   try {
-    const audio = await callAudioConstraints();
+    const audio = await prepareCallAudio(device);
     const result = device.connect({
       params: {
         selectedNumberId: prepared.selectedNumberId,
@@ -977,7 +1172,14 @@ async function makeVoiceCall(
 
 async function acceptIncomingCall(): Promise<void> {
   const conn = runtime.state.incoming?.connection;
+  const device = runtime.device;
   if (!conn) return;
+  if (!device) {
+    setRuntimeState({
+      error: 'The Chrome voice device is no longer available. Refresh the page and try again.',
+    });
+    return;
+  }
   if (runtime.state.micPermission === 'denied') {
     setRuntimeState({
       error:
@@ -986,7 +1188,7 @@ async function acceptIncomingCall(): Promise<void> {
     return;
   }
   try {
-    const audio = await callAudioConstraints();
+    const audio = await prepareCallAudio(device);
     // The caller may have hung up while the devices were being listed.
     if (runtime.state.incoming?.connection !== conn) return;
     attachCallListeners(conn);
@@ -1009,6 +1211,7 @@ function rejectIncomingCall(): void {
   } catch (err) {
     setRuntimeState({ error: formatVoiceError(err) });
   } finally {
+    void syncScreenWakeLock(false);
     setRuntimeState({ incoming: null });
   }
 }
@@ -1020,6 +1223,8 @@ function hangupCall(): void {
   } catch (err) {
     setRuntimeState({ error: formatVoiceError(err) });
   } finally {
+    releaseMicrophone();
+    void syncScreenWakeLock(false);
     runtime.call = null;
     setRuntimeState({
       active: false,
@@ -1079,7 +1284,11 @@ async function requestMicrophonePermission(): Promise<boolean> {
 
   try {
     const stream = await navigator.mediaDevices.getUserMedia({ audio: DEFAULT_AUDIO_CONSTRAINTS });
-    stream.getTracks().forEach((track) => track.stop());
+    try {
+      await refreshMicrophones();
+    } finally {
+      stream.getTracks().forEach((track) => track.stop());
+    }
     setRuntimeState({
       micPermission: 'granted',
       error:
@@ -1164,6 +1373,34 @@ export function useVoiceDevice(): UseVoiceDevice {
   useEffect(() => installRecoveryListeners(), []);
 
   useEffect(() => {
+    const onVisibilityChange = () => {
+      if (document.visibilityState === 'visible' && runtime.wakeLockWanted) {
+        void syncScreenWakeLock(true);
+      } else if (document.visibilityState !== 'visible') {
+        releaseScreenWakeLock();
+      }
+    };
+    document.addEventListener('visibilitychange', onVisibilityChange);
+    return () => document.removeEventListener('visibilitychange', onVisibilityChange);
+  }, []);
+
+  useEffect(() => {
+    try {
+      setRuntimeState({
+        selectedMicrophoneId: window.localStorage.getItem(MICROPHONE_STORAGE_KEY) ?? '',
+      });
+    } catch {
+      /* session only */
+    }
+    void refreshMicrophones();
+    const onChange = () => {
+      void refreshMicrophones();
+    };
+    navigator.mediaDevices?.addEventListener?.('devicechange', onChange);
+    return () => navigator.mediaDevices?.removeEventListener?.('devicechange', onChange);
+  }, []);
+
+  useEffect(() => {
     if (typeof navigator === 'undefined' || !navigator.permissions?.query) return;
     let cancelled = false;
     navigator.permissions
@@ -1202,5 +1439,9 @@ export function useVoiceDevice(): UseVoiceDevice {
     sendDigits: sendDtmfDigits,
     makeCall: makeVoiceCall,
     requestMicPermission: requestMicrophonePermission,
+    refreshMicrophones,
+    selectMicrophone,
+    wakeLockHeld: snapshot.wakeLockHeld,
+    wakeLockSupported: Boolean(wakeLockApi()),
   };
 }

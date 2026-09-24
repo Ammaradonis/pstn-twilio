@@ -1,4 +1,9 @@
-import { BadGatewayException, Injectable, NotFoundException } from '@nestjs/common';
+import {
+  BadGatewayException,
+  BadRequestException,
+  Injectable,
+  NotFoundException,
+} from '@nestjs/common';
 import type { AiInboundMode, AiInboundStatusDto } from '@pstn-twilio/shared';
 
 import { AuditService } from '../audit/audit.service';
@@ -16,7 +21,7 @@ interface Actor {
 }
 
 // Switches incoming calls on the AI caller line (the 667 number) between the
-// agent and a busy signal. Twilio's Voice URL is the source of truth: outbound
+// browser and a busy signal. Twilio's Voice URL is the source of truth: outbound
 // AI calls never use it, so blocking incoming calls doesn't affect them.
 @Injectable()
 export class InboundCallsService {
@@ -36,6 +41,9 @@ export class InboundCallsService {
   }
 
   async setMode(actor: Actor, mode: AiInboundMode): Promise<AiInboundStatusDto> {
+    if (mode !== 'blocked' && mode !== 'browser') {
+      throw new BadRequestException('Incoming calls must be answered manually in the browser.');
+    }
     const number = await this.findNumber();
     const previous = this.modeFor(number.voiceUrl);
     try {
@@ -43,12 +51,18 @@ export class InboundCallsService {
         .accounts(this.twilio.accountSid)
         .incomingPhoneNumbers(number.sid)
         .update({
-          voiceUrl: mode === 'blocked' ? this.rejectUrl : VAPI_TWILIO_INBOUND_URL,
+          voiceUrl:
+            mode === 'blocked'
+              ? this.rejectUrl
+              : `${this.settings.publicApiBaseUrl}/webhooks/twilio/voice/inbound`,
           voiceMethod: 'POST',
+          voiceApplicationSid: '',
+          voiceFallbackUrl: this.rejectUrl,
+          voiceFallbackMethod: 'POST',
         });
       await this.audit.log({
         userId: actor.userId,
-        action: mode === 'blocked' ? 'ai_inbound.blocked' : 'ai_inbound.agent_enabled',
+        action: mode === 'blocked' ? 'ai_inbound.blocked' : 'ai_inbound.browser_enabled',
         entityType: 'PhoneNumber',
         entityId: number.sid,
         ipAddress: actor.ipAddress,
@@ -65,6 +79,8 @@ export class InboundCallsService {
 
   private modeFor(voiceUrl: string | null | undefined): AiInboundStatusDto['mode'] {
     if (voiceUrl === this.rejectUrl) return 'blocked';
+    if (voiceUrl === `${this.settings.publicApiBaseUrl}/webhooks/twilio/voice/inbound`)
+      return 'browser';
     if (voiceUrl === VAPI_TWILIO_INBOUND_URL) return 'agent';
     return 'other';
   }

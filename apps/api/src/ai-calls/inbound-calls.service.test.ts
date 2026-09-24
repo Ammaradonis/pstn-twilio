@@ -51,7 +51,14 @@ describe('InboundCallsService', () => {
     expect(accounts).toHaveBeenCalledWith('AC1');
     expect(list).toHaveBeenCalledWith({ phoneNumber: '+16672206726', limit: 1 });
     expect(numberResource).toHaveBeenCalledWith('PN667');
-    expect(update).toHaveBeenCalledWith({ voiceUrl: REJECT_URL, voiceMethod: 'POST' });
+    expect(update).toHaveBeenCalledWith(
+      expect.objectContaining({
+        voiceUrl: REJECT_URL,
+        voiceMethod: 'POST',
+        voiceApplicationSid: '',
+        voiceFallbackUrl: REJECT_URL,
+      }),
+    );
     expect(audit.log).toHaveBeenCalledWith(
       expect.objectContaining({
         action: 'ai_inbound.blocked',
@@ -63,17 +70,30 @@ describe('InboundCallsService', () => {
     );
   });
 
-  it('reverts to the agent by restoring Vapi as the Voice URL', async () => {
+  it('rings the browser without enabling automatic answering', async () => {
     const { service, update, audit } = build(REJECT_URL);
 
-    await expect(service.setMode({ userId: 'u1' }, 'agent')).resolves.toMatchObject({
-      mode: 'agent',
+    await expect(service.setMode({ userId: 'u1' }, 'browser')).resolves.toMatchObject({
+      mode: 'browser',
     });
 
-    expect(update).toHaveBeenCalledWith({ voiceUrl: VAPI_TWILIO_INBOUND_URL, voiceMethod: 'POST' });
-    expect(audit.log).toHaveBeenCalledWith(
-      expect.objectContaining({ action: 'ai_inbound.agent_enabled' }),
+    expect(update).toHaveBeenCalledWith(
+      expect.objectContaining({
+        voiceUrl: 'https://api.example.com/webhooks/twilio/voice/inbound',
+        voiceMethod: 'POST',
+      }),
     );
+    expect(audit.log).toHaveBeenCalledWith(
+      expect.objectContaining({ action: 'ai_inbound.browser_enabled' }),
+    );
+  });
+
+  it('rejects stale clients trying to re-enable the agent', async () => {
+    const { service, update } = build(REJECT_URL);
+    await expect(service.setMode({ userId: 'u1' }, 'agent' as never)).rejects.toThrow(
+      'answered manually',
+    );
+    expect(update).not.toHaveBeenCalled();
   });
 
   it('explains a missing number or a Twilio failure', async () => {

@@ -128,7 +128,7 @@ export class VoiceWebhookService {
     const from = params.From ?? '';
     if (!callSid || !to) {
       this.logger.warn('Inbound voice webhook missing CallSid or To');
-      return hangupTwiml('We could not route this call.');
+      return rejectTwiml();
     }
 
     await this.recordWebhookEvent(`voice:inbound:${callSid}`, 'voice.inbound', callSid, params);
@@ -138,10 +138,10 @@ export class VoiceWebhookService {
     });
     if (!phoneNumber) {
       this.logger.warn(`Inbound call to unknown number ${to} (sid ${callSid})`);
-      return hangupTwiml('This number is not configured to receive calls.');
+      return rejectTwiml();
     }
     if (!phoneNumber.active || !phoneNumber.userId) {
-      return hangupTwiml('This number is not currently available.');
+      return rejectTwiml();
     }
 
     const call = await this.upsertCall({
@@ -164,9 +164,12 @@ export class VoiceWebhookService {
     const dial = response.dial({
       answerOnBridge: true,
       timeout: 30,
-      action: `${this.twilio.webhookBaseUrl}/webhooks/twilio/voice/voicemail`,
+      action: `${this.twilio.webhookBaseUrl}/webhooks/twilio/voice/dial-complete`,
       method: 'POST',
-      ...this.recordingDialAttributes(),
+      timeLimit: 3600,
+      ...((phoneNumber.tags as Record<string, unknown> | null)?.recordInboundCalls === true
+        ? this.recordingDialAttributes()
+        : { record: 'do-not-record' as const }),
     });
     dial.client(
       {
@@ -180,49 +183,18 @@ export class VoiceWebhookService {
   }
 
   async handleVoicemail(params: VoicemailParams): Promise<string> {
-    const callSid = params.CallSid ?? '';
-    const dialStatus = params.DialCallStatus ?? params.CallStatus ?? 'unknown';
-    if (callSid) {
-      await this.recordWebhookEvent(
-        `voice:voicemail-prompt:${callSid}:${dialStatus}`,
-        'voice.voicemail.prompt',
-        callSid,
-        params,
-      );
-    }
-
-    if (dialStatus === 'completed' || dialStatus === 'answered') {
+    // Keep the legacy voicemail URL safe for calls already ringing at deploy.
+    // Never play a greeting or execute Record on an unanswered call.
+    if (params.DialCallStatus === 'completed' || params.DialBridged === 'true') {
       const response = new twilio.twiml.VoiceResponse();
       response.hangup();
       return response.toString();
     }
-
-    const response = new twilio.twiml.VoiceResponse();
-    response.say(
-      { voice: 'alice' },
-      'The browser phone is unavailable. Please leave a voicemail after the beep.',
-    );
-    response.record({
-      action: `${this.twilio.webhookBaseUrl}/webhooks/twilio/voice/voicemail/complete`,
-      method: 'POST',
-      maxLength: 180,
-      playBeep: true,
-      timeout: 8,
-      trim: 'trim-silence',
-      recordingStatusCallback: `${this.twilio.webhookBaseUrl}/webhooks/twilio/voice/recording?kind=voicemail`,
-      recordingStatusCallbackMethod: 'POST',
-      recordingStatusCallbackEvent: [...RECORDING_CALLBACK_EVENTS],
-    });
-    response.say({ voice: 'alice' }, 'No voicemail was recorded. Goodbye.');
-    response.hangup();
-    return response.toString();
+    return rejectTwiml();
   }
 
   handleVoicemailComplete(): string {
-    const response = new twilio.twiml.VoiceResponse();
-    response.say({ voice: 'alice' }, 'Your voicemail has been saved. Goodbye.');
-    response.hangup();
-    return response.toString();
+    return rejectTwiml();
   }
 
   async handleOutbound(params: OutboundVoiceParams, identity: string | undefined): Promise<string> {
@@ -447,13 +419,7 @@ export class VoiceWebhookService {
   }
 
   handleFallback(): string {
-    const response = new twilio.twiml.VoiceResponse();
-    response.say(
-      { voice: 'alice' },
-      'We are unable to complete your call right now. Please try again later.',
-    );
-    response.hangup();
-    return response.toString();
+    return rejectTwiml();
   }
 
   private async consumeOutboundIntent(input: {
@@ -707,6 +673,12 @@ export class VoiceWebhookService {
       this.logger.debug(`Webhook event dedupe race for ${dedupeKey}: ${(err as Error).message}`);
     }
   }
+}
+
+function rejectTwiml(): string {
+  const response = new twilio.twiml.VoiceResponse();
+  response.reject({ reason: 'busy' });
+  return response.toString();
 }
 
 function hangupTwiml(message: string): string {

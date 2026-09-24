@@ -16,6 +16,7 @@ import type {
   PaginatedDto,
   PhoneNumberDto,
   PurchaseNumberInput,
+  RecordingPreferenceDto,
   SendMessageInput,
   SmsMessageDto,
   UserDto,
@@ -279,6 +280,13 @@ export const api = {
   },
 
   voice: {
+    recordingPreference: (numberId: string) =>
+      request<RecordingPreferenceDto>(`/voice/numbers/${numberId}/recording-preference`),
+    setRecordingPreference: (numberId: string, recordCall: boolean) =>
+      request<RecordingPreferenceDto>(`/voice/numbers/${numberId}/recording-preference`, {
+        method: 'PUT',
+        body: { recordCall },
+      }),
     token: (numberId?: string) =>
       request<VoiceTokenDto>('/voice/token', { method: 'POST', body: { numberId } }),
     identity: (numberId?: string) =>

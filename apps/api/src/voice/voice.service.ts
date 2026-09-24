@@ -184,6 +184,51 @@ export class VoiceService implements OnModuleInit, OnModuleDestroy {
     };
   }
 
+  async getRecordingPreference(
+    actor: ActorContext,
+    numberId: string,
+  ): Promise<{ numberId: string; recordCall: boolean }> {
+    const phoneNumber = await this.assertOwnership(actor, numberId);
+    const tags = (phoneNumber.tags ?? {}) as Record<string, unknown>;
+    return {
+      numberId: phoneNumber.id,
+      recordCall: tags.recordInboundCalls === true,
+    };
+  }
+
+  async setRecordingPreference(
+    actor: ActorContext,
+    numberId: string,
+    recordCall: boolean,
+  ): Promise<{ numberId: string; recordCall: boolean }> {
+    const phoneNumber = await this.assertOwnership(actor, numberId);
+    const existingTags = (phoneNumber.tags ?? {}) as Record<string, unknown>;
+    await this.prisma.phoneNumber.update({
+      where: { id: numberId },
+      data: {
+        tags: {
+          ...existingTags,
+          recordInboundCalls: recordCall,
+        },
+      },
+    });
+
+    await this.audit.log({
+      userId: actor.userId,
+      action: 'voice.inbound_recording_preference_updated',
+      entityType: 'PhoneNumber',
+      entityId: numberId,
+      ipAddress: actor.ipAddress,
+      userAgent: actor.userAgent,
+      metadata: { recordCall },
+    });
+
+    return {
+      numberId: phoneNumber.id,
+      recordCall,
+    };
+  }
+
   private async assertOwnership(actor: ActorContext, numberId: string) {
     const number = await this.prisma.phoneNumber.findUnique({ where: { id: numberId } });
     if (!number) throw new NotFoundException(`Number ${numberId} not found`);

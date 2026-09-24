@@ -9,6 +9,7 @@ import { useParams } from 'react-router-dom';
 
 import { AiAgentPanel } from '../components/ai-agent-panel';
 import { CallQualityPanel } from '../components/call-quality';
+import { MicrophonePicker } from '../components/microphone-picker';
 import { useVoiceDevice } from '../hooks/use-voice-device';
 import { api, ApiError } from '../lib/api-client';
 import { formatDate, formatPhone } from '../lib/format';
@@ -316,6 +317,13 @@ export function DialPage() {
             label={`Mic: ${voice.micPermission}`}
             ok={voice.micPermission === 'granted'}
           />
+          {voice.active && voice.wakeLockSupported && (
+            <StatusPill
+              label={voice.wakeLockHeld ? 'Screen awake' : 'Keeping screen awake…'}
+              ok={voice.wakeLockHeld}
+              pending={!voice.wakeLockHeld}
+            />
+          )}
           {voice.micPermission !== 'granted' && voice.browserSupported && (
             <button
               type="button"
@@ -334,6 +342,8 @@ export function DialPage() {
           </p>
         )}
       </div>
+
+      <MicrophonePicker voice={voice} />
 
       <div className="rounded border border-slate-200 bg-white p-4">
         <div className="flex items-baseline justify-between gap-3">

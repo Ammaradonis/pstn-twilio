@@ -82,11 +82,11 @@ function makeOutboundIntent(
 }
 
 describe('VoiceWebhookService.handleInbound', () => {
-  it('returns hangup TwiML when CallSid or To missing', async () => {
+  it('rejects without answering when CallSid or To is missing', async () => {
     const { service } = buildService();
     const xml = await service.handleInbound({});
     expect(xml).toContain('<Response>');
-    expect(xml).toContain('<Hangup');
+    expect(xml).toContain('<Response><Reject reason="busy"/></Response>');
   });
 
   it('returns hangup TwiML for unknown destination number', async () => {
@@ -104,7 +104,7 @@ describe('VoiceWebhookService.handleInbound', () => {
       From: '+15551111111',
       To: '+15559999999',
     });
-    expect(xml).toContain('not configured');
+    expect(xml).toContain('<Response><Reject reason="busy"/></Response>');
     expect(realtime.callInboundRinging).not.toHaveBeenCalled();
   });
 
@@ -179,35 +179,57 @@ describe('VoiceWebhookService.handleInbound', () => {
       expect.objectContaining({ numberId: 'pn1' }),
     );
     expect(xml).toContain('<Dial');
-    expect(xml).toContain('action="https://example.com/webhooks/twilio/voice/voicemail"');
-    expect(xml).toContain('record="record-from-answer-dual"');
-    expect(xml).toContain(
-      'recordingStatusCallback="https://example.com/webhooks/twilio/voice/recording"',
-    );
-    expect(xml).toContain('recordingStatusCallbackEvent="in-progress completed absent"');
+    expect(xml).toContain('<Response><Dial answerOnBridge="true"');
+    expect(xml).toContain('action="https://example.com/webhooks/twilio/voice/dial-complete"');
+    expect(xml).toContain('record="do-not-record"');
+    expect(xml).not.toContain('recordingStatusCallback');
+    expect(xml).not.toMatch(/<(Say|Record|Play|Pause)/);
     expect(xml).toContain('<Client');
     expect(xml).toContain('user_u1_number_pn1');
     expect(xml).toContain('statusCallback="https://example.com/webhooks/twilio/voice/status"');
+
+    // Only an explicit persisted opt-in may enable recording.
+    for (const preference of [undefined, false, 'true', true]) {
+      prisma.phoneNumber.findUnique.mockResolvedValue({
+        ...phoneNumber,
+        tags: { recordInboundCalls: preference },
+      } as typeof phoneNumber);
+      const next = await service.handleInbound({
+        CallSid: 'CA2',
+        From: '+15551111111',
+        To: phoneNumber.phoneNumberE164,
+      });
+      expect(next.includes('record="record-from-answer-dual"')).toBe(preference === true);
+    }
+  });
+
+  it.each([
+    { active: false, userId: 'u1' },
+    { active: true, userId: null },
+  ])('rejects unavailable numbers without answering: %o', async (number) => {
+    const { service, prisma } = buildService();
+    prisma.phoneNumber.findUnique.mockResolvedValue(number);
+    expect(await service.handleInbound({ CallSid: 'CA1', To: '+15552222222' })).toContain(
+      '<Response><Reject reason="busy"/></Response>',
+    );
   });
 });
 
 describe('VoiceWebhookService.handleVoicemail', () => {
-  it('returns Record TwiML for unanswered inbound calls', async () => {
-    const { service } = buildService();
-    const xml = await service.handleVoicemail({
-      CallSid: 'CA1',
-      From: '+15551111111',
-      To: '+15552222222',
-      DialCallStatus: 'no-answer',
-    });
+  it.each(['no-answer', 'busy', 'failed', 'canceled', 'unknown'])(
+    'rejects %s calls without voicemail or answering',
+    async (status) => {
+      const { service } = buildService();
+      const xml = await service.handleVoicemail({
+        CallSid: 'CA1',
+        From: '+15551111111',
+        To: '+15552222222',
+        DialCallStatus: status,
+      });
 
-    expect(xml).toContain('<Say');
-    expect(xml).toContain('<Record');
-    expect(xml).toContain(
-      'recordingStatusCallback="https://example.com/webhooks/twilio/voice/recording?kind=voicemail"',
-    );
-    expect(xml).toContain('action="https://example.com/webhooks/twilio/voice/voicemail/complete"');
-  });
+      expect(xml).toContain('<Response><Reject reason="busy"/></Response>');
+    },
+  );
 
   it('hangs up instead of recording when the browser call completed', async () => {
     const { service } = buildService();
@@ -1076,19 +1098,17 @@ describe('VoiceWebhookService.handleRecording', () => {
 });
 
 describe('VoiceWebhookService.handleFallback', () => {
-  it('returns valid Say + Hangup TwiML', () => {
+  it('rejects fallback calls without answering', () => {
     const { service } = buildService();
     const xml = service.handleFallback();
     expect(xml).toContain('<Response>');
-    expect(xml).toContain('<Say');
-    expect(xml).toContain('<Hangup');
+    expect(xml).toContain('<Response><Reject reason="busy"/></Response>');
   });
 
   it('returns valid voicemail completion TwiML', () => {
     const { service } = buildService();
     const xml = service.handleVoicemailComplete();
     expect(xml).toContain('<Response>');
-    expect(xml).toContain('voicemail has been saved');
-    expect(xml).toContain('<Hangup');
+    expect(xml).toContain('<Response><Reject reason="busy"/></Response>');
   });
 });

@@ -3,6 +3,8 @@ import { useParams } from 'react-router-dom';
 
 import { CallQualityPanel } from '../components/call-quality';
 import { DtmfKeypad } from '../components/dtmf-keypad';
+import { InboundRecordingToggle } from '../components/inbound-recording-toggle';
+import { MicrophonePicker } from '../components/microphone-picker';
 import { useVoiceDevice } from '../hooks/use-voice-device';
 
 function StatusPill({ label, ok, pending }: { label: string; ok: boolean; pending?: boolean }) {
@@ -36,7 +38,9 @@ export function AnswerPage() {
       <header>
         <h1 className="text-2xl font-semibold">Answer incoming call · {numberId}</h1>
         <p className="mt-1 text-sm text-slate-600">
-          Inbound PSTN calls to this number ring this browser tab. Keep it open to receive calls.
+          Inbound PSTN calls to this number ring this Chrome tab. Keep it visible and active to
+          receive calls; Android may suspend a background tab. Missed and rejected calls end without
+          voicemail.
         </p>
       </header>
 
@@ -65,6 +69,13 @@ export function AnswerPage() {
             label={`Mic: ${voice.micPermission}`}
             ok={voice.micPermission === 'granted'}
           />
+          {voice.active && voice.wakeLockSupported && (
+            <StatusPill
+              label={voice.wakeLockHeld ? 'Screen awake' : 'Keeping screen awake…'}
+              ok={voice.wakeLockHeld}
+              pending={!voice.wakeLockHeld}
+            />
+          )}
           {voice.micPermission !== 'granted' && voice.browserSupported && (
             <button
               type="button"
@@ -83,6 +94,15 @@ export function AnswerPage() {
           </p>
         )}
       </div>
+
+      <MicrophonePicker voice={voice} />
+      {numberId && (
+        <InboundRecordingToggle
+          key={numberId}
+          numberId={numberId}
+          inCall={Boolean(voice.incoming) || voice.active}
+        />
+      )}
 
       {!voice.browserSupported && (
         <div className="rounded border border-amber-300 bg-amber-50 p-3 text-sm text-amber-800">

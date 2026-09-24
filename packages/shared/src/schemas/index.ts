@@ -86,7 +86,7 @@ export const aiCallKeypadSchema = z.object({
 });
 
 export const aiInboundModeSchema = z.object({
-  mode: z.enum(['agent', 'blocked']),
+  mode: z.enum(['browser', 'blocked']),
 });
 
 export const voiceTokenRequestSchema = z.object({
@@ -98,10 +98,15 @@ export const loginSchema = z.object({
   password: z.string().min(8).max(256),
 });
 
+export const recordingPreferenceSchema = z.object({
+  recordCall: z.boolean(),
+});
+
 export type NumberSearchInput = z.infer<typeof numberSearchSchema>;
 export type PurchaseNumberInput = z.infer<typeof purchaseNumberSchema>;
 export type SendMessageInput = z.infer<typeof sendMessageSchema>;
 export type PrepareOutboundCallInput = z.infer<typeof prepareOutboundCallSchema>;
+export type RecordingPreferenceInput = z.infer<typeof recordingPreferenceSchema>;
 export type StartAiCallInput = z.infer<typeof startAiCallSchema>;
 export type AiCallKeypadInput = z.infer<typeof aiCallKeypadSchema>;
 export type VoiceTokenRequestInput = z.infer<typeof voiceTokenRequestSchema>;

@@ -193,11 +193,11 @@ export interface AiCallDto {
 
 // Incoming calls to the AI caller line: answered by the agent, or blocked
 // with a busy signal. "other" means Twilio points somewhere else.
-export type AiInboundMode = 'agent' | 'blocked';
+export type AiInboundMode = 'browser' | 'blocked';
 
 export interface AiInboundStatusDto {
   phoneNumber: string;
-  mode: AiInboundMode | 'other';
+  mode: AiInboundMode | 'agent' | 'other';
 }
 
 export interface AiCallingConfigDto {
@@ -221,6 +221,11 @@ export interface OutboundCallPreparationDto {
   destinationNumber: string;
   identity: string;
   expiresAt: string;
+  recordCall: boolean;
+}
+
+export interface RecordingPreferenceDto {
+  numberId: string;
   recordCall: boolean;
 }
 

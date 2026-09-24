@@ -54,6 +54,45 @@ function buildService(overrides: { prisma?: any; twilio?: any; audit?: any; redi
   return { service: new VoiceService(prisma, twilio, audit, redis), prisma, twilio, audit, redis };
 }
 
+describe('inbound recording preference', () => {
+  it('defaults to off and preserves other number tags on explicit opt-in', async () => {
+    const { service, prisma, audit } = buildService();
+    prisma.phoneNumber.findUnique.mockResolvedValue({
+      id: 'pn1',
+      userId: 'u1',
+      tags: { label: 'Keep me' },
+    });
+    const actor = { userId: 'u1', role: UserRole.OWNER };
+    expect(await service.getRecordingPreference(actor, 'pn1')).toEqual({
+      numberId: 'pn1',
+      recordCall: false,
+    });
+    await service.setRecordingPreference(actor, 'pn1', true);
+    expect(prisma.phoneNumber.update).toHaveBeenCalledWith({
+      where: { id: 'pn1' },
+      data: { tags: { label: 'Keep me', recordInboundCalls: true } },
+    });
+    expect(audit.log).toHaveBeenCalledWith(
+      expect.objectContaining({
+        action: 'voice.inbound_recording_preference_updated',
+        metadata: { recordCall: true },
+      }),
+    );
+  });
+  it('rejects attempts to change another user’s number', async () => {
+    const { service, prisma } = buildService();
+    prisma.phoneNumber.findUnique.mockResolvedValue({
+      id: 'pn1',
+      userId: 'someone-else',
+      tags: {},
+    });
+    await expect(
+      service.setRecordingPreference({ userId: 'u1', role: 'MEMBER' as UserRole }, 'pn1', true),
+    ).rejects.toBeInstanceOf(ForbiddenException);
+    expect(prisma.phoneNumber.update).not.toHaveBeenCalled();
+  });
+});
+
 function decodeJwtPart<T>(token: string, index: number): T {
   const part = token.split('.')[index];
   if (!part) throw new Error(`Missing JWT part ${index}`);

@@ -5,6 +5,14 @@ import { AnswerPage } from './answer';
 
 const voiceMock = vi.hoisted(() => ({ current: {} as Record<string, unknown> }));
 
+vi.mock('../lib/api-client', () => ({
+  api: {
+    voice: {
+      recordingPreference: vi.fn().mockResolvedValue({ numberId: 'pn1', recordCall: false }),
+    },
+  },
+}));
+
 vi.mock('react-router-dom', () => ({
   useParams: () => ({ numberId: 'pn1' }),
 }));
@@ -43,8 +51,9 @@ function setVoice(overrides: Record<string, unknown> = {}) {
 describe('AnswerPage in-call keypad', () => {
   beforeEach(() => setVoice());
 
-  it('sends a tapped key as a DTMF tone and shows what was sent', () => {
+  it('sends a tapped key as a DTMF tone and shows what was sent', async () => {
     render(<AnswerPage />);
+    await screen.findByText(/Incoming calls to this number are not recorded/);
 
     fireEvent.click(screen.getByRole('button', { name: 'Send 5' }));
     fireEvent.click(screen.getByRole('button', { name: 'Send #' }));
@@ -54,8 +63,9 @@ describe('AnswerPage in-call keypad', () => {
     expect(screen.getByText('5#')).toBeInTheDocument();
   });
 
-  it('sends digits typed on the physical keyboard', () => {
+  it('sends digits typed on the physical keyboard', async () => {
     render(<AnswerPage />);
+    await screen.findByText(/Incoming calls to this number are not recorded/);
 
     fireEvent.keyDown(window, { key: '5' });
     fireEvent.keyDown(window, { key: 'a' });
@@ -64,9 +74,10 @@ describe('AnswerPage in-call keypad', () => {
     expect(voiceMock.current.sendDigits).toHaveBeenCalledWith('5');
   });
 
-  it('keeps the keypad disabled until the call can send tones', () => {
+  it('keeps the keypad disabled until the call can send tones', async () => {
     setVoice({ canSendDigits: false });
     render(<AnswerPage />);
+    await screen.findByText(/Incoming calls to this number are not recorded/);
 
     const five = screen.getByRole('button', { name: 'Send 5' });
     expect(five).toBeDisabled();
@@ -74,9 +85,10 @@ describe('AnswerPage in-call keypad', () => {
     expect(voiceMock.current.sendDigits).not.toHaveBeenCalled();
   });
 
-  it('does not show the keypad when there is no call', () => {
+  it('does not show the keypad when there is no call', async () => {
     setVoice({ active: false, canSendDigits: false, connectionState: 'idle' });
     render(<AnswerPage />);
+    await screen.findByText(/Incoming calls to this number are not recorded/);
 
     expect(screen.queryByRole('group', { name: 'Call keypad' })).not.toBeInTheDocument();
   });

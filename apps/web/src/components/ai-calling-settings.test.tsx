@@ -41,14 +41,14 @@ describe('AiCallingSettings incoming calls', () => {
     vi.mocked(api.aiCalls.config).mockResolvedValue(config);
   });
 
-  it('shows blocked incoming calls and reverts to the agent in one click', async () => {
+  it('shows blocked incoming calls and enables browser ringing in one click', async () => {
     vi.mocked(api.aiCalls.inbound).mockResolvedValue({
       phoneNumber: '+16672206726',
       mode: 'blocked',
     });
     vi.mocked(api.aiCalls.setInbound).mockResolvedValue({
       phoneNumber: '+16672206726',
-      mode: 'agent',
+      mode: 'browser',
     });
     renderSettings();
 
@@ -56,10 +56,10 @@ describe('AiCallingSettings incoming calls', () => {
     expect(screen.getByText('+1 (667) 220-6726')).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: 'Block incoming calls' })).not.toBeInTheDocument();
 
-    fireEvent.click(screen.getByRole('button', { name: 'Let the agent answer' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Ring my browser' }));
 
-    await waitFor(() => expect(api.aiCalls.setInbound).toHaveBeenCalledWith('agent'));
-    expect(await screen.findByText(/The agent answers\./)).toBeInTheDocument();
+    await waitFor(() => expect(api.aiCalls.setInbound).toHaveBeenCalledWith('browser'));
+    expect(await screen.findByText(/Calls ring your browser\./)).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Block incoming calls' })).toBeInTheDocument();
   });
 
@@ -90,7 +90,7 @@ describe('AiCallingSettings incoming calls', () => {
     );
     renderSettings();
 
-    expect(await screen.findByRole('button', { name: 'Let the agent answer' })).toBeInTheDocument();
+    expect(await screen.findByRole('button', { name: 'Ring my browser' })).toBeInTheDocument();
     fireEvent.click(screen.getByRole('button', { name: 'Block incoming calls' }));
     expect(await screen.findByText("Twilio couldn't update incoming calls")).toBeInTheDocument();
   });

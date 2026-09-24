@@ -13,6 +13,11 @@ const voiceSdkMock = vi.hoisted(() => ({
     updateToken: ReturnType<typeof vi.fn>;
     destroy: ReturnType<typeof vi.fn>;
     connect: ReturnType<typeof vi.fn>;
+    audio: {
+      setAudioConstraints: ReturnType<typeof vi.fn>;
+      setInputDevice: ReturnType<typeof vi.fn>;
+      unsetInputDevice: ReturnType<typeof vi.fn>;
+    };
     options: Record<string, unknown>;
     emit: (event: string, ...args: unknown[]) => void;
   }>,
@@ -52,6 +57,11 @@ vi.mock('@twilio/voice-sdk', () => {
     });
     disconnectAll = vi.fn();
     connect = vi.fn();
+    audio = {
+      setAudioConstraints: vi.fn().mockResolvedValue(undefined),
+      setInputDevice: vi.fn().mockResolvedValue(undefined),
+      unsetInputDevice: vi.fn().mockResolvedValue(undefined),
+    };
 
     private readonly handlers = new Map<string, Array<(...args: unknown[]) => void>>();
 
@@ -88,6 +98,7 @@ describe('useVoiceDevice', () => {
   let current: VoiceHook | null = null;
 
   beforeEach(() => {
+    window.localStorage.clear();
     vi.useFakeTimers();
     voiceSdkMock.instances.length = 0;
     current = null;
@@ -572,18 +583,106 @@ describe('useVoiceDevice', () => {
         await current!.makeCall('pn1', '+1 555-111-1111');
       });
 
-      const earpiece = {
-        echoCancellation: true,
-        noiseSuppression: true,
-        autoGainControl: true,
-        deviceId: { ideal: 'id-2' },
-      };
+      expect(device.audio.setInputDevice).toHaveBeenCalledWith('id-2');
       expect(device.connect).toHaveBeenCalledWith(
         expect.objectContaining({
-          audioConstraints: earpiece,
-          rtcConstraints: { audio: earpiece },
+          audioConstraints: {
+            echoCancellation: true,
+            noiseSuppression: true,
+            autoGainControl: true,
+          },
+          rtcConstraints: {
+            audio: {
+              echoCancellation: true,
+              noiseSuppression: true,
+              autoGainControl: true,
+            },
+          },
         }),
       );
+    });
+
+    it('uses the chosen route for outgoing and incoming calls and remembers it', async () => {
+      androidInputs('Speakerphone', 'Headset earpiece');
+      const device = await initDevice();
+      device.connect.mockReturnValue({ on: vi.fn(), isMuted: vi.fn().mockReturnValue(false) });
+      await act(async () => {
+        await current!.selectMicrophone('id-1');
+      });
+      expect(current!.selectedMicrophoneId).toBe('id-1');
+      expect(window.localStorage.getItem('pstn-twilio.microphone')).toBe('id-1');
+      await act(async () => {
+        await current!.makeCall('pn1', '+15551111111');
+      });
+      expect(device.audio.setInputDevice).toHaveBeenCalledWith('id-1');
+      expect(device.connect).toHaveBeenCalledWith(
+        expect.objectContaining({
+          audioConstraints: {
+            echoCancellation: true,
+            noiseSuppression: true,
+            autoGainControl: true,
+          },
+        }),
+      );
+      act(() => current!.hangup());
+      const call = { on: vi.fn(), accept: vi.fn() };
+      act(() => device.emit('incoming', call));
+      await act(async () => {
+        await current!.accept();
+      });
+      expect(device.audio.setInputDevice).toHaveBeenCalledWith('id-1');
+      expect(call.accept).toHaveBeenCalledWith(
+        expect.objectContaining({
+          audioConstraints: {
+            echoCancellation: true,
+            noiseSuppression: true,
+            autoGainControl: true,
+          },
+        }),
+      );
+    });
+
+    it('switches an active call, retains the old selection on failure, and releases capture on hangup', async () => {
+      androidInputs('Speakerphone', 'Headset earpiece');
+      const device = await initDevice();
+      device.connect.mockReturnValue({ on: vi.fn(), isMuted: vi.fn().mockReturnValue(false) });
+      await act(async () => {
+        await current!.makeCall('pn1', '+15551111111');
+      });
+      await act(async () => {
+        await current!.selectMicrophone('id-1');
+      });
+      expect(device.audio.setInputDevice).toHaveBeenCalledWith('id-1');
+      device.audio.setInputDevice.mockRejectedValueOnce(new Error('Microphone is busy'));
+      await act(async () => {
+        await current!.selectMicrophone('id-2');
+      });
+      expect(current!.selectedMicrophoneId).toBe('id-1');
+      expect(current!.microphoneError).toBe('Microphone is busy');
+      act(() => current!.hangup());
+      expect(device.audio.unsetInputDevice).toHaveBeenCalled();
+    });
+
+    it('does not silently substitute a missing microphone', async () => {
+      androidInputs('Speakerphone', 'Headset earpiece');
+      const device = await initDevice();
+      await act(async () => {
+        await current!.selectMicrophone('id-1');
+      });
+      androidInputs('Headset earpiece');
+      // The remaining device gets a different id in a real device-change event.
+      Object.defineProperty(navigator, 'mediaDevices', {
+        configurable: true,
+        value: {
+          getUserMedia: mediaMock.getUserMedia,
+          enumerateDevices: vi.fn().mockResolvedValue([]),
+        },
+      });
+      await act(async () => {
+        await current!.makeCall('pn1', '+15551111111');
+      });
+      expect(device.connect).not.toHaveBeenCalled();
+      expect(current!.error).toContain('selected microphone is unavailable');
     });
 
     it('answers inbound calls on the earpiece too', async () => {
@@ -596,9 +695,16 @@ describe('useVoiceDevice', () => {
         await current!.accept();
       });
 
+      expect(device.audio.setInputDevice).toHaveBeenCalledWith('id-2');
       expect(call.accept).toHaveBeenCalledWith(
         expect.objectContaining({
-          rtcConstraints: { audio: expect.objectContaining({ deviceId: { ideal: 'id-2' } }) },
+          rtcConstraints: {
+            audio: {
+              echoCancellation: true,
+              noiseSuppression: true,
+              autoGainControl: true,
+            },
+          },
         }),
       );
     });
