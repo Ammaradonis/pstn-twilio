@@ -33,6 +33,10 @@ const lastDialQuerySchema = z.object({
   destination: z.string().min(1).max(256),
 });
 
+const outboundAnalyticsQuerySchema = z.object({
+  days: z.coerce.number().int().min(7).max(90).default(30),
+});
+
 const voicemailListQuerySchema = z.object({
   cursor: z.string().min(1).optional(),
   limit: z.coerce.number().int().min(1).max(100).default(25),
@@ -86,6 +90,18 @@ export class CallsController {
     @Param('intentId') intentId: string,
   ) {
     return this.calls.findByOutboundIntent(actorFromRequest(req), numberId, intentId);
+  }
+
+  // Keep this static route above :callId so Express never interprets
+  // "analytics" as a call identifier.
+  @Get('numbers/:numberId/calls/analytics')
+  outboundAnalytics(
+    @Req() req: ActorRequest,
+    @Param('numberId') numberId: string,
+    @Query(new ZodValidationPipe(outboundAnalyticsQuerySchema))
+    query: z.infer<typeof outboundAnalyticsQuerySchema>,
+  ) {
+    return this.calls.outboundAnalytics(actorFromRequest(req), numberId, query.days);
   }
 
   @Get('numbers/:numberId/calls/:callId')

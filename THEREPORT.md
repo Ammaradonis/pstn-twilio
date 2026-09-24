@@ -1369,6 +1369,16 @@ From the PSTN recipient's perspective, the incoming call shows the Twilio number
 
 ## 21. Needs and Missing Features
 
+**Implementation update (2026-09-24):** 21.1, 21.5, 21.6, 21.7, and 21.10
+are complete. Expired intents are purged on a timer; caller-ID validation uses
+a 60-second Redis cache; recording proxy responses stream; intents last five
+minutes; and Redis accelerates completed-webhook deduplication while the
+database remains the durable audit record. Call recordings are also available
+for playback and download in the call log and dashboard, although the dial
+screen still offers automatic download when a recording becomes ready. Hold,
+transfer, STIR/SHAKEN, shared-number permissions, scheduling, and PSTN
+callback fallback remain open work.
+
 ### 21.1 Intent Cleanup Job
 
 **Priority: High**  
@@ -1444,6 +1454,14 @@ A cron-based mechanism to schedule a call for a specific time. Useful for follow
 ---
 
 ## 22. Enhancement Suggestions
+
+**Implementation update (2026-09-24):** The actions in 22.1–22.8 and 22.10
+were assessed against the current softphone and are complete: five-minute
+single-use intents, an expiry response, 60-second caller-ID validation cache,
+intent retention cleanup, streamed recording delivery, Redis hot-path webhook
+deduplication with database fallback, startup credential validation, a
+one-hour call cap, per-number outbound outcome analytics, and Voice SDK
+2.18.5. The sections below retain the original rationale for those changes.
 
 ### 22.1 Extend Intent TTL to 5 Minutes
 
@@ -1558,18 +1576,22 @@ const dial = response.dial({
 
 ### 22.8 Add Outbound Call Analytics
 
-**Effort**: Medium  
-**Impact**: High for operational visibility.
+**Status: Implemented on 2026-09-24.**
 
-Add a `GET /api/numbers/:numberId/calls/analytics` endpoint that returns:
+`GET /api/numbers/:numberId/calls/analytics?days=7..90` now returns a
+per-number rolling aggregate from the application's webhook-backed call log.
+The dial screen displays its 30-day view without adding a Twilio REST call to
+the outbound setup path. It returns:
 
 - Total outbound calls (last 7/30 days)
 - Average duration
 - Connect rate (calls answered vs. total)
 - Failure breakdown (busy, no-answer, failed)
-- Average call quality (MOS, RTT, packet loss — from recordings' metadata or a new `CallMetric` table)
 
-Expose this in the dashboard. Currently the calls page is a raw list with no aggregation.
+Average call quality (MOS, RTT, packet loss) still needs a dedicated
+`CallMetric` ingestion pipeline backed by Voice Insights or browser SDK
+telemetry. It should be added only after defining retention, aggregation, and
+operator access requirements for that more sensitive operational data.
 
 ### 22.9 Implement Call Hold via Twilio Conference
 
@@ -1630,23 +1652,32 @@ The backend is well-structured. NestJS modules have clear responsibilities. Webh
 
 The frontend's `useVoiceDevice` hook is impressive in its handling of reconnection, token refresh, Android audio routing, and tab visibility recovery — areas where most softphone implementations fail in the field. The dial page's UX is thoughtful: readiness status pills, mic permission prompts, repeat-dial warnings, real-time call quality metrics, and in-call DTMF are all above average.
 
-The main weaknesses cluster around three areas:
+The operational safeguards identified in the original review are now in place.
+Outbound authorization is a five-minute, single-use transaction; rejected or
+expired intents receive an audible reason; a background task removes stale
+intents; caller-ID inventory validation is cached in Redis; recording media is
+streamed; and every outbound `<Dial>` has a one-hour limit. The dial page also
+shows rolling 30-day call volume, answer rate, average duration, and outcome
+counts without involving Twilio in the call setup path.
 
-**Operational gaps**: The 2-minute intent TTL can cause silent failures. Expired intents are never cleaned up. Twilio recording downloads are buffered entirely in server memory. There is no call duration limit. These are correctness and reliability issues that should be fixed before high-volume production use.
+The remaining professional-use gaps are conference-based hold and transfer,
+STIR/SHAKEN onboarding, shared-number permissions, scheduled calls, and a
+quality-metrics pipeline for MOS, RTT, jitter, and packet loss. Calls and
+recordings can already be reviewed from the call log and dashboard, while the
+dial screen continues to offer automatic recording download for the selected
+call.
 
-**Missing professional features**: No call hold, no transfer, no recording management UI, no STIR/SHAKEN, no analytics. For personal use, these are acceptable gaps. For any business use case, they become blockers.
+Twilio remains the PSTN provider for every call. The caller-ID validation cache
+removes its REST request from the usual preparation path, but the architecture
+intentionally retains Twilio-specific primitives such as Voice Access Tokens,
+TwiML, webhook signatures, and recording APIs. A provider abstraction should
+be introduced only if a second carrier is a concrete product requirement.
 
-**Twilio dependency depth**: The entire dial feature is Twilio-only. Every call flows through Twilio's Voice infrastructure. The live caller ID validation adds Twilio REST API latency to every call setup. There is no abstraction layer that would allow swapping to a different PSTN provider. This is a vendor lock-in risk that should be acknowledged and, if necessary, mitigated by an abstraction interface at the service layer.
-
-The most impactful near-term improvements are:
-
-1. Extend the intent TTL to 5 minutes and add a user-visible error when intent expiry causes a call to fail.
-2. Cache the Twilio caller ID validation result in Redis (60-second TTL) to remove it from the call hot path.
-3. Add an intent cleanup job to prevent table growth.
-4. Switch recording downloads from auto-download to an explicit download button, and stream rather than buffer.
-5. Upgrade the Twilio Voice SDK to remove the patched version workaround.
-
-These five changes, which represent at most a few days of development effort, would substantially improve the reliability, performance, and user experience of the dial feature.
+The next architectural addition should be conference-based call control. It
+would establish the state model needed for hold, warm transfer, cold transfer,
+and supervisor participation while preserving the existing intent and webhook
+security boundaries. Voice Insights or browser telemetry can then populate a
+separate quality-metrics store for longer-term performance analysis.
 
 ---
 

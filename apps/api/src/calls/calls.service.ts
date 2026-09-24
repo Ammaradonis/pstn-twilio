@@ -12,6 +12,7 @@ import {
   normalizeDialablePhoneNumber,
   type CallDto,
   type LastDialDto,
+  type OutboundCallAnalyticsDto,
   type PaginatedDto,
   type VoicemailDto,
 } from '@pstn-twilio/shared';
@@ -181,6 +182,62 @@ export class CallsService {
       callId: call.id,
       destinationNumber: normalizedDestination,
       lastDialedAt: (call.startedAt ?? call.createdAt).toISOString(),
+    };
+  }
+
+  /**
+   * Summarize the operational results of calls made from a single number.
+   * This reads the application's webhook-backed call log, keeping analytics
+   * off the synchronous Twilio and browser dialing paths.
+   */
+  async outboundAnalytics(
+    actor: ActorContext,
+    numberId: string,
+    windowDays: number,
+  ): Promise<OutboundCallAnalyticsDto> {
+    const phoneNumber = await this.assertOwnership(actor, numberId);
+    const since = new Date(Date.now() - windowDays * 24 * 60 * 60 * 1000);
+    const where = {
+      phoneNumberId: phoneNumber.id,
+      direction: CallDirection.OUTBOUND,
+      createdAt: { gte: since },
+    };
+
+    const [totalCalls, answeredCalls, duration, statuses] = await Promise.all([
+      this.prisma.call.count({ where }),
+      this.prisma.call.count({ where: { ...where, answeredAt: { not: null } } }),
+      this.prisma.call.aggregate({ where, _avg: { durationSeconds: true } }),
+      this.prisma.call.groupBy({ by: ['status'], where, _count: { _all: true } }),
+    ]);
+
+    const statusCounts = Object.values(CallStatus).reduce(
+      (counts, status) => {
+        counts[status] = 0;
+        return counts;
+      },
+      {} as Record<CallStatus, number>,
+    );
+    for (const row of statuses) statusCounts[row.status] = row._count._all;
+
+    const unsuccessfulCalls =
+      statusCounts[CallStatus.BUSY] +
+      statusCounts[CallStatus.FAILED] +
+      statusCounts[CallStatus.NO_ANSWER] +
+      statusCounts[CallStatus.CANCELED];
+    const averageDuration = duration._avg.durationSeconds;
+
+    return {
+      windowDays,
+      since: since.toISOString(),
+      generatedAt: new Date().toISOString(),
+      totalCalls,
+      answeredCalls,
+      answerRatePercent:
+        totalCalls === 0 ? null : Math.round((answeredCalls / totalCalls) * 1000) / 10,
+      averageDurationSeconds:
+        averageDuration === null ? null : Math.round(averageDuration * 10) / 10,
+      unsuccessfulCalls,
+      statusCounts,
     };
   }
 

@@ -71,14 +71,20 @@ flags `voiceEnabled`/`smsEnabled`/`mmsEnabled`, `pageSize`, and a discriminator
 
 ## Calls
 
-| Method | Path                                   | Body / Query                              | Returns                                                                                            |
-| ------ | -------------------------------------- | ----------------------------------------- | -------------------------------------------------------------------------------------------------- |
-| GET    | `/api/numbers/:numberId/calls`         | `?cursor&limit&status`                    | `{ items: CallDto[], total, nextCursor? }`                                                         |
-| GET    | `/api/numbers/:numberId/last-dial`     | `?destination`                            | `LastDialDto \| null`                                                                              |
-| GET    | `/api/numbers/:numberId/calls/:callId` | —                                         | `CallDto`                                                                                          |
-| POST   | `/api/calls/prepare-outbound`          | `{ selectedNumberId, destinationNumber }` | `{ outboundIntentId, identity, selectedNumberId, selectedCallerId, destinationNumber, expiresAt }` |
-| POST   | `/api/calls/:callId/hangup`            | —                                         | `CallDto`                                                                                          |
-| POST   | `/api/calls/:callId/notes`             | `{ note }`                                | `CallDto`                                                                                          |
+| Method | Path                                     | Body / Query                              | Returns                                                                                            |
+| ------ | ---------------------------------------- | ----------------------------------------- | -------------------------------------------------------------------------------------------------- |
+| GET    | `/api/numbers/:numberId/calls`           | `?cursor&limit&status`                    | `{ items: CallDto[], total, nextCursor? }`                                                         |
+| GET    | `/api/numbers/:numberId/calls/analytics` | `?days=7..90` (default 30)                | `OutboundCallAnalyticsDto`                                                                         |
+| GET    | `/api/numbers/:numberId/last-dial`       | `?destination`                            | `LastDialDto \| null`                                                                              |
+| GET    | `/api/numbers/:numberId/calls/:callId`   | —                                         | `CallDto`                                                                                          |
+| POST   | `/api/calls/prepare-outbound`            | `{ selectedNumberId, destinationNumber }` | `{ outboundIntentId, identity, selectedNumberId, selectedCallerId, destinationNumber, expiresAt }` |
+| POST   | `/api/calls/:callId/hangup`              | —                                         | `CallDto`                                                                                          |
+| POST   | `/api/calls/:callId/notes`               | `{ note }`                                | `CallDto`                                                                                          |
+
+`OutboundCallAnalyticsDto` is calculated from the signed Twilio webhook call
+log for the selected number. It includes call volume, answered-call rate,
+average duration, a count of unsuccessful calls, and per-status counts. The
+endpoint does not call Twilio, so it cannot add latency to call setup.
 
 ## Voice (browser softphone)
 

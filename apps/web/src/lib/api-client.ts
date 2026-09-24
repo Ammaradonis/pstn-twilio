@@ -11,6 +11,7 @@ import type {
   HealthStatusDto,
   LastDialDto,
   NumberSearchInput,
+  OutboundCallAnalyticsDto,
   OutboundCallPreparationDto,
   PaginatedDto,
   PhoneNumberDto,
@@ -232,6 +233,10 @@ export const api = {
     lastDial: (numberId: string, destination: string) =>
       request<LastDialDto | null>(`/numbers/${numberId}/last-dial`, {
         query: { destination },
+      }),
+    outboundAnalytics: (numberId: string, days = 30) =>
+      request<OutboundCallAnalyticsDto>(`/numbers/${numberId}/calls/analytics`, {
+        query: { days },
       }),
     hangup: (callId: string) => request<CallDto>(`/calls/${callId}/hangup`, { method: 'POST' }),
     recordingMedia: (numberId: string, callId: string, recordingId: string) =>

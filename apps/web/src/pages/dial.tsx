@@ -3,6 +3,7 @@ import {
   type LastDialDto,
   type OutboundCallPreparationDto,
 } from '@pstn-twilio/shared';
+import { useQuery } from '@tanstack/react-query';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useParams } from 'react-router-dom';
 
@@ -54,6 +55,13 @@ function StatusPill({ label, ok, pending }: { label: string; ok: boolean; pendin
   );
 }
 
+function formatDuration(seconds: number | null): string {
+  if (seconds === null) return '—';
+  const rounded = Math.round(seconds);
+  if (rounded < 60) return `${rounded}s`;
+  return `${Math.floor(rounded / 60)}m ${rounded % 60}s`;
+}
+
 export function DialPage() {
   const { numberId } = useParams<{ numberId: string }>();
   const [destination, setDestination] = useState('');
@@ -65,6 +73,14 @@ export function DialPage() {
   const [recordCall, setRecordCall] = useState<boolean>(readRecordCallsPreference);
   const [activeCallRecorded, setActiveCallRecorded] = useState(false);
   const voice = useVoiceDevice();
+  const outboundAnalytics = useQuery({
+    queryKey: ['calls', numberId, 'analytics', 30],
+    queryFn: () => api.calls.outboundAnalytics(numberId!, 30),
+    enabled: Boolean(numberId),
+    staleTime: 60_000,
+    refetchInterval: 60_000,
+    refetchOnWindowFocus: false,
+  });
   const inCallMode =
     voice.active ||
     voice.canSendDigits ||
@@ -316,6 +332,56 @@ export function DialPage() {
           <p className="mt-2 text-xs text-slate-500">
             Caller ID: <span className="font-mono">{callerId}</span>
           </p>
+        )}
+      </div>
+
+      <div className="rounded border border-slate-200 bg-white p-4">
+        <div className="flex items-baseline justify-between gap-3">
+          <h2 className="text-sm font-semibold text-slate-700">Outbound performance</h2>
+          <span className="text-xs text-slate-500">Last 30 days</span>
+        </div>
+        {outboundAnalytics.isLoading && <p className="mt-2 text-sm text-slate-500">Loading…</p>}
+        {outboundAnalytics.isError && (
+          <p className="mt-2 text-sm text-amber-800">
+            Outbound performance is unavailable right now.
+          </p>
+        )}
+        {outboundAnalytics.data && (
+          <div className="mt-3 grid gap-2 sm:grid-cols-2 lg:grid-cols-4">
+            <div className="rounded border border-slate-100 bg-slate-50 p-2.5">
+              <p className="text-xs text-slate-500">Calls placed</p>
+              <p className="mt-0.5 text-lg font-semibold text-slate-900">
+                {outboundAnalytics.data.totalCalls}
+              </p>
+            </div>
+            <div className="rounded border border-slate-100 bg-slate-50 p-2.5">
+              <p className="text-xs text-slate-500">Answer rate</p>
+              <p className="mt-0.5 text-lg font-semibold text-slate-900">
+                {outboundAnalytics.data.answerRatePercent === null
+                  ? '—'
+                  : `${outboundAnalytics.data.answerRatePercent}%`}
+              </p>
+              <p className="text-xs text-slate-500">
+                {outboundAnalytics.data.answeredCalls} answered
+              </p>
+            </div>
+            <div className="rounded border border-slate-100 bg-slate-50 p-2.5">
+              <p className="text-xs text-slate-500">Average duration</p>
+              <p className="mt-0.5 text-lg font-semibold text-slate-900">
+                {formatDuration(outboundAnalytics.data.averageDurationSeconds)}
+              </p>
+            </div>
+            <div className="rounded border border-slate-100 bg-slate-50 p-2.5">
+              <p className="text-xs text-slate-500">Unsuccessful</p>
+              <p className="mt-0.5 text-lg font-semibold text-slate-900">
+                {outboundAnalytics.data.unsuccessfulCalls}
+              </p>
+              <p className="text-xs text-slate-500">
+                {outboundAnalytics.data.statusCounts.NO_ANSWER} no answer ·{' '}
+                {outboundAnalytics.data.statusCounts.BUSY} busy
+              </p>
+            </div>
+          </div>
         )}
       </div>
 

@@ -91,6 +91,22 @@ export interface LastDialDto {
   lastDialedAt: string;
 }
 
+/**
+ * Aggregate outcomes for calls placed from one provisioned number.
+ * Values are scoped to the requested rolling time window.
+ */
+export interface OutboundCallAnalyticsDto {
+  windowDays: number;
+  since: string;
+  generatedAt: string;
+  totalCalls: number;
+  answeredCalls: number;
+  answerRatePercent: number | null;
+  averageDurationSeconds: number | null;
+  unsuccessfulCalls: number;
+  statusCounts: Record<CallStatus, number>;
+}
+
 export interface CallRecordingDto {
   id: string;
   twilioCallSid: string;
