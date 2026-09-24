@@ -1145,8 +1145,8 @@ function installRecoveryListeners(): void {
   document.addEventListener('visibilitychange', recoverNow);
   // General safety net: if the Voice SDK ever emits an unhandled rejection with
   // a reconnectable error code, recover gracefully instead of surfacing it to
-  // the user. The 2.18.4 re-register bug that originally triggered this is
-  // fixed in 2.18.5, but the handler is retained as a defensive measure.
+  // the user. SDK 2.18.5 fixes a false token error after signaling drops, but
+  // retain the handler as a safety net for other reconnectable SDK failures.
   window.addEventListener('unhandledrejection', (event) => {
     const code = getVoiceErrorCode(event.reason);
     if (!code || !RECONNECTABLE_ERROR_CODES.has(code) || !runtime.device) return;

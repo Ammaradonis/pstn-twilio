@@ -305,7 +305,6 @@ export class VoiceWebhookService {
 
     const dedupeKey = `voice:status:${callSid}:${statusRaw}`;
     if (await this.alreadyProcessed(dedupeKey)) return;
-    await this.recordWebhookEvent(dedupeKey, 'voice.status', callSid, params);
 
     const existing =
       (await this.prisma.call.findUnique({ where: { twilioCallSid: callSid } })) ??
@@ -317,9 +316,12 @@ export class VoiceWebhookService {
     const existingMatchesCallbackCall = existing?.twilioCallSid === callSid;
 
     const updateData: Record<string, unknown> = {
-      status: newStatus,
+      status: existing?.status ?? newStatus,
       rawPayload: params as never,
     };
+    if (!existing || CALL_STATUS_RANK[newStatus] > CALL_STATUS_RANK[existing.status]) {
+      updateData.status = newStatus;
+    }
     if (duration !== null) updateData.durationSeconds = duration;
     if (params.Price) updateData.price = params.Price;
     if (params.PriceUnit) updateData.priceUnit = params.PriceUnit;
@@ -362,6 +364,7 @@ export class VoiceWebhookService {
       numberId: call.phoneNumberId,
       call: toCallDto(call),
     });
+    await this.completeWebhookEvent(dedupeKey, 'voice.status', callSid, params);
   }
 
   async handleRecording(
@@ -376,12 +379,6 @@ export class VoiceWebhookService {
     const isVoicemail = options.kind === 'voicemail';
     const dedupeKey = `voice:recording:${recordingSid}:${statusRaw}`;
     if (await this.alreadyProcessed(dedupeKey)) return;
-    await this.recordWebhookEvent(
-      dedupeKey,
-      isVoicemail ? 'voice.voicemail' : 'voice.recording',
-      recordingSid,
-      params,
-    );
 
     const call = await this.findCallForRecording(params);
     const existingRecording = await this.prisma.callRecording.findUnique({
@@ -425,18 +422,25 @@ export class VoiceWebhookService {
       },
     });
 
-    if (!call) return;
+    if (call) {
+      const updatedCall = await this.prisma.call.findUnique({
+        where: { id: call.id },
+        include: CALL_WITH_RECORDINGS_INCLUDE,
+      });
+      if (updatedCall) {
+        this.realtime.callStatusUpdated({
+          numberId: updatedCall.phoneNumberId,
+          call: toCallDto(updatedCall),
+        });
+      }
+    }
 
-    const updatedCall = await this.prisma.call.findUnique({
-      where: { id: call.id },
-      include: CALL_WITH_RECORDINGS_INCLUDE,
-    });
-    if (!updatedCall) return;
-
-    this.realtime.callStatusUpdated({
-      numberId: updatedCall.phoneNumberId,
-      call: toCallDto(updatedCall),
-    });
+    await this.completeWebhookEvent(
+      dedupeKey,
+      isVoicemail ? 'voice.voicemail' : 'voice.recording',
+      recordingSid,
+      params,
+    );
   }
 
   handleFallback(): string {
@@ -645,21 +649,36 @@ export class VoiceWebhookService {
   }
 
   private async alreadyProcessed(dedupeKey: string): Promise<boolean> {
-    // Fast path: Redis SETNX is O(1) and avoids a PostgreSQL read on every
-    // webhook. The key expires after 24 hours so the table doesn't grow.
-    // Falls back to a PostgreSQL lookup if Redis is unavailable.
+    // Redis stores only completed callbacks. Claiming the key before the
+    // database work can suppress Twilio's retry if processing later fails.
     try {
       const redisKey = `webhook:processed:${dedupeKey}`;
-      // SET EX NX: sets the key with a TTL only if it does not exist.
-      // ioredis returns 'OK' when the key was created, null when it already
-      // existed (i.e. already processed).
-      const set = await this.redis.client.set(redisKey, '1', 'EX', DEDUPE_TTL_SECONDS, 'NX');
-      if (set === null) return true; // key existed → already processed
-      return false; // key was new → not yet processed
+      if ((await this.redis.client.get(redisKey)) === '1') return true;
     } catch {
-      // Redis unavailable: fall through to the PostgreSQL check.
-      const found = await this.prisma.webhookEvent.findUnique({ where: { dedupeKey } });
-      return Boolean(found);
+      // Redis unavailable: fall through to the durable PostgreSQL record.
+    }
+
+    const found = await this.prisma.webhookEvent.findUnique({ where: { dedupeKey } });
+    if (!found) return false;
+
+    // Warm Redis when an older durable record is found after a cache miss.
+    this.redis.client
+      .set(`webhook:processed:${dedupeKey}`, '1', 'EX', DEDUPE_TTL_SECONDS)
+      .catch(() => undefined);
+    return true;
+  }
+
+  private async completeWebhookEvent(
+    dedupeKey: string,
+    eventType: string,
+    twilioSid: string | null,
+    payload: Record<string, unknown>,
+  ): Promise<void> {
+    await this.recordWebhookEvent(dedupeKey, eventType, twilioSid, payload);
+    try {
+      await this.redis.client.set(`webhook:processed:${dedupeKey}`, '1', 'EX', DEDUPE_TTL_SECONDS);
+    } catch {
+      // The database record remains the durable deduplication source.
     }
   }
 

@@ -118,7 +118,8 @@ export class VoiceService implements OnModuleInit, OnModuleDestroy {
       codecPreferences: ['opus', 'pcmu'],
       edge: ['frankfurt', 'dublin', 'ashburn'],
       dscp: true,
-      logLevel: 1,
+      // Twilio Voice SDK levels are 0=trace, 1=debug, 2=info, 3=warn, 4=error.
+      logLevel: 3,
       closeProtection: true,
       enableImprovedSignalingErrorPrecision: true,
       tokenRefreshMs: 60_000,
