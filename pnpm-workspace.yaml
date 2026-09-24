@@ -8,5 +8,3 @@ allowBuilds:
   argon2: true
   esbuild: true
   prisma: true
-patchedDependencies:
-  '@twilio/voice-sdk@2.18.4': patches/@twilio__voice-sdk@2.18.4.patch

@@ -140,7 +140,9 @@ export class CallsController {
     res.setHeader('Content-Type', media.contentType);
     res.setHeader('Content-Disposition', `inline; filename="${media.filename}"`);
     res.setHeader('Cache-Control', 'private, no-store');
-    res.send(media.body);
+    // Stream the MP3 directly to the client instead of buffering the entire
+    // file in memory — prevents RAM exhaustion on long dual-channel recordings.
+    media.stream.pipe(res);
   }
 
   @Get('voicemail/:recordingId/media')
@@ -151,6 +153,6 @@ export class CallsController {
     res.setHeader('Content-Type', media.contentType);
     res.setHeader('Content-Disposition', `inline; filename="${media.filename}"`);
     res.setHeader('Cache-Control', 'private, no-store');
-    res.send(media.body);
+    media.stream.pipe(res);
   }
 }

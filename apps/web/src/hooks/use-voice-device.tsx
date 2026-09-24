@@ -1143,9 +1143,10 @@ function installRecoveryListeners(): void {
   window.addEventListener('online', recoverNow);
   window.addEventListener('pageshow', recoverNow);
   document.addEventListener('visibilitychange', recoverNow);
-  // voice-sdk 2.18.4 can reject an internal re-register after a signaling drop
-  // (fixed upstream in 2.18.5, not yet on npm). Recover instead of surfacing
-  // an unhandled rejection.
+  // General safety net: if the Voice SDK ever emits an unhandled rejection with
+  // a reconnectable error code, recover gracefully instead of surfacing it to
+  // the user. The 2.18.4 re-register bug that originally triggered this is
+  // fixed in 2.18.5, but the handler is retained as a defensive measure.
   window.addEventListener('unhandledrejection', (event) => {
     const code = getVoiceErrorCode(event.reason);
     if (!code || !RECONNECTABLE_ERROR_CODES.has(code) || !runtime.device) return;

@@ -4,6 +4,8 @@ import {
   Injectable,
   Logger,
   NotFoundException,
+  OnModuleDestroy,
+  OnModuleInit,
 } from '@nestjs/common';
 import { UserRole } from '@prisma/client';
 import {
@@ -15,11 +17,24 @@ import twilio from 'twilio';
 
 import { AuditService } from '../audit/audit.service';
 import { PrismaService } from '../prisma/prisma.service';
+import { RedisService } from '../redis/redis.service';
 import { TwilioService } from '../twilio/twilio.service';
 
 const TOKEN_TTL_SECONDS = 60 * 60; // 1 hour
 const TOKEN_CLOCK_SKEW_SECONDS = 5 * 60;
-const OUTBOUND_INTENT_TTL_MS = 2 * 60 * 1000;
+// 5 minutes: covers slow-network Device.connect() negotiation, Twilio webhook
+// latency spikes, and legitimate Twilio webhook retries without needing
+// per-call intent refreshes.
+const OUTBOUND_INTENT_TTL_MS = 5 * 60 * 1000;
+// How long to cache a "this Twilio number is valid" result in Redis.
+// 60 seconds removes the live REST call from the call hot-path while still
+// detecting number deactivation within a minute.
+const CALLER_ID_CACHE_TTL_SECONDS = 60;
+// Cleanup interval for expired/consumed OutboundCallIntents.
+// Runs every 30 minutes; deletes rows older than 24 hours to prevent the
+// table from growing indefinitely.
+const INTENT_CLEANUP_INTERVAL_MS = 30 * 60 * 1000;
+const INTENT_CLEANUP_AGE_MS = 24 * 60 * 60 * 1000;
 
 interface ActorContext {
   userId: string;
@@ -29,14 +44,43 @@ interface ActorContext {
 }
 
 @Injectable()
-export class VoiceService {
+export class VoiceService implements OnModuleInit, OnModuleDestroy {
   private readonly logger = new Logger(VoiceService.name);
+  private cleanupTimer: ReturnType<typeof setInterval> | null = null;
 
   constructor(
     private readonly prisma: PrismaService,
     private readonly twilio: TwilioService,
     private readonly audit: AuditService,
+    private readonly redis: RedisService,
   ) {}
+
+  onModuleInit(): void {
+    // Start the intent cleanup loop after a short delay so the first run does
+    // not coincide with application startup DB pressure.
+    this.cleanupTimer = setInterval(
+      () => void this.purgeExpiredIntents(),
+      INTENT_CLEANUP_INTERVAL_MS,
+    );
+  }
+
+  onModuleDestroy(): void {
+    if (this.cleanupTimer) clearInterval(this.cleanupTimer);
+  }
+
+  private async purgeExpiredIntents(): Promise<void> {
+    const cutoff = new Date(Date.now() - INTENT_CLEANUP_AGE_MS);
+    try {
+      const result = await this.prisma.outboundCallIntent.deleteMany({
+        where: { expiresAt: { lt: cutoff } },
+      });
+      if (result.count > 0) {
+        this.logger.log(`Purged ${result.count} expired OutboundCallIntent rows`);
+      }
+    } catch (err) {
+      this.logger.warn(`Intent cleanup failed: ${err instanceof Error ? err.message : 'unknown'}`);
+    }
+  }
 
   async issueToken(actor: ActorContext, numberId?: string): Promise<VoiceTokenDto> {
     if (numberId) await this.assertOwnership(actor, numberId);
@@ -156,6 +200,17 @@ export class VoiceService {
       phoneNumberE164: string;
     },
   ): Promise<void> {
+    // Fast path: skip the Twilio REST call for 60 seconds after a known-good
+    // validation. This removes ~200 ms from every outbound call setup while
+    // still detecting number deactivation within a minute.
+    const cacheKey = `twilio:callerid:valid:${phoneNumber.id}`;
+    try {
+      const cached = await this.redis.client.get(cacheKey);
+      if (cached === 'true') return;
+    } catch {
+      // Redis unavailable: fall through to live check.
+    }
+
     try {
       const remote = await this.twilio.client.api.v2010
         .accounts(this.twilio.accountSid)
@@ -169,11 +224,20 @@ export class VoiceService {
       if (capabilities.voice !== true) {
         throw new BadRequestException('Selected number no longer has voice capability in Twilio');
       }
+
+      // Cache the positive result. Fire-and-forget; a Redis failure here does
+      // not affect the call—only the next call pays the live-check cost.
+      this.redis.client
+        .set(cacheKey, 'true', 'EX', CALLER_ID_CACHE_TTL_SECONDS)
+        .catch(() => undefined);
     } catch (err) {
       if (err instanceof BadRequestException) throw err;
       const status = (err as { status?: number; code?: number })?.status;
       const code = (err as { status?: number; code?: number })?.code;
       if (status === 404 || code === 20404) {
+        // Evict any stale cache entry so the next attempt does not return a
+        // false positive.
+        this.redis.client.del(cacheKey).catch(() => undefined);
         await this.prisma.phoneNumber
           .update({ where: { id: phoneNumber.id }, data: { active: false } })
           .catch(() => undefined);

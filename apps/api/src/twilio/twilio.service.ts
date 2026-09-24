@@ -1,18 +1,32 @@
-import { Injectable, Logger } from '@nestjs/common';
+import { Readable } from 'stream';
+
+import { Injectable, Logger, OnModuleInit } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import twilio, { type Twilio, validateRequest } from 'twilio';
 
 export interface TwilioRecordingMedia {
-  body: Buffer;
+  stream: Readable;
   contentType: string;
 }
 
 @Injectable()
-export class TwilioService {
+export class TwilioService implements OnModuleInit {
   private readonly logger = new Logger(TwilioService.name);
   private clientInstance: Twilio | null = null;
 
   constructor(private readonly config: ConfigService) {}
+
+  async onModuleInit(): Promise<void> {
+    // Validate Twilio credentials at startup so misconfiguration is caught
+    // immediately rather than at the moment of the first call attempt.
+    const valid = await this.validateCredentials();
+    if (!valid) {
+      this.logger.error(
+        'Twilio credentials are invalid or the TwiML App Voice URL is misconfigured. ' +
+          'Outbound calls will fail. Run the Twilio diagnostics check and fix the configuration.',
+      );
+    }
+  }
 
   get accountSid(): string {
     const sid = this.config.get<string>('TWILIO_ACCOUNT_SID');
@@ -121,9 +135,14 @@ export class TwilioService {
     if (!response.ok) {
       throw new Error(`Twilio recording media request failed: ${response.status}`);
     }
-    const body = Buffer.from(await response.arrayBuffer());
+    if (!response.body) {
+      throw new Error('Twilio recording media response has no body');
+    }
+    // Stream the MP3 directly to the caller instead of buffering the entire
+    // file in server memory. Dual-channel recordings of long calls can exceed
+    // 100 MB, which would exhaust RAM on small instances.
     return {
-      body,
+      stream: Readable.fromWeb(response.body as Parameters<typeof Readable.fromWeb>[0]),
       contentType: response.headers.get('content-type') ?? 'audio/mpeg',
     };
   }

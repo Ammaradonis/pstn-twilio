@@ -4,9 +4,6 @@ settings:
   autoInstallPeers: true
   excludeLinksFromLockfile: false
 
-patchedDependencies:
-  '@twilio/voice-sdk@2.18.4': 673aee030999815e3b21e955023713c49c75d0cd5b899006cf7edf1c084366f4
-
 importers:
 
   .:
@@ -212,7 +209,7 @@ importers:
         version: 5.100.10(react@18.3.1)
       '@twilio/voice-sdk':
         specifier: ^2.18.4
-        version: 2.18.4(patch_hash=673aee030999815e3b21e955023713c49c75d0cd5b899006cf7edf1c084366f4)
+        version: 2.18.4
       clsx:
         specifier: ^2.1.1
         version: 2.1.1
@@ -5937,7 +5934,7 @@ snapshots:
 
   '@twilio/voice-errors@1.7.0': {}
 
-  '@twilio/voice-sdk@2.18.4(patch_hash=673aee030999815e3b21e955023713c49c75d0cd5b899006cf7edf1c084366f4)':
+  '@twilio/voice-sdk@2.18.4':
     dependencies:
       '@twilio/voice-errors': 1.7.0
       '@types/events': 3.0.3

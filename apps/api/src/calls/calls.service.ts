@@ -1,3 +1,5 @@
+import { Readable } from 'stream';
+
 import {
   BadRequestException,
   ForbiddenException,
@@ -37,7 +39,7 @@ interface ListInput {
 }
 
 export interface RecordingMediaResult {
-  body: Buffer;
+  stream: Readable;
   contentType: string;
   filename: string;
 }

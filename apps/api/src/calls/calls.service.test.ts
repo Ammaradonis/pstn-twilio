@@ -1,3 +1,5 @@
+import { Readable } from 'stream';
+
 import { BadRequestException, ForbiddenException, NotFoundException } from '@nestjs/common';
 import { CallDirection, CallStatus, RecordingStatus, UserRole } from '@prisma/client';
 import { describe, expect, it, vi } from 'vitest';
@@ -448,7 +450,7 @@ describe('CallsService.getRecordingMedia', () => {
     const twilio = {
       client: { calls: vi.fn() },
       fetchRecordingMedia: vi.fn().mockResolvedValue({
-        body: Buffer.from('mp3-bytes'),
+        stream: Readable.from(Buffer.from('mp3-bytes')),
         contentType: 'audio/mpeg',
       }),
     };
@@ -464,7 +466,7 @@ describe('CallsService.getRecordingMedia', () => {
     expect(twilio.fetchRecordingMedia).toHaveBeenCalledWith('RE1');
     expect(media.contentType).toBe('audio/mpeg');
     expect(media.filename).toBe('RE1.mp3');
-    expect(media.body.toString()).toBe('mp3-bytes');
+    expect(media.stream).toBeInstanceOf(Readable);
   });
 });
 
@@ -495,7 +497,7 @@ describe('CallsService.getVoicemailMedia', () => {
     const twilio = {
       client: { calls: vi.fn() },
       fetchRecordingMedia: vi.fn().mockResolvedValue({
-        body: Buffer.from('mp3-bytes'),
+        stream: Readable.from(Buffer.from('mp3-bytes')),
         contentType: 'audio/mpeg',
       }),
     };
@@ -505,7 +507,7 @@ describe('CallsService.getVoicemailMedia', () => {
 
     expect(twilio.fetchRecordingMedia).toHaveBeenCalledWith('RE1');
     expect(media.filename).toBe('RE1.mp3');
-    expect(media.body.toString()).toBe('mp3-bytes');
+    expect(media.stream).toBeInstanceOf(Readable);
   });
 
   it('does not expose normal call recordings through voicemail media', async () => {

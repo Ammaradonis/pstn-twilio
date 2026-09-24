@@ -3,7 +3,7 @@ import { describe, expect, it, vi } from 'vitest';
 
 import { VoiceWebhookService } from './voice.service';
 
-function buildService(overrides: { prisma?: any; twilio?: any; realtime?: any } = {}) {
+function buildService(overrides: { prisma?: any; twilio?: any; realtime?: any; redis?: any } = {}) {
   const prisma = overrides.prisma ?? {
     webhookEvent: {
       findUnique: vi.fn().mockResolvedValue(null),
@@ -33,7 +33,19 @@ function buildService(overrides: { prisma?: any; twilio?: any; realtime?: any } 
     callInboundRinging: vi.fn(),
     callStatusUpdated: vi.fn(),
   };
-  return { service: new VoiceWebhookService(prisma, twilio, realtime), prisma, twilio, realtime };
+  // Mock Redis: SET NX returns 'OK' (new key → not a duplicate) by default.
+  const redis = overrides.redis ?? {
+    client: {
+      set: vi.fn().mockResolvedValue('OK'),
+    },
+  };
+  return {
+    service: new VoiceWebhookService(prisma, twilio, realtime, redis),
+    prisma,
+    twilio,
+    realtime,
+    redis,
+  };
 }
 
 async function flushAsyncWork(): Promise<void> {
@@ -677,7 +689,9 @@ describe('VoiceWebhookService.handleStatus', () => {
       phoneNumber: { findUnique: vi.fn() },
       call: { findUnique: vi.fn(), update: vi.fn(), create: vi.fn() },
     };
-    const { service, realtime } = buildService({ prisma });
+    // Redis SET NX returns null when the key already exists → already processed.
+    const redis = { client: { set: vi.fn().mockResolvedValue(null) } };
+    const { service, realtime } = buildService({ prisma, redis });
     await service.handleStatus({ CallSid: 'CA1', CallStatus: 'completed' });
     expect(prisma.call.update).not.toHaveBeenCalled();
     expect(prisma.call.create).not.toHaveBeenCalled();

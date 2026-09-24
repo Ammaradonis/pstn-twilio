@@ -6,7 +6,7 @@ import { describe, expect, it, vi } from 'vitest';
 
 import { VoiceService } from './voice.service';
 
-function buildService(overrides: { prisma?: any; twilio?: any; audit?: any } = {}) {
+function buildService(overrides: { prisma?: any; twilio?: any; audit?: any; redis?: any } = {}) {
   const incomingNumberFetch = vi.fn().mockResolvedValue({
     phoneNumber: '+15552222222',
     capabilities: { voice: true },
@@ -17,8 +17,9 @@ function buildService(overrides: { prisma?: any; twilio?: any; audit?: any } = {
     outboundCallIntent: {
       create: vi.fn().mockResolvedValue({
         id: 'intent1',
-        expiresAt: new Date(Date.now() + 120_000),
+        expiresAt: new Date(Date.now() + 300_000),
       }),
+      deleteMany: vi.fn().mockResolvedValue({ count: 0 }),
     },
   };
   const twilio = overrides.twilio ?? {
@@ -41,7 +42,16 @@ function buildService(overrides: { prisma?: any; twilio?: any; audit?: any } = {
     },
   };
   const audit = overrides.audit ?? { log: vi.fn().mockResolvedValue(undefined) };
-  return { service: new VoiceService(prisma, twilio, audit), prisma, twilio, audit };
+  // Mock Redis: default returns null from `get` (cache miss) so the live
+  // Twilio check runs; `set` and `del` are no-ops.
+  const redis = overrides.redis ?? {
+    client: {
+      get: vi.fn().mockResolvedValue(null),
+      set: vi.fn().mockResolvedValue('OK'),
+      del: vi.fn().mockResolvedValue(1),
+    },
+  };
+  return { service: new VoiceService(prisma, twilio, audit, redis), prisma, twilio, audit, redis };
 }
 
 function decodeJwtPart<T>(token: string, index: number): T {

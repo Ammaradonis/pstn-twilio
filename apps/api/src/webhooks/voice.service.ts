@@ -14,9 +14,14 @@ import twilio from 'twilio';
 
 import { PrismaService } from '../prisma/prisma.service';
 import { RealtimeService } from '../realtime/realtime.service';
+import { RedisService } from '../redis/redis.service';
 import { TwilioService } from '../twilio/twilio.service';
 
 import { mapTwilioCallStatus } from './voice-status.mapper';
+
+// Deduplication TTL in Redis: 24 hours covers Twilio's longest possible retry
+// window and lets us safely expire entries without keeping them forever.
+const DEDUPE_TTL_SECONDS = 24 * 60 * 60;
 
 export interface InboundVoiceParams {
   CallSid?: string;
@@ -114,6 +119,7 @@ export class VoiceWebhookService {
     private readonly prisma: PrismaService,
     private readonly twilio: TwilioService,
     private readonly realtime: RealtimeService,
+    private readonly redis: RedisService,
   ) {}
 
   async handleInbound(params: InboundVoiceParams): Promise<string> {
@@ -276,6 +282,9 @@ export class VoiceWebhookService {
     const dial = response.dial({
       callerId: phoneNumber.phoneNumberE164,
       answerOnBridge: true,
+      // Hard cap of 1 hour prevents runaway charges and unexpectedly large
+      // dual-channel recordings from accumulating on long-lived calls.
+      timeLimit: 3600,
       ...(intent.recordCall ? this.recordingDialAttributes() : {}),
     });
     dial.number(
@@ -636,8 +645,22 @@ export class VoiceWebhookService {
   }
 
   private async alreadyProcessed(dedupeKey: string): Promise<boolean> {
-    const found = await this.prisma.webhookEvent.findUnique({ where: { dedupeKey } });
-    return Boolean(found);
+    // Fast path: Redis SETNX is O(1) and avoids a PostgreSQL read on every
+    // webhook. The key expires after 24 hours so the table doesn't grow.
+    // Falls back to a PostgreSQL lookup if Redis is unavailable.
+    try {
+      const redisKey = `webhook:processed:${dedupeKey}`;
+      // SET EX NX: sets the key with a TTL only if it does not exist.
+      // ioredis returns 'OK' when the key was created, null when it already
+      // existed (i.e. already processed).
+      const set = await this.redis.client.set(redisKey, '1', 'EX', DEDUPE_TTL_SECONDS, 'NX');
+      if (set === null) return true; // key existed → already processed
+      return false; // key was new → not yet processed
+    } catch {
+      // Redis unavailable: fall through to the PostgreSQL check.
+      const found = await this.prisma.webhookEvent.findUnique({ where: { dedupeKey } });
+      return Boolean(found);
+    }
   }
 
   private async recordWebhookEvent(
