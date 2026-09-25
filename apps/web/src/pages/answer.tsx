@@ -5,6 +5,7 @@ import { CallQualityPanel } from '../components/call-quality';
 import { DtmfKeypad } from '../components/dtmf-keypad';
 import { InboundRecordingToggle } from '../components/inbound-recording-toggle';
 import { MicrophonePicker } from '../components/microphone-picker';
+import { VoiceRecovery } from '../components/voice-recovery';
 import { useVoiceDevice } from '../hooks/use-voice-device';
 
 function StatusPill({ label, ok, pending }: { label: string; ok: boolean; pending?: boolean }) {
@@ -63,7 +64,16 @@ export function AnswerPage() {
             pending={voice.reconnecting}
           />
           {!voice.reconnecting && (
-            <StatusPill label={voice.ready ? 'Ready' : 'Initializing…'} ok={voice.ready} />
+            <StatusPill
+              label={
+                voice.recoveryFailed
+                  ? 'Connection unavailable'
+                  : voice.ready
+                    ? 'Ready'
+                    : 'Initializing…'
+              }
+              ok={voice.ready}
+            />
           )}
           <StatusPill
             label={`Mic: ${voice.micPermission}`}
@@ -96,6 +106,7 @@ export function AnswerPage() {
       </div>
 
       <MicrophonePicker voice={voice} />
+      <VoiceRecovery voice={voice} />
       {numberId && (
         <InboundRecordingToggle
           key={numberId}

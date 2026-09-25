@@ -10,6 +10,7 @@ import { useParams } from 'react-router-dom';
 import { AiAgentPanel } from '../components/ai-agent-panel';
 import { CallQualityPanel } from '../components/call-quality';
 import { MicrophonePicker } from '../components/microphone-picker';
+import { VoiceRecovery } from '../components/voice-recovery';
 import { useVoiceDevice } from '../hooks/use-voice-device';
 import { api, ApiError } from '../lib/api-client';
 import { formatDate, formatPhone } from '../lib/format';
@@ -183,7 +184,14 @@ export function DialPage() {
     destinationNumber: string | null = normalizedDestination,
     opts: { skipRepeatWarning?: boolean } = {},
   ) {
-    if (callInFlight.current || inCallMode || !selectedNumber.data) return;
+    if (
+      callInFlight.current ||
+      inCallMode ||
+      !selectedNumber.data ||
+      voice.reconnecting ||
+      voice.recoveryFailed
+    )
+      return;
     setPageError(null);
     if (!numberId) return;
     if (!destinationNumber) {
@@ -325,7 +333,16 @@ export function DialPage() {
             pending={voice.reconnecting}
           />
           {!voice.reconnecting && (
-            <StatusPill label={voice.ready ? 'Ready' : 'Initializing…'} ok={voice.ready} />
+            <StatusPill
+              label={
+                voice.recoveryFailed
+                  ? 'Connection unavailable'
+                  : voice.ready
+                    ? 'Ready'
+                    : 'Initializing…'
+              }
+              ok={voice.ready}
+            />
           )}
           <StatusPill
             label={`Mic: ${voice.micPermission}`}
@@ -358,6 +375,7 @@ export function DialPage() {
       </div>
 
       <MicrophonePicker voice={voice} />
+      <VoiceRecovery voice={voice} />
 
       <div className="rounded border border-slate-200 bg-white p-4">
         <div className="flex items-baseline justify-between gap-3">
@@ -482,7 +500,12 @@ export function DialPage() {
             type="button"
             onClick={handlePasteAndCall}
             disabled={
-              !selectedNumber.data || submitting || inCallMode || voice.micPermission === 'denied'
+              !selectedNumber.data ||
+              submitting ||
+              inCallMode ||
+              voice.micPermission === 'denied' ||
+              voice.reconnecting ||
+              voice.recoveryFailed
             }
             title="Paste a phone number from the clipboard and call it"
             className="rounded border border-slate-300 px-3 py-1.5 text-sm font-medium hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-60"
@@ -498,7 +521,7 @@ export function DialPage() {
         {destination.length > 0 && !valid && (
           <p className="mt-1 text-xs text-rose-700">
             {isUk
-              ? 'Enter a UK number such as 020 7946 0018 or 07700 900123.'
+              ? 'Enter a UK number such as 020 7946 0018 or 0161 496 0123.'
               : 'Enter a U.S. phone number such as +1 530-441-9961 or 530-441-9961.'}
           </p>
         )}
@@ -574,6 +597,8 @@ export function DialPage() {
             onClick={handleCall}
             disabled={
               !selectedNumber.data ||
+              voice.reconnecting ||
+              voice.recoveryFailed ||
               !valid ||
               submitting ||
               inCallMode ||

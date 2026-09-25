@@ -7,6 +7,7 @@ import { api } from '../lib/api-client';
 import { useVoiceDevice } from './use-voice-device';
 
 const voiceSdkMock = vi.hoisted(() => ({
+  autoRegister: true,
   instances: [] as Array<{
     state: 'destroyed' | 'unregistered' | 'registering' | 'registered';
     register: ReturnType<typeof vi.fn>;
@@ -35,6 +36,7 @@ vi.mock('../lib/api-client', () => ({
       deviceConfig: vi.fn(),
       prepareOutbound: vi.fn(),
     },
+    calls: { byOutboundIntent: vi.fn() },
   },
 }));
 
@@ -48,6 +50,9 @@ vi.mock('@twilio/voice-sdk', () => {
           `Attempt to register when device is in state "${this.state}". Must be "unregistered".`,
         );
       }
+      this.state = 'registering';
+      this.emit('registering');
+      if (!voiceSdkMock.autoRegister) await new Promise<void>(() => {});
       this.state = 'registered';
       this.emit('registered');
     });
@@ -101,6 +106,8 @@ describe('useVoiceDevice', () => {
     window.localStorage.clear();
     vi.useFakeTimers();
     voiceSdkMock.instances.length = 0;
+    voiceSdkMock.autoRegister = true;
+    vi.mocked(api.calls.byOutboundIntent).mockResolvedValue(null);
     current = null;
     Object.defineProperty(window, 'RTCPeerConnection', {
       configurable: true,
@@ -170,7 +177,7 @@ describe('useVoiceDevice', () => {
     expect(current!.error).toContain('31005');
 
     act(() => {
-      device.emit('reconnected');
+      device.emit('registered');
     });
 
     expect(current!.registered).toBe(true);
@@ -235,7 +242,7 @@ describe('useVoiceDevice', () => {
     expect(device.register).toHaveBeenCalledTimes(1);
 
     act(() => {
-      device.emit('reconnected');
+      device.emit('registered');
     });
 
     expect(current!.registered).toBe(true);
@@ -265,7 +272,10 @@ describe('useVoiceDevice', () => {
     expect(device.updateToken).toHaveBeenCalledWith('voice.jwt');
   });
 
-  it('lets Twilio edge fallback run before recreating a stale registered device', async () => {
+  it('replaces an idle stale device after eight seconds and rotates the edge order', async () => {
+    vi.mocked(api.voice.deviceConfig).mockResolvedValue({
+      edge: ['frankfurt', 'dublin', 'ashburn'],
+    });
     render(<Harness onChange={(voice) => (current = voice)} />);
 
     await act(async () => {
@@ -285,25 +295,24 @@ describe('useVoiceDevice', () => {
     });
 
     await act(async () => {
-      await vi.advanceTimersByTimeAsync(30_000);
+      await vi.advanceTimersByTimeAsync(7_999);
     });
 
-    // maxCallSignalingTimeoutMs gives the SDK this interval to reconnect to
-    // the original edge before it attempts the configured fallback edges.
     expect(stalledDevice.destroy).not.toHaveBeenCalled();
 
     await act(async () => {
-      await vi.advanceTimersByTimeAsync(45_000);
+      await vi.advanceTimersByTimeAsync(1);
     });
 
     expect(stalledDevice.destroy).toHaveBeenCalledTimes(1);
     expect(voiceSdkMock.instances).toHaveLength(2);
     expect(voiceSdkMock.instances[1]?.register).toHaveBeenCalledTimes(1);
+    expect(voiceSdkMock.instances[1]?.options.edge).toEqual(['dublin', 'ashburn', 'frankfurt']);
     expect(current!.registered).toBe(true);
     expect(current!.error).toBeNull();
   });
 
-  it('recreates a device that remains registering after the edge-fallback window expires', async () => {
+  it('recreates an idle device that remains registering after eight seconds', async () => {
     render(<Harness onChange={(voice) => (current = voice)} />);
 
     await act(async () => {
@@ -324,7 +333,7 @@ describe('useVoiceDevice', () => {
     });
 
     await act(async () => {
-      await vi.advanceTimersByTimeAsync(75_000);
+      await vi.advanceTimersByTimeAsync(8_000);
     });
 
     expect(stalledDevice.destroy).toHaveBeenCalledTimes(1);
@@ -411,6 +420,239 @@ describe('useVoiceDevice', () => {
       window.dispatchEvent(event);
     });
     expect(event.defaultPrevented).toBe(true);
+  });
+
+  it('stops a continuous outage after thirty seconds and supports a manual retry', async () => {
+    render(<Harness onChange={(voice) => (current = voice)} />);
+    await act(async () => {
+      await current!.init('pn1');
+    });
+    const original = voiceSdkMock.instances[0]!;
+    voiceSdkMock.autoRegister = false;
+    act(() => original.emit('error', { code: 31009, message: 'Transport unavailable' }));
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(30_000);
+    });
+    expect(current!.recoveryFailed).toBe(true);
+    expect(current!.reconnecting).toBe(false);
+    expect(current!.error).toContain('within 30 seconds');
+    const attempts = voiceSdkMock.instances.length;
+    await act(async () => {
+      await current!.init('pn1');
+      await vi.advanceTimersByTimeAsync(120_000);
+    });
+    expect(voiceSdkMock.instances).toHaveLength(attempts);
+    expect(api.voice.prepareOutbound).not.toHaveBeenCalled();
+    voiceSdkMock.autoRegister = true;
+    await act(async () => {
+      current!.retryConnection();
+    });
+    expect(current!.registered).toBe(true);
+    expect(current!.recoveryFailed).toBe(false);
+    expect(current!.error).toBeNull();
+  });
+
+  it('recovers initial registration even when register never settles or emits an error', async () => {
+    voiceSdkMock.autoRegister = false;
+    render(<Harness onChange={(voice) => (current = voice)} />);
+    await act(async () => {
+      await current!.init('pn1');
+    });
+    expect(current!.registered).toBe(false);
+    voiceSdkMock.autoRegister = true;
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(8_000);
+    });
+    expect(voiceSdkMock.instances).toHaveLength(2);
+    expect(current!.registered).toBe(true);
+  });
+
+  it('does not mistake stale registered state for recovery when trying to call', async () => {
+    render(<Harness onChange={(voice) => (current = voice)} />);
+    await act(async () => {
+      await current!.init('pn1');
+    });
+    const device = voiceSdkMock.instances[0]!;
+    act(() => device.emit('error', { code: 31005, message: 'Connection lost' }));
+    await act(async () => {
+      await current!.init('pn1');
+      await current!.makeCall('pn1', '+442079460018');
+    });
+    expect(current!.registered).toBe(false);
+    expect(current!.error).toContain('31005');
+    expect(device.connect).not.toHaveBeenCalled();
+    expect(api.voice.prepareOutbound).not.toHaveBeenCalled();
+  });
+
+  it('keeps a live call and its controls even when registration recovery times out', async () => {
+    render(<Harness onChange={(voice) => (current = voice)} />);
+    await act(async () => {
+      await current!.init('pn1');
+    });
+    const device = voiceSdkMock.instances[0]!;
+    const disconnect = vi.fn();
+    device.connect.mockResolvedValue({ on: vi.fn(), disconnect, sendDigits: vi.fn() });
+    await act(async () => {
+      await current!.makeCall('pn1', '+442079460018');
+    });
+    act(() => device.emit('error', { code: 31005 }));
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(120_000);
+    });
+    expect(current!.recoveryFailed).toBe(true);
+    expect(current!.active).toBe(true);
+    expect(current!.canSendDigits).toBe(true);
+    expect(disconnect).not.toHaveBeenCalled();
+    expect(device.destroy).not.toHaveBeenCalled();
+    act(() => current!.retryConnection());
+    expect(device.destroy).not.toHaveBeenCalled();
+    act(() => current!.hangup());
+    await act(async () => {
+      current!.retryConnection();
+    });
+    expect(current!.registered).toBe(true);
+    expect(api.voice.prepareOutbound).toHaveBeenCalledTimes(1);
+  });
+
+  it('classifies a 31005 HANGUP wrapper as a terminal call error and confirms no answer', async () => {
+    render(<Harness onChange={(voice) => (current = voice)} />);
+    await act(async () => {
+      await current!.init('pn1');
+    });
+    const device = voiceSdkMock.instances[0]!;
+    const handlers = new Map<string, (...args: unknown[]) => void>();
+    device.connect.mockResolvedValue({
+      on: (event: string, handler: (...args: unknown[]) => void) => handlers.set(event, handler),
+      disconnect: vi.fn(),
+    });
+    vi.mocked(api.calls.byOutboundIntent).mockResolvedValue({ status: 'NO_ANSWER' } as never);
+    await act(async () => {
+      await current!.makeCall('pn1', '+442079460018');
+    });
+    await act(async () => {
+      handlers.get('error')?.(
+        Object.assign(new Error('Error sent from gateway in HANGUP'), {
+          code: 31005,
+          originalError: { code: 31000, message: 'Call ended' },
+        }),
+      );
+    });
+    expect(current!.active).toBe(false);
+    expect(current!.registered).toBe(true);
+    expect(current!.reconnecting).toBe(false);
+    expect(current!.callNotice).toContain('No answer');
+    expect(current!.error).toBeNull();
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(120_000);
+    });
+    expect(device.destroy).not.toHaveBeenCalled();
+    expect(api.voice.token).toHaveBeenCalledTimes(1);
+  });
+
+  it('shows the original destination error without blaming TwiML configuration', async () => {
+    render(<Harness onChange={(voice) => (current = voice)} />);
+    await act(async () => {
+      await current!.init('pn1');
+    });
+    const device = voiceSdkMock.instances[0]!;
+    act(() =>
+      device.emit('error', {
+        code: 31000,
+        originalError: { code: 13224, message: 'invalid phone number' },
+      }),
+    );
+    expect(current!.error).toContain('13224');
+    expect(current!.error).not.toContain('TwiML');
+    expect(current!.registered).toBe(true);
+    act(() => device.emit('error', { code: 31000, message: 'A call ended unexpectedly' }));
+    expect(current!.error).toContain('A call ended unexpectedly');
+    expect(current!.error).not.toContain('setup');
+  });
+
+  it('closes a pending call when transportClose changes SDK status without disconnect', async () => {
+    render(<Harness onChange={(voice) => (current = voice)} />);
+    await act(async () => {
+      await current!.init('pn1');
+    });
+    const device = voiceSdkMock.instances[0]!;
+    const handlers = new Map<string, (...args: unknown[]) => void>();
+    let status = 'pending';
+    device.connect.mockResolvedValue({
+      on: (event: string, handler: (...args: unknown[]) => void) => handlers.set(event, handler),
+      status: () => status,
+    });
+    await act(async () => {
+      await current!.makeCall('pn1', '+442079460018');
+    });
+    await act(async () => {
+      handlers.get('transportClose')?.();
+      status = 'closed';
+      device.emit('error', { code: 31005 });
+      await vi.advanceTimersByTimeAsync(8_000);
+    });
+    expect(current!.active).toBe(false);
+    expect(current!.registered).toBe(true);
+    expect(device.destroy).toHaveBeenCalledOnce();
+  });
+
+  it('ignores a late previous-call outcome after starting another call', async () => {
+    render(<Harness onChange={(voice) => (current = voice)} />);
+    await act(async () => {
+      await current!.init('pn1');
+    });
+    const device = voiceSdkMock.instances[0]!;
+    const handlers = new Map<string, (...args: unknown[]) => void>();
+    device.connect.mockResolvedValue({
+      on: (event: string, handler: (...args: unknown[]) => void) => handlers.set(event, handler),
+    });
+    let resolveOutcome!: (value: never) => void;
+    vi.mocked(api.calls.byOutboundIntent).mockReturnValue(
+      new Promise((resolve) => {
+        resolveOutcome = resolve;
+      }),
+    );
+    await act(async () => {
+      await current!.makeCall('pn1', '+442079460018');
+    });
+    act(() => handlers.get('disconnect')?.());
+    await act(async () => {
+      await current!.makeCall('pn1', '+441614960123');
+    });
+    await act(async () => {
+      resolveOutcome({ status: 'NO_ANSWER' } as never);
+    });
+    expect(current!.active).toBe(true);
+    expect(current!.callNotice).toBeNull();
+  });
+
+  it('ignores a late initial token response after switching numbers', async () => {
+    let resolveToken!: (value: Awaited<ReturnType<typeof api.voice.token>>) => void;
+    vi.mocked(api.voice.token).mockReturnValueOnce(
+      new Promise((resolve) => {
+        resolveToken = resolve;
+      }),
+    );
+    render(<Harness onChange={(voice) => (current = voice)} />);
+    let firstInit: Promise<unknown>;
+    act(() => {
+      firstInit = current!.init('old-number');
+    });
+    let initialized: unknown;
+    await act(async () => {
+      initialized = await current!.init('pn1');
+    });
+    expect(initialized, current!.error ?? undefined).not.toBeNull();
+    await act(async () => {
+      resolveToken({
+        token: 'old.jwt',
+        identity: 'old_identity',
+        expiresAt: new Date(Date.now() + 3600000).toISOString(),
+      });
+      await firstInit;
+    });
+    expect(voiceSdkMock.instances).toHaveLength(1);
+    expect(current!.identity).toBe('user_u1_number_pn1');
+    expect(current!.registered).toBe(true);
   });
 
   it('prepares an outbound intent before connecting the Twilio device', async () => {
@@ -980,7 +1222,7 @@ describe('useVoiceDevice', () => {
 
     act(() => {
       device.state = 'registering';
-      device.emit('reconnecting');
+      device.emit('registering');
     });
     expect(current!.registered).toBe(false);
     expect(current!.reconnecting).toBe(true);
@@ -1015,9 +1257,9 @@ describe('useVoiceDevice', () => {
 
     await act(async () => {
       document.dispatchEvent(new Event('visibilitychange'));
-      device.emit('reconnecting');
+      device.emit('registering');
       await vi.advanceTimersByTimeAsync(1_500);
-      device.emit('reconnected');
+      device.emit('registered');
       await vi.advanceTimersByTimeAsync(5_000);
     });
 

@@ -53,6 +53,7 @@ function handleAuthFailure(status: number): void {
 }
 
 interface RequestOptions {
+  timeoutMs?: number;
   query?: Record<string, string | number | boolean | undefined>;
   body?: unknown;
   method?: 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE';
@@ -91,6 +92,7 @@ async function request<T>(path: string, opts: RequestOptions = {}): Promise<T> {
     credentials: 'include',
     headers,
     body: opts.body !== undefined ? JSON.stringify(opts.body) : undefined,
+    ...(opts.timeoutMs ? { signal: AbortSignal.timeout(opts.timeoutMs) } : {}),
   });
 
   if (!res.ok) {
@@ -230,7 +232,9 @@ export const api = {
       request<CallDto>(`/numbers/${numberId}/calls/${callId}`),
     // Null until Twilio has picked up the call placed from this outbound intent.
     byOutboundIntent: (numberId: string, outboundIntentId: string) =>
-      request<CallDto | null>(`/numbers/${numberId}/outbound-intents/${outboundIntentId}/call`),
+      request<CallDto | null>(`/numbers/${numberId}/outbound-intents/${outboundIntentId}/call`, {
+        timeoutMs: 5_000,
+      }),
     lastDial: (numberId: string, destination: string) =>
       request<LastDialDto | null>(`/numbers/${numberId}/last-dial`, {
         query: { destination },
@@ -288,16 +292,22 @@ export const api = {
         body: { recordCall },
       }),
     token: (numberId?: string) =>
-      request<VoiceTokenDto>('/voice/token', { method: 'POST', body: { numberId } }),
+      request<VoiceTokenDto>('/voice/token', {
+        method: 'POST',
+        body: { numberId },
+        timeoutMs: 10_000,
+      }),
     identity: (numberId?: string) =>
       request<{ identity: string }>('/voice/identity', {
         query: numberId ? { numberId } : undefined,
       }),
-    deviceConfig: () => request<Record<string, unknown>>('/voice/device-config'),
+    deviceConfig: () =>
+      request<Record<string, unknown>>('/voice/device-config', { timeoutMs: 10_000 }),
     prepareOutbound: (selectedNumberId: string, destinationNumber: string, recordCall?: boolean) =>
       request<OutboundCallPreparationDto>('/calls/prepare-outbound', {
         method: 'POST',
         body: { selectedNumberId, destinationNumber, recordCall },
+        timeoutMs: 10_000,
       }),
   },
 

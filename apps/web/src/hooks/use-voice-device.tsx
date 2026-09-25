@@ -11,6 +11,7 @@ type VoiceEventHandler<TArgs extends unknown[] = unknown[]> = (
 
 type VoiceCall = {
   parameters?: Record<string, string | undefined>;
+  status?: () => string;
   on?: (event: string, handler: VoiceEventHandler) => void;
   isMuted?: () => boolean;
   mute?: (shouldMute: boolean) => void;
@@ -56,6 +57,7 @@ type VoiceSdkError = Error & {
   code?: number;
   description?: string;
   explanation?: string;
+  originalError?: VoiceSdkError;
   twilioError?: {
     code?: number;
     description?: string;
@@ -102,6 +104,7 @@ type VoiceRuntimeState = {
   // Not registered right now, but this Device was before: signaling is being
   // restored rather than set up for the first time.
   reconnecting: boolean;
+  recoveryFailed: boolean;
   incoming: IncomingCall | null;
   active: boolean;
   connectionState: ConnectionState;
@@ -124,6 +127,7 @@ type VoiceRuntimeState = {
 interface UseVoiceDevice extends VoiceRuntimeState {
   init: (numberId?: string) => Promise<{ identity: string; expiresAt: string } | null>;
   destroy: () => void;
+  retryConnection: () => void;
   micPermission: MicPermission;
   browserSupported: boolean;
   accept: () => void;
@@ -146,6 +150,7 @@ const INITIAL_RUNTIME_STATE: VoiceRuntimeState = {
   ready: false,
   registered: false,
   reconnecting: false,
+  recoveryFailed: false,
   incoming: null,
   active: false,
   connectionState: 'idle',
@@ -173,17 +178,14 @@ const RECONNECTABLE_ERROR_CODES = new Set([
 // fresh one. Transport errors (31005/31009) do not: the SDK re-sends its stored
 // token when the signaling socket reopens.
 const TOKEN_ERROR_CODES = new Set([20101, 20104, 31202, 31204, 31205]);
-// Signaling drops the SDK recovers from on its own. An active call survives
-// them for up to maxCallSignalingTimeoutMs; 'disconnect' fires if it cannot.
+// Signaling drops the SDK can recover from on its own. Preserve active-call
+// controls until the SDK confirms closure or the user hangs up.
 const TRANSIENT_SIGNALING_CODES = new Set([31005, 31009, 53001]);
 const TOKEN_REFRESH_WINDOW_MS = 2 * 60_000;
-// The Voice SDK keeps a lost signaling connection on its current edge for up
-// to 30 seconds before it begins the configured edge fallback. Do not recreate
-// the Device at that boundary: doing so resets the edge list and repeatedly
-// sends the browser back to the failing first edge. Eight retries reaches 75
-// seconds (1 + 2 + 4 + 8 + 15 + 15 + 15 + 15), leaving room for that fallback
-// and its backoff before the app uses a last-resort fresh Device.
-const MAX_STALLED_REGISTRATION_RECONNECT_ATTEMPTS = 8;
+// An idle device can safely fail over sooner than an established call. Rotate
+// the edge order when replacing it, instead of repeatedly retrying edge one.
+const IDLE_RECOVERY_WINDOW_MS = 8_000;
+const MAX_RECOVERY_WINDOW_MS = 30_000;
 // On returning to the tab or the network, the SDK normally restores signaling
 // within a second or two. If it has not by then, replace the Device instead of
 // waiting out the stalled-registration schedule above.
@@ -216,6 +218,7 @@ type WakeLockApiLike = {
 };
 
 const subscribers = new Set<() => void>();
+let voiceSdkPromise: Promise<unknown> | null = null;
 
 const runtime: {
   state: VoiceRuntimeState;
@@ -226,6 +229,13 @@ const runtime: {
   tokenRefreshTimer: ReturnType<typeof setTimeout> | null;
   reconnectTimer: ReturnType<typeof setTimeout> | null;
   resumeTimer: ReturnType<typeof setTimeout> | null;
+  recoveryTimer: ReturnType<typeof setTimeout> | null;
+  recoveryStartedAt: number | null;
+  deviceStartedAt: number;
+  edgeOffset: number;
+  generation: number;
+  callSequence: number;
+  outcomeTimer: ReturnType<typeof setTimeout> | null;
   // Set while a failed Device creation is waiting to be retried.
   initRetry: { numberId: string | undefined } | null;
   hasRegistered: boolean;
@@ -248,6 +258,13 @@ const runtime: {
   tokenRefreshTimer: null,
   reconnectTimer: null,
   resumeTimer: null,
+  recoveryTimer: null,
+  recoveryStartedAt: null,
+  deviceStartedAt: 0,
+  edgeOffset: 0,
+  generation: 0,
+  callSequence: 0,
+  outcomeTimer: null,
   initRetry: null,
   hasRegistered: false,
   currentInit: null,
@@ -334,7 +351,7 @@ function emit(): void {
 
 function setRuntimeState(patch: Partial<VoiceRuntimeState>): void {
   const next = { ...runtime.state, ...patch };
-  next.reconnecting = !next.registered && runtime.hasRegistered;
+  next.reconnecting = !next.registered && !next.recoveryFailed && runtime.hasRegistered;
   runtime.state = next;
   emit();
 }
@@ -351,10 +368,28 @@ function clearTimer(timer: ReturnType<typeof setTimeout> | null): void {
   if (timer) clearTimeout(timer);
 }
 
-function getVoiceErrorCode(err: unknown): number | undefined {
-  if (!err || typeof err !== 'object') return undefined;
+function getVoiceErrorCode(err: unknown, depth = 0): number | undefined {
+  if (!err || typeof err !== 'object' || depth > 4) return undefined;
   const voiceError = err as VoiceSdkError;
-  return voiceError.twilioError?.code ?? voiceError.code;
+  const nested = getVoiceErrorCode(voiceError.twilioError, depth + 1);
+  if (nested !== undefined) return nested;
+  // SDK Call._onHangup wraps unknown gateway errors in ConnectionError
+  // (31005). Those are terminal call errors, not a lost signaling socket.
+  if ([31000, 31005, 53000].includes(voiceError.code ?? 0)) {
+    const original = getVoiceErrorCode(voiceError.originalError, depth + 1);
+    if (original !== undefined) return original;
+  }
+  return voiceError.code;
+}
+
+function isCallHangupError(err: unknown): boolean {
+  if (!err || typeof err !== 'object') return false;
+  const error = err as VoiceSdkError;
+  return (
+    error.code === 31005 &&
+    Boolean(error.originalError) &&
+    error.message?.includes('Error sent from gateway in HANGUP')
+  );
 }
 
 function callErrorState(err: unknown): Pick<VoiceRuntimeState, 'error' | 'callNotice'> {
@@ -382,10 +417,11 @@ function isMicDeniedError(err: unknown): boolean {
 }
 
 function formatVoiceError(err: unknown): string {
-  if (!(err instanceof Error)) return String(err);
+  if (!err || typeof err !== 'object') return String(err);
   const voiceError = err as VoiceSdkError;
   const code = getVoiceErrorCode(err);
   const explanation =
+    voiceError.originalError?.message ??
     voiceError.twilioError?.explanation ??
     voiceError.twilioError?.description ??
     voiceError.twilioError?.message ??
@@ -403,7 +439,10 @@ function formatVoiceError(err: unknown): string {
     return 'Twilio transport is unavailable (31009). The device is reconnecting through its configured signaling edges.';
   }
   if (code === 31000) {
-    return 'Twilio reported a generic Voice SDK setup error (31000). Run Twilio sync/diagnostics; this usually means the TwiML App Voice URL or outbound webhook response is wrong.';
+    return `Twilio reported a call error (31000). ${explanation || 'No further details were supplied.'}`;
+  }
+  if (code === 13224) {
+    return 'Twilio could not route this destination number (13224). Check the number before trying again.';
   }
   if (code === 31401 || isMicDeniedError(err)) {
     return 'Microphone permission was denied (31401). The browser or user blocked microphone access. Please allow microphone permissions in your browser settings (click the lock or tune icon next to the address bar) and try again.';
@@ -416,7 +455,7 @@ function formatVoiceError(err: unknown): string {
   }
 
   const details = [typeof code === 'number' ? `Twilio ${code}` : null, explanation].filter(Boolean);
-  return details.length > 0 ? details.join(': ') : voiceError.message;
+  return details.length > 0 ? details.join(': ') : 'The voice SDK reported an unspecified error.';
 }
 
 function sanitizeDeviceConfig(config: Record<string, unknown>): Record<string, unknown> {
@@ -483,10 +522,14 @@ function markDeviceRegistered(): void {
   runtime.reconnectTimer = null;
   runtime.reconnectAttempt = 0;
   runtime.signalingRecoveryPending = false;
+  clearTimer(runtime.recoveryTimer);
+  runtime.recoveryTimer = null;
+  runtime.recoveryStartedAt = null;
   runtime.hasRegistered = true;
   setRuntimeState({
     ready: true,
     registered: true,
+    recoveryFailed: false,
     error: null,
   });
 }
@@ -499,15 +542,21 @@ function markDeviceRegistering(): void {
 }
 
 function disposeCurrentDevice(resetState: boolean): void {
+  runtime.generation += 1;
+  runtime.callSequence += 1;
   runtime.intentionallyDestroyed = true;
   runtime.wakeLockWanted = false;
   releaseScreenWakeLock();
   clearTimer(runtime.tokenRefreshTimer);
   clearTimer(runtime.reconnectTimer);
   clearTimer(runtime.resumeTimer);
+  clearTimer(runtime.recoveryTimer);
+  clearTimer(runtime.outcomeTimer);
   runtime.tokenRefreshTimer = null;
   runtime.reconnectTimer = null;
   runtime.resumeTimer = null;
+  runtime.recoveryTimer = null;
+  runtime.outcomeTimer = null;
   runtime.initRetry = null;
   runtime.registering = false;
   runtime.reconnectAttempt = 0;
@@ -532,6 +581,8 @@ function disposeCurrentDevice(resetState: boolean): void {
   runtime.currentInitNumberId = undefined;
 
   if (resetState) {
+    runtime.recoveryStartedAt = null;
+    runtime.edgeOffset = 0;
     runtime.hasRegistered = false;
     runtime.state = {
       ...INITIAL_RUNTIME_STATE,
@@ -663,6 +714,7 @@ async function refreshVoiceToken(numberId: string | undefined): Promise<void> {
   if (!device) return;
 
   const next = await api.voice.token(numberId);
+  if (runtime.device !== device || runtime.intentionallyDestroyed) return;
   device.updateToken?.(next.token);
   runtime.expiresAt = next.expiresAt;
   runtime.tokenRejected = false;
@@ -681,17 +733,79 @@ function scheduleTokenRefresh(expiresAt: string, numberId: string | undefined): 
   const delay = Math.max(5_000, Math.min(expiresMs - 60_000, 50 * 60_000));
 
   runtime.tokenRefreshTimer = setTimeout(async () => {
+    const device = runtime.device;
     try {
       await refreshVoiceToken(numberId);
     } catch (err) {
+      if (runtime.device !== device) return;
       setRuntimeState({ error: formatVoiceError(err) });
       scheduleReconnect(numberId);
     }
   }, delay);
 }
 
+function replaceForRecovery(numberId: string | undefined): void {
+  // Never destroy a live or waiting incoming call just to refresh registration.
+  if (runtime.state.active || runtime.state.incoming) return;
+  runtime.edgeOffset += 1;
+  disposeCurrentDevice(false);
+  void initVoiceDevice(numberId, isBrowserSupported());
+}
+
+function watchRecovery(numberId: string | undefined): void {
+  if (runtime.recoveryTimer || runtime.state.recoveryFailed) return;
+  if (runtime.recoveryStartedAt === null) {
+    runtime.recoveryStartedAt = Date.now();
+    runtime.deviceStartedAt = Date.now();
+  }
+  runtime.recoveryTimer = setTimeout(() => {
+    runtime.recoveryTimer = null;
+    if (runtime.intentionallyDestroyed || runtime.state.registered) return;
+    if (Date.now() - runtime.recoveryStartedAt! >= MAX_RECOVERY_WINDOW_MS) {
+      clearTimer(runtime.reconnectTimer);
+      clearTimer(runtime.resumeTimer);
+      runtime.reconnectTimer = null;
+      runtime.resumeTimer = null;
+      if (!runtime.state.active && !runtime.state.incoming) {
+        disposeCurrentDevice(false);
+        runtime.lastNumberId = numberId;
+      }
+      setRuntimeState({
+        ready: false,
+        registered: false,
+        recoveryFailed: true,
+        error:
+          'Voice connection could not recover within 30 seconds. Check Wi-Fi/mobile data or VPN, then tap Reconnect voice. An existing call is not redialed automatically.',
+      });
+      return;
+    }
+    if (
+      runtime.device &&
+      !runtime.currentInit &&
+      Date.now() - runtime.deviceStartedAt >= IDLE_RECOVERY_WINDOW_MS &&
+      !runtime.state.active &&
+      !runtime.state.incoming
+    ) {
+      replaceForRecovery(numberId);
+      return;
+    }
+    watchRecovery(numberId);
+  }, 1_000);
+}
+
+function retryVoiceConnection(): void {
+  if (runtime.state.active || runtime.state.incoming) return;
+  const numberId =
+    runtime.lastNumberId ?? runtime.currentInitNumberId ?? runtime.initRetry?.numberId;
+  runtime.recoveryStartedAt = null;
+  setRuntimeState({ recoveryFailed: false, error: null });
+  replaceForRecovery(numberId);
+}
+
 function scheduleReconnect(numberId: string | undefined): void {
-  if (runtime.intentionallyDestroyed || !runtime.device || runtime.reconnectTimer) return;
+  if (runtime.intentionallyDestroyed || runtime.state.recoveryFailed || !runtime.device) return;
+  watchRecovery(numberId);
+  if (runtime.reconnectTimer) return;
 
   const delay = Math.min(15_000, 1_000 * 2 ** Math.min(runtime.reconnectAttempt, 4));
   runtime.reconnectAttempt += 1;
@@ -709,11 +823,13 @@ function scheduleReconnect(numberId: string | undefined): void {
       try {
         await refreshVoiceToken(numberId);
       } catch (err) {
+        if (runtime.device !== device) return;
         setRuntimeState({ error: formatVoiceError(err) });
         scheduleReconnect(numberId);
         return;
       }
     }
+    if (runtime.device !== device) return;
 
     const refreshedState = getDeviceRegistrationState(device);
     if (refreshedState === 'registered' && !runtime.signalingRecoveryPending) {
@@ -721,18 +837,6 @@ function scheduleReconnect(numberId: string | undefined): void {
       return;
     }
     if (refreshedState === 'registering' || runtime.signalingRecoveryPending) {
-      if (runtime.reconnectAttempt >= MAX_STALLED_REGISTRATION_RECONNECT_ATTEMPTS) {
-        // The SDK did not emit a real signaling recovery event during its
-        // 30-second recovery window. Device.state can remain "registered" while
-        // its WebSocket is unusable, so it is not evidence that recovery worked.
-        // A new Device creates a fresh signaling stream without interrupting an
-        // active call.
-        if (!runtime.state.active) {
-          disposeCurrentDevice(false);
-          await initVoiceDevice(numberId, isBrowserSupported());
-          return;
-        }
-      }
       scheduleReconnect(numberId);
       return;
     }
@@ -744,7 +848,14 @@ function scheduleReconnect(numberId: string | undefined): void {
 // scheduleReconnect() needs a Device to recover. When creating one failed
 // (e.g. the token request ran before the network was back), retry creation.
 function scheduleInitRetry(numberId: string | undefined): void {
-  if (runtime.intentionallyDestroyed || runtime.device || runtime.reconnectTimer) return;
+  if (
+    runtime.intentionallyDestroyed ||
+    runtime.state.recoveryFailed ||
+    runtime.device ||
+    runtime.reconnectTimer
+  )
+    return;
+  watchRecovery(numberId);
 
   const delay = Math.min(15_000, 1_000 * 2 ** Math.min(runtime.reconnectAttempt, 4));
   runtime.reconnectAttempt += 1;
@@ -763,7 +874,7 @@ async function registerCurrentDevice(numberId: string | undefined): Promise<void
   if (!device || runtime.intentionallyDestroyed || runtime.registering) return;
 
   const state = getDeviceRegistrationState(device);
-  if (state === 'registered') {
+  if (state === 'registered' && !runtime.signalingRecoveryPending) {
     markDeviceRegistered();
     return;
   }
@@ -775,9 +886,11 @@ async function registerCurrentDevice(numberId: string | undefined): Promise<void
 
   runtime.registering = true;
   setRuntimeState({ ready: false });
+  watchRecovery(numberId);
   try {
     await device.register?.();
   } catch (err) {
+    if (runtime.device !== device) return;
     if (isRegisterStateError(err)) {
       const nextState = getDeviceRegistrationState(device);
       if (nextState === 'registered') {
@@ -800,7 +913,7 @@ async function registerCurrentDevice(numberId: string | undefined): Promise<void
     });
     scheduleReconnect(numberId);
   } finally {
-    runtime.registering = false;
+    if (runtime.device === device) runtime.registering = false;
   }
 }
 
@@ -830,7 +943,55 @@ async function ensureDeviceForOutbound(
   return runtime.device;
 }
 
-function attachCallListeners(conn: VoiceCall): void {
+async function reconcileCallOutcome(
+  prepared: OutboundCallPreparationDto,
+  sequence: number,
+  attempt = 0,
+): Promise<void> {
+  const isCurrent = () =>
+    runtime.callSequence === sequence && !runtime.state.active && !runtime.state.incoming;
+  if (!isCurrent()) return;
+  try {
+    const call = await api.calls.byOutboundIntent(
+      prepared.selectedNumberId,
+      prepared.outboundIntentId,
+    );
+    if (!isCurrent()) return;
+    const notices: Record<string, string> = {
+      NO_ANSWER: 'No answer. The destination did not answer the call. You can place another call.',
+      BUSY: 'The destination is busy or declined the call. You can place another call.',
+      CANCELED: 'Call canceled. You can place another call.',
+      FAILED:
+        'The call failed at the destination or carrier. Check the number before trying again.',
+    };
+    if (call && notices[call.status]) {
+      setRuntimeState({
+        callNotice: notices[call.status],
+        // A call outcome must not hide a simultaneous network failure.
+        ...(call.status === 'FAILED' ||
+        runtime.signalingRecoveryPending ||
+        runtime.state.recoveryFailed
+          ? {}
+          : { error: null }),
+      });
+      return;
+    }
+    if (call?.status === 'COMPLETED') return;
+  } catch {
+    // Keep the SDK error if the callback/API cannot confirm the outcome.
+  }
+  if (isCurrent() && attempt < 3) {
+    runtime.outcomeTimer = setTimeout(() => {
+      runtime.outcomeTimer = null;
+      void reconcileCallOutcome(prepared, sequence, attempt + 1);
+    }, 1_500);
+  }
+}
+
+function attachCallListeners(conn: VoiceCall, prepared?: OutboundCallPreparationDto): void {
+  clearTimer(runtime.outcomeTimer);
+  runtime.outcomeTimer = null;
+  const sequence = ++runtime.callSequence;
   runtime.call = conn;
   void syncScreenWakeLock(true);
   setRuntimeState({
@@ -879,7 +1040,7 @@ function attachCallListeners(conn: VoiceCall): void {
       canSendDigits: callCanSendDigits(conn),
     });
   });
-  conn.on?.('disconnect', () => {
+  const finish = () => {
     if (runtime.call !== conn) return;
     releaseMicrophone();
     void syncScreenWakeLock(false);
@@ -891,29 +1052,16 @@ function attachCallListeners(conn: VoiceCall): void {
       canSendDigits: false,
       ...NO_CALL_QUALITY,
     });
-  });
-  conn.on?.('cancel', () => {
-    if (runtime.call !== conn) return;
-    releaseMicrophone();
-    void syncScreenWakeLock(false);
-    runtime.call = null;
-    setRuntimeState({
-      connectionState: 'closed',
-      active: false,
-      canSendDigits: false,
-      ...NO_CALL_QUALITY,
-    });
-  });
-  conn.on?.('reject', () => {
-    if (runtime.call !== conn) return;
-    releaseMicrophone();
-    void syncScreenWakeLock(false);
-    runtime.call = null;
-    setRuntimeState({
-      connectionState: 'closed',
-      active: false,
-      canSendDigits: false,
-      ...NO_CALL_QUALITY,
+    if (prepared) void reconcileCallOutcome(prepared, sequence);
+  };
+  conn.on?.('disconnect', finish);
+  conn.on?.('cancel', finish);
+  conn.on?.('reject', finish);
+  conn.on?.('transportClose', () => {
+    // The SDK can close a not-yet-connected call without emitting disconnect.
+    // It updates status just after transportClose; inspect it on the next tick.
+    queueMicrotask(() => {
+      if (runtime.call === conn && conn.status?.() === 'closed') finish();
     });
   });
   conn.on?.('reconnecting', (err) => {
@@ -929,7 +1077,7 @@ function attachCallListeners(conn: VoiceCall): void {
     if (runtime.call !== conn) return;
     const code = getVoiceErrorCode(err) ?? 0;
     const isDenied = isMicDeniedError(err);
-    if (TRANSIENT_SIGNALING_CODES.has(code)) {
+    if (TRANSIENT_SIGNALING_CODES.has(code) && !isCallHangupError(err)) {
       // Keep the call usable (hangup, mute, DTMF) while the SDK restores
       // signaling; the 'disconnect' handler cleans up if recovery fails.
       setRuntimeState({ error: formatVoiceError(err) });
@@ -941,9 +1089,7 @@ function attachCallListeners(conn: VoiceCall): void {
       } catch {
         /* already closing */
       }
-      releaseMicrophone();
-      void syncScreenWakeLock(false);
-      runtime.call = null;
+      finish();
       setRuntimeState({
         ...callErrorState(err),
         active: false,
@@ -954,7 +1100,7 @@ function attachCallListeners(conn: VoiceCall): void {
       });
     }
     if (TOKEN_ERROR_CODES.has(code)) runtime.tokenRejected = true;
-    if (RECONNECTABLE_ERROR_CODES.has(code)) {
+    if (RECONNECTABLE_ERROR_CODES.has(code) && !isCallHangupError(err)) {
       runtime.signalingRecoveryPending = true;
       scheduleReconnect(runtime.lastNumberId);
     }
@@ -974,20 +1120,12 @@ function attachDeviceListeners(device: VoiceDevice, numberId: string | undefined
     scheduleReconnect(numberId);
   });
 
-  // These are emitted by the Voice SDK while it restores a dropped signaling
-  // connection. They are the only positive confirmation that a transport error
-  // has recovered; `device.state` may still say "registered" while its
-  // WebSocket is unavailable.
-  device.on('reconnecting', () => {
+  // Device emits registering/registered. reconnecting/reconnected belong to
+  // Call, not Device; tests must follow the SDK's actual event contract.
+  device.on('registering', () => {
     if (runtime.device !== device) return;
-    runtime.signalingRecoveryPending = true;
     markDeviceRegistering();
-    scheduleReconnect(numberId);
-  });
-
-  device.on('reconnected', () => {
-    if (runtime.device !== device) return;
-    markDeviceRegistered();
+    watchRecovery(numberId);
   });
 
   // The SDK can destroy itself (e.g. on page lifecycle events). Only an
@@ -1007,6 +1145,7 @@ function attachDeviceListeners(device: VoiceDevice, numberId: string | undefined
     try {
       await refreshVoiceToken(numberId);
     } catch (err) {
+      if (runtime.device !== device) return;
       setRuntimeState({ error: formatVoiceError(err) });
       scheduleReconnect(numberId);
     }
@@ -1031,8 +1170,14 @@ function attachDeviceListeners(device: VoiceDevice, numberId: string | undefined
     });
   });
 
-  device.on('error', (err) => {
+  device.on('error', (err, associatedCall) => {
     if (runtime.device !== device) return;
+    if (
+      associatedCall &&
+      associatedCall !== runtime.call &&
+      associatedCall !== runtime.state.incoming?.connection
+    )
+      return;
     const code = getVoiceErrorCode(err);
     const isDenied = isMicDeniedError(err);
     setRuntimeState({
@@ -1040,7 +1185,7 @@ function attachDeviceListeners(device: VoiceDevice, numberId: string | undefined
       ...(isDenied ? { micPermission: 'denied' as const } : {}),
     });
     if (TOKEN_ERROR_CODES.has(code ?? 0)) runtime.tokenRejected = true;
-    if (RECONNECTABLE_ERROR_CODES.has(code ?? 0)) {
+    if (RECONNECTABLE_ERROR_CODES.has(code ?? 0) && !isCallHangupError(err)) {
       runtime.signalingRecoveryPending = true;
       scheduleReconnect(numberId);
     }
@@ -1051,6 +1196,7 @@ async function initVoiceDevice(
   numberId: string | undefined,
   browserSupported: boolean,
 ): Promise<{ identity: string; expiresAt: string } | null> {
+  if (runtime.state.recoveryFailed && runtime.lastNumberId === numberId) return null;
   if (!browserSupported) {
     setRuntimeState({
       error: 'This browser does not support WebRTC. Use the latest Chrome, Edge, or Firefox.',
@@ -1060,9 +1206,9 @@ async function initVoiceDevice(
 
   if (runtime.device && runtime.lastNumberId === numberId) {
     const state = getDeviceRegistrationState(runtime.device);
-    if (state === 'registered') {
+    if (state === 'registered' && !runtime.signalingRecoveryPending) {
       markDeviceRegistered();
-    } else if (state !== 'registering') {
+    } else if (state !== 'registering' && !runtime.signalingRecoveryPending) {
       void registerCurrentDevice(numberId);
     }
     return runtime.state.identity && runtime.expiresAt
@@ -1074,15 +1220,18 @@ async function initVoiceDevice(
     return runtime.currentInit;
   }
 
+  if (runtime.device || runtime.currentInit || runtime.state.recoveryFailed)
+    disposeCurrentDevice(true);
   runtime.currentInitNumberId = numberId;
+  const generation = ++runtime.generation;
   runtime.currentInit = (async () => {
-    if (runtime.device) disposeCurrentDevice(true);
     if (runtime.initRetry) {
       clearTimer(runtime.reconnectTimer);
       runtime.reconnectTimer = null;
       runtime.initRetry = null;
     }
     runtime.intentionallyDestroyed = false;
+    runtime.deviceStartedAt = Date.now();
     setRuntimeState({
       ready: false,
       registered: false,
@@ -1091,12 +1240,17 @@ async function initVoiceDevice(
       connectionState: 'idle',
       error: null,
     });
+    watchRecovery(numberId);
 
     try {
       const tokenPromise = api.voice.token(numberId);
-      const sdkPromise = import('@twilio/voice-sdk') as Promise<unknown>;
+      const sdkPromise = (voiceSdkPromise ??= import('@twilio/voice-sdk').catch((err: unknown) => {
+        voiceSdkPromise = null;
+        throw err;
+      }));
       const configPromise = api.voice.deviceConfig();
       const [tokenResp, sdk, config] = await Promise.all([tokenPromise, sdkPromise, configPromise]);
+      if (runtime.generation !== generation) return null;
       const typedSdk = sdk as {
         Device?: VoiceDeviceConstructor;
         default?: VoiceDeviceConstructor;
@@ -1104,7 +1258,13 @@ async function initVoiceDevice(
       const Device = typedSdk.Device ?? typedSdk.default;
       if (!Device) throw new Error('Twilio Voice SDK Device export was not found');
 
-      const device = new Device(tokenResp.token, sanitizeDeviceConfig(config));
+      const options = sanitizeDeviceConfig(config);
+      if (Array.isArray(options.edge)) {
+        const edges = options.edge as string[];
+        const offset = runtime.edgeOffset % edges.length;
+        options.edge = [...edges.slice(offset), ...edges.slice(0, offset)];
+      }
+      const device = new Device(tokenResp.token, options);
       runtime.device = device;
       if (device.audio && typeof device.audio.setAudioConstraints === 'function') {
         try {
@@ -1113,6 +1273,7 @@ async function initVoiceDevice(
           // ignore
         }
       }
+      if (runtime.generation !== generation) return null;
       runtime.lastNumberId = numberId;
       runtime.expiresAt = tokenResp.expiresAt;
       runtime.intentionallyDestroyed = false;
@@ -1122,13 +1283,16 @@ async function initVoiceDevice(
       void registerCurrentDevice(numberId);
       return { identity: tokenResp.identity, expiresAt: tokenResp.expiresAt };
     } catch (err) {
+      if (runtime.generation !== generation) return null;
       setRuntimeState({ error: formatVoiceError(err) });
       if (runtime.device) scheduleReconnect(numberId);
       else scheduleInitRetry(numberId);
       return null;
     } finally {
-      runtime.currentInit = null;
-      runtime.currentInitNumberId = undefined;
+      if (runtime.generation === generation) {
+        runtime.currentInit = null;
+        runtime.currentInitNumberId = undefined;
+      }
     }
   })();
 
@@ -1141,6 +1305,10 @@ async function makeVoiceCall(
   options: MakeCallOptions = {},
 ): Promise<VoiceCall | null> {
   if (runtime.call || runtime.state.active || runtime.state.incoming) return null;
+  if (runtime.signalingRecoveryPending || runtime.state.recoveryFailed) return null;
+  clearTimer(runtime.outcomeTimer);
+  runtime.outcomeTimer = null;
+  runtime.callSequence += 1;
   setRuntimeState({ error: null, callNotice: null });
   if (runtime.state.micPermission === 'denied') {
     setRuntimeState({
@@ -1155,11 +1323,18 @@ async function makeVoiceCall(
     setRuntimeState({
       error:
         runtime.state.error ??
-        'Voice device could not initialize with Twilio. It will keep retrying automatically.',
+        'Voice device could not initialize with Twilio. Check the connection status and retry.',
     });
     scheduleReconnect(selectedNumberId);
     return null;
   }
+  if (!runtime.state.registered || runtime.signalingRecoveryPending) {
+    setRuntimeState({
+      error: 'The voice connection is not ready. Wait for Registered or tap Reconnect voice.',
+    });
+    return null;
+  }
+  const generation = runtime.generation;
 
   let prepared;
   try {
@@ -1169,15 +1344,18 @@ async function makeVoiceCall(
       options.recordCall,
     );
   } catch (err) {
+    if (runtime.generation !== generation) return null;
     setRuntimeState({ error: err instanceof Error ? err.message : String(err) });
     return null;
   }
+  if (runtime.generation !== generation || runtime.signalingRecoveryPending) return null;
   options.onPrepared?.(prepared);
 
   const device = await ensureDeviceForOutbound(prepared.selectedNumberId, prepared.identity);
   if (!device) {
     setRuntimeState({
-      error: 'Voice device could not initialize with Twilio. It will keep retrying automatically.',
+      error:
+        'Voice device could not initialize with Twilio. Check the connection status and retry.',
     });
     scheduleReconnect(prepared.selectedNumberId);
     return null;
@@ -1185,6 +1363,11 @@ async function makeVoiceCall(
 
   try {
     const audio = await prepareCallAudio(device);
+    if (runtime.device !== device) return null;
+    if (runtime.signalingRecoveryPending) {
+      releaseMicrophone();
+      return null;
+    }
     const result = device.connect({
       params: {
         selectedNumberId: prepared.selectedNumberId,
@@ -1195,16 +1378,22 @@ async function makeVoiceCall(
       rtcConstraints: { audio },
     });
     const conn = isPromiseLike(result) ? await result : result;
-    attachCallListeners(conn);
+    if (runtime.device !== device) {
+      conn.disconnect?.();
+      return null;
+    }
+    attachCallListeners(conn, prepared);
     return conn;
   } catch (err) {
+    if (runtime.device !== device) return null;
     const isDenied = isMicDeniedError(err);
     releaseMicrophone();
     setRuntimeState({
       ...callErrorState(err),
       ...(isDenied ? { micPermission: 'denied' as const } : {}),
     });
-    if (RECONNECTABLE_ERROR_CODES.has(getVoiceErrorCode(err) ?? 0)) {
+    if (RECONNECTABLE_ERROR_CODES.has(getVoiceErrorCode(err) ?? 0) && !isCallHangupError(err)) {
+      runtime.signalingRecoveryPending = true;
       scheduleReconnect(prepared.selectedNumberId);
     }
     return null;
@@ -1361,12 +1550,14 @@ function replaceStalledDevice(): void {
   if (runtime.intentionallyDestroyed || !runtime.device || runtime.state.registered) return;
   if (runtime.state.active || runtime.currentInit) return;
   if (typeof document !== 'undefined' && document.visibilityState === 'hidden') return;
-  const numberId = runtime.lastNumberId;
-  disposeCurrentDevice(false);
-  void initVoiceDevice(numberId, isBrowserSupported());
+  replaceForRecovery(runtime.lastNumberId);
 }
 
 function recoverNow(): void {
+  if (runtime.state.recoveryFailed && document.visibilityState !== 'hidden') {
+    retryVoiceConnection();
+    return;
+  }
   if (runtime.intentionallyDestroyed) return;
   if (typeof document !== 'undefined' && document.visibilityState === 'hidden') return;
   // A signaling socket that died while the tab was in the background can still
@@ -1404,7 +1595,13 @@ function installRecoveryListeners(): void {
   // retain the handler as a safety net for other reconnectable SDK failures.
   window.addEventListener('unhandledrejection', (event) => {
     const code = getVoiceErrorCode(event.reason);
-    if (!code || !RECONNECTABLE_ERROR_CODES.has(code) || !runtime.device) return;
+    if (
+      !code ||
+      !RECONNECTABLE_ERROR_CODES.has(code) ||
+      !runtime.device ||
+      isCallHangupError(event.reason)
+    )
+      return;
     event.preventDefault();
     runtime.signalingRecoveryPending = true;
     scheduleReconnect(runtime.lastNumberId);
@@ -1477,6 +1674,7 @@ export function useVoiceDevice(): UseVoiceDevice {
     ...snapshot,
     init,
     destroy,
+    retryConnection: retryVoiceConnection,
     browserSupported,
     accept: acceptIncomingCall,
     reject: rejectIncomingCall,
