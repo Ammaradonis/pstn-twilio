@@ -107,6 +107,7 @@ type VoiceRuntimeState = {
   connectionState: ConnectionState;
   identity: string | null;
   error: string | null;
+  callNotice: string | null;
   isMuted: boolean;
   canSendDigits: boolean;
   micPermission: MicPermission;
@@ -150,6 +151,7 @@ const INITIAL_RUNTIME_STATE: VoiceRuntimeState = {
   connectionState: 'idle',
   identity: null,
   error: null,
+  callNotice: null,
   isMuted: false,
   canSendDigits: false,
   micPermission: 'unknown',
@@ -350,9 +352,20 @@ function clearTimer(timer: ReturnType<typeof setTimeout> | null): void {
 }
 
 function getVoiceErrorCode(err: unknown): number | undefined {
-  if (!(err instanceof Error)) return undefined;
+  if (!err || typeof err !== 'object') return undefined;
   const voiceError = err as VoiceSdkError;
   return voiceError.twilioError?.code ?? voiceError.code;
+}
+
+function callErrorState(err: unknown): Pick<VoiceRuntimeState, 'error' | 'callNotice'> {
+  if (getVoiceErrorCode(err) === 31603) {
+    return {
+      error: null,
+      callNotice:
+        'Call declined by the destination or its carrier (31603). You can place another call.',
+    };
+  }
+  return { error: formatVoiceError(err), callNotice: null };
 }
 
 function isMicDeniedError(err: unknown): boolean {
@@ -604,9 +617,8 @@ async function selectMicrophone(deviceId: string): Promise<void> {
         // Automatic keeps the Android earpiece policy when Chrome exposes it;
         // an attached headset is left to Chrome's default route.
         await audio.setInputDevice(requestedDeviceId);
-      } else if (audio.unsetInputDevice) {
-        await audio.unsetInputDevice();
       } else {
+        // unsetInputDevice is forbidden during a live Twilio call.
         await audio.setInputDevice('default');
       }
     }
@@ -823,13 +835,17 @@ function attachCallListeners(conn: VoiceCall): void {
   void syncScreenWakeLock(true);
   setRuntimeState({
     active: true,
+    error: null,
+    callNotice: null,
     connectionState: 'pending',
     isMuted: Boolean(conn?.isMuted?.()),
     canSendDigits: callCanSendDigits(conn),
     ...NO_CALL_QUALITY,
   });
 
-  conn.on?.('ringing', () => setRuntimeState({ connectionState: 'ringing' }));
+  conn.on?.('ringing', () => {
+    if (runtime.call === conn) setRuntimeState({ connectionState: 'ringing' });
+  });
   conn.on?.('sample', (sample) => {
     if (runtime.call !== conn) return;
     const s = (sample ?? {}) as RtcSample;
@@ -854,15 +870,17 @@ function attachCallListeners(conn: VoiceCall): void {
       qualityWarnings: runtime.state.qualityWarnings.filter((warning) => warning !== name),
     });
   });
-  conn.on?.('accept', () =>
+  conn.on?.('accept', () => {
+    if (runtime.call !== conn) return;
     setRuntimeState({
       connectionState: 'open',
       active: true,
       error: null,
       canSendDigits: callCanSendDigits(conn),
-    }),
-  );
+    });
+  });
   conn.on?.('disconnect', () => {
+    if (runtime.call !== conn) return;
     releaseMicrophone();
     void syncScreenWakeLock(false);
     runtime.call = null;
@@ -875,6 +893,7 @@ function attachCallListeners(conn: VoiceCall): void {
     });
   });
   conn.on?.('cancel', () => {
+    if (runtime.call !== conn) return;
     releaseMicrophone();
     void syncScreenWakeLock(false);
     runtime.call = null;
@@ -886,6 +905,7 @@ function attachCallListeners(conn: VoiceCall): void {
     });
   });
   conn.on?.('reject', () => {
+    if (runtime.call !== conn) return;
     releaseMicrophone();
     void syncScreenWakeLock(false);
     runtime.call = null;
@@ -896,13 +916,17 @@ function attachCallListeners(conn: VoiceCall): void {
       ...NO_CALL_QUALITY,
     });
   });
-  conn.on?.('reconnecting', (err) =>
+  conn.on?.('reconnecting', (err) => {
+    if (runtime.call !== conn) return;
     setRuntimeState({
       error: err ? formatVoiceError(err) : 'Call connection lost. Reconnecting…',
-    }),
-  );
-  conn.on?.('reconnected', () => setRuntimeState({ error: null }));
+    });
+  });
+  conn.on?.('reconnected', () => {
+    if (runtime.call === conn) setRuntimeState({ error: null });
+  });
   conn.on?.('error', (err) => {
+    if (runtime.call !== conn) return;
     const code = getVoiceErrorCode(err) ?? 0;
     const isDenied = isMicDeniedError(err);
     if (TRANSIENT_SIGNALING_CODES.has(code)) {
@@ -910,11 +934,18 @@ function attachCallListeners(conn: VoiceCall): void {
       // signaling; the 'disconnect' handler cleans up if recovery fails.
       setRuntimeState({ error: formatVoiceError(err) });
     } else {
+      // The SDK can emit error before disconnect. Close it before releasing
+      // its input stream, and ignore any later events from this old call.
+      try {
+        conn.disconnect?.();
+      } catch {
+        /* already closing */
+      }
       releaseMicrophone();
       void syncScreenWakeLock(false);
       runtime.call = null;
       setRuntimeState({
-        error: formatVoiceError(err),
+        ...callErrorState(err),
         active: false,
         connectionState: 'closed',
         canSendDigits: false,
@@ -989,8 +1020,15 @@ function attachDeviceListeners(device: VoiceDevice, numberId: string | undefined
         from: conn.parameters?.From,
       },
     });
-    conn.on?.('cancel', () => setRuntimeState({ incoming: null }));
-    conn.on?.('disconnect', () => setRuntimeState({ incoming: null }));
+    const clearIncoming = () => {
+      if (runtime.state.incoming?.connection === conn) setRuntimeState({ incoming: null });
+    };
+    conn.on?.('cancel', clearIncoming);
+    conn.on?.('disconnect', clearIncoming);
+    conn.on?.('error', (err) => {
+      if (runtime.state.incoming?.connection !== conn) return;
+      setRuntimeState({ incoming: null, ...callErrorState(err) });
+    });
   });
 
   device.on('error', (err) => {
@@ -998,7 +1036,7 @@ function attachDeviceListeners(device: VoiceDevice, numberId: string | undefined
     const code = getVoiceErrorCode(err);
     const isDenied = isMicDeniedError(err);
     setRuntimeState({
-      error: formatVoiceError(err),
+      ...callErrorState(err),
       ...(isDenied ? { micPermission: 'denied' as const } : {}),
     });
     if (TOKEN_ERROR_CODES.has(code ?? 0)) runtime.tokenRejected = true;
@@ -1102,6 +1140,8 @@ async function makeVoiceCall(
   destinationNumber: string,
   options: MakeCallOptions = {},
 ): Promise<VoiceCall | null> {
+  if (runtime.call || runtime.state.active || runtime.state.incoming) return null;
+  setRuntimeState({ error: null, callNotice: null });
   if (runtime.state.micPermission === 'denied') {
     setRuntimeState({
       error:
@@ -1159,8 +1199,9 @@ async function makeVoiceCall(
     return conn;
   } catch (err) {
     const isDenied = isMicDeniedError(err);
+    releaseMicrophone();
     setRuntimeState({
-      error: formatVoiceError(err),
+      ...callErrorState(err),
       ...(isDenied ? { micPermission: 'denied' as const } : {}),
     });
     if (RECONNECTABLE_ERROR_CODES.has(getVoiceErrorCode(err) ?? 0)) {
@@ -1190,14 +1231,19 @@ async function acceptIncomingCall(): Promise<void> {
   try {
     const audio = await prepareCallAudio(device);
     // The caller may have hung up while the devices were being listed.
-    if (runtime.state.incoming?.connection !== conn) return;
+    if (runtime.state.incoming?.connection !== conn) {
+      if (!runtime.call) releaseMicrophone();
+      return;
+    }
     attachCallListeners(conn);
     conn.accept?.({ audioConstraints: audio, rtcConstraints: { audio } });
     setRuntimeState({ incoming: null });
   } catch (err) {
     const isDenied = isMicDeniedError(err);
+    if (runtime.call === conn) hangupCall();
+    else releaseMicrophone();
     setRuntimeState({
-      error: formatVoiceError(err),
+      ...callErrorState(err),
       ...(isDenied ? { micPermission: 'denied' as const } : {}),
     });
   }

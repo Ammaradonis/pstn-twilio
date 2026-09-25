@@ -41,9 +41,21 @@ function normalizeUsCandidate(candidate: string): string | null {
   return `+1${nationalNumber}`;
 }
 
-export function normalizeDialablePhoneNumber(value: string): string | null {
+export function normalizeDialablePhoneNumber(
+  value: string,
+  defaultCountry: 'US' | 'GB' = 'US',
+): string | null {
   const input = normalizeSeparators(value.trim());
   if (!input) return null;
+  if (defaultCountry === 'GB') {
+    // Use numbering-plan metadata for UK trunk prefixes, +44 (0), 0044,
+    // mobiles and landlines. Never fall back to interpreting ten UK digits as US.
+    const direct = parsePhoneNumberFromString(input, { defaultCountry: 'GB', extract: false });
+    if (direct?.isValid()) return direct.number;
+    const matches = findPhoneNumbersInText(input, 'GB');
+    const numbers = [...new Set(matches.map(({ number }) => number.number))];
+    return numbers.length === 1 ? numbers[0]! : null;
+  }
   if (E164_RE.test(input)) return input;
 
   for (const match of input.matchAll(INTERNATIONAL_PHONE_CANDIDATE_RE)) {
@@ -62,3 +74,4 @@ export function normalizeDialablePhoneNumber(value: string): string | null {
 
   return null;
 }
+import { findPhoneNumbersInText, parsePhoneNumberFromString } from 'libphonenumber-js/max';

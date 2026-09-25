@@ -4,6 +4,35 @@ import { normalizeDialablePhoneNumber } from './phone';
 
 describe('normalizeDialablePhoneNumber', () => {
   it.each([
+    ['020 7946 0018', '+442079460018'],
+    ['0161 496 0123', '+441614960123'],
+    ['07458 904436', '+447458904436'],
+    ['7458904436', '+447458904436'],
+    ['447458904436', '+447458904436'],
+    ['0044 20 7946 0018', '+442079460018'],
+    ['+44 (0)20 7946 0018', '+442079460018'],
+    ['＋44 (0)20 7946–0018', '+442079460018'],
+    ['Studio at 22 High Street SW1A 1AA\nTelephone: 020 7946 0018\nReviews 41', '+442079460018'],
+    ['Call 020 7946 0018 ext. 123', '+442079460018'],
+    ['+1 530-441-9961', '+15304419961'],
+  ])('normalizes UK-line clipboard %s', (input, expected) => {
+    expect(normalizeDialablePhoneNumber(input, 'GB')).toBe(expected);
+  });
+
+  it.each([
+    '',
+    '020 7946',
+    '22 High Street SW1A 1AA',
+    '999',
+    '020 7946 0018 or 0161 496 0123',
+    '5304419961',
+  ])(
+    'does not auto-dial incomplete, ambiguous, or US national text on the UK line: %s',
+    (input) => {
+      expect(normalizeDialablePhoneNumber(input, 'GB')).toBeNull();
+    },
+  );
+  it.each([
     ['+1 530-441-9961', '+15304419961'],
     ['530-441-9961', '+15304419961'],
     ['(530) 441-9961', '+15304419961'],

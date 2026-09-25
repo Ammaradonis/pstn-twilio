@@ -4,7 +4,7 @@ import {
   type OutboundCallPreparationDto,
 } from '@pstn-twilio/shared';
 import { useQuery } from '@tanstack/react-query';
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useParams } from 'react-router-dom';
 
 import { AiAgentPanel } from '../components/ai-agent-panel';
@@ -66,7 +66,17 @@ function formatDuration(seconds: number | null): string {
 export function DialPage() {
   const { numberId } = useParams<{ numberId: string }>();
   const [destination, setDestination] = useState('');
-  const [callerId, setCallerId] = useState<string | null>(null);
+  const selectedNumber = useQuery({
+    queryKey: ['numbers', numberId],
+    queryFn: () => api.numbers.get(numberId!),
+    enabled: Boolean(numberId),
+  });
+  const callerId = selectedNumber.data?.phoneNumberE164;
+  const dialingCountry =
+    selectedNumber.data?.country === 'GB' || callerId?.startsWith('+44') ? 'GB' : 'US';
+  const isUk = dialingCountry === 'GB';
+  const callInFlight = useRef(false);
+  const clipboardInFlight = useRef(false);
   const [submitting, setSubmitting] = useState(false);
   const [pageError, setPageError] = useState<string | null>(null);
   const [sentTones, setSentTones] = useState('');
@@ -91,7 +101,9 @@ export function DialPage() {
   const sendDtmfDigits = voice.sendDigits;
 
   function setDestinationFromInput(value: string) {
-    setDestination(normalizeDialablePhoneNumber(value) ?? value.trim());
+    // Keep partial UK numbers intact: a valid ten-digit prefix can still be
+    // part of an eleven-digit national number while the user is typing.
+    setDestination(isUk ? value.trim() : (normalizeDialablePhoneNumber(value) ?? value.trim()));
   }
 
   function appendDestinationKey(key: (typeof DIALPAD_KEYS)[number]) {
@@ -103,7 +115,9 @@ export function DialPage() {
       return;
     }
 
-    setDestination((prev) => normalizeDialablePhoneNumber(prev + key) ?? prev + key);
+    setDestination((prev) =>
+      isUk ? prev + key : (normalizeDialablePhoneNumber(prev + key) ?? prev + key),
+    );
   }
 
   const sendDialpadTone = useCallback(
@@ -159,25 +173,9 @@ export function DialPage() {
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [inCallMode, sendDialpadTone]);
 
-  useEffect(() => {
-    if (!numberId) return;
-    let cancelled = false;
-    api.numbers
-      .get(numberId)
-      .then((n) => {
-        if (!cancelled) setCallerId(n.phoneNumberE164);
-      })
-      .catch((err: unknown) => {
-        if (!cancelled) setPageError(err instanceof Error ? err.message : String(err));
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, [numberId]);
-
   const normalizedDestination = useMemo(
-    () => normalizeDialablePhoneNumber(destination),
-    [destination],
+    () => normalizeDialablePhoneNumber(destination, dialingCountry),
+    [destination, dialingCountry],
   );
   const valid = normalizedDestination !== null;
 
@@ -185,10 +183,15 @@ export function DialPage() {
     destinationNumber: string | null = normalizedDestination,
     opts: { skipRepeatWarning?: boolean } = {},
   ) {
+    if (callInFlight.current || inCallMode || !selectedNumber.data) return;
     setPageError(null);
     if (!numberId) return;
     if (!destinationNumber) {
-      setPageError('Enter a valid U.S. phone number, such as +1 530-441-9961.');
+      setPageError(
+        isUk
+          ? 'Enter a UK phone number, such as 020 7946 0018 or +44 20 7946 0018.'
+          : 'Enter a valid U.S. phone number, such as +1 530-441-9961.',
+      );
       return;
     }
     if (voice.micPermission === 'denied') {
@@ -197,14 +200,14 @@ export function DialPage() {
       );
       return;
     }
-    if (voice.micPermission !== 'granted' && typeof voice.requestMicPermission === 'function') {
-      const granted = await voice.requestMicPermission();
-      if (!granted) {
-        return;
-      }
-    }
+    callInFlight.current = true;
     setSubmitting(true);
     try {
+      if (voice.micPermission !== 'granted' && typeof voice.requestMicPermission === 'function') {
+        const granted = await voice.requestMicPermission();
+        if (!granted) return;
+      }
+      setDestination(destinationNumber);
       if (!opts.skipRepeatWarning) {
         let lastDial: LastDialDto | null = null;
         try {
@@ -237,6 +240,7 @@ export function DialPage() {
     } catch (err) {
       setPageError(err instanceof Error ? err.message : String(err));
     } finally {
+      callInFlight.current = false;
       setSubmitting(false);
     }
   }
@@ -246,24 +250,34 @@ export function DialPage() {
   }
 
   async function handlePasteAndCall() {
+    if (clipboardInFlight.current || callInFlight.current || inCallMode || !selectedNumber.data)
+      return;
     setPageError(null);
-    setDestination('');
     if (!navigator.clipboard?.readText) {
       setPageError('Clipboard access is unavailable in this browser.');
       return;
     }
 
+    clipboardInFlight.current = true;
+    setSubmitting(true);
     try {
       const pasted = await navigator.clipboard.readText();
-      const normalized = normalizeDialablePhoneNumber(pasted);
+      const normalized = normalizeDialablePhoneNumber(pasted, dialingCountry);
       if (!normalized) {
-        setPageError('Clipboard does not contain a dialable phone number.');
+        setPageError(
+          isUk
+            ? 'Copy one complete UK phone number, or text containing just one phone number.'
+            : 'Clipboard does not contain a dialable phone number.',
+        );
         return;
       }
       setDestination(normalized);
-      await placeCall(normalized);
+      await placeCall(normalized, { skipRepeatWarning: isUk });
     } catch (err) {
       setPageError(err instanceof Error ? err.message : String(err));
+    } finally {
+      clipboardInFlight.current = false;
+      setSubmitting(false);
     }
   }
 
@@ -423,6 +437,17 @@ export function DialPage() {
           {pageError ?? voice.error}
         </div>
       )}
+      {selectedNumber.isError && (
+        <p role="alert">Could not load this phone number. Refresh before dialing.</p>
+      )}
+      {voice.callNotice && (
+        <p
+          role="status"
+          className="rounded border border-slate-200 bg-white p-3 text-sm text-slate-700"
+        >
+          {voice.callNotice}
+        </p>
+      )}
 
       <div className="rounded border border-slate-200 bg-white p-4">
         <label htmlFor="destination-number" className="text-sm text-slate-700">
@@ -434,16 +459,21 @@ export function DialPage() {
             value={destination}
             onChange={(e) => setDestinationFromInput(e.target.value)}
             onPaste={(e) => {
-              const normalized = normalizeDialablePhoneNumber(e.clipboardData.getData('text'));
               e.preventDefault();
+              if (inCallMode || submitting || !selectedNumber.data) return;
+              const normalized = normalizeDialablePhoneNumber(
+                e.clipboardData.getData('text'),
+                dialingCountry,
+              );
               if (!normalized) {
                 setPageError('Pasted text does not contain a dialable phone number.');
                 return;
               }
               setPageError(null);
               setDestination(normalized);
+              if (isUk) void placeCall(normalized, { skipRepeatWarning: true });
             }}
-            placeholder="+1 530-441-9961"
+            placeholder={isUk ? '020 7946 0018' : '+1 530-441-9961'}
             inputMode="tel"
             readOnly={inCallMode}
             className="min-w-0 flex-1 rounded border border-slate-300 px-2 py-1 font-mono text-sm focus:border-slate-500 focus:outline-none read-only:bg-slate-50"
@@ -451,17 +481,25 @@ export function DialPage() {
           <button
             type="button"
             onClick={handlePasteAndCall}
-            disabled={submitting || inCallMode || voice.micPermission === 'denied'}
+            disabled={
+              !selectedNumber.data || submitting || inCallMode || voice.micPermission === 'denied'
+            }
             title="Paste a phone number from the clipboard and call it"
             className="rounded border border-slate-300 px-3 py-1.5 text-sm font-medium hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-60"
           >
             Paste
           </button>
         </div>
+        {isUk && (
+          <p className="mt-2 text-xs text-slate-500">
+            UK dialing: paste a number to convert it to +44 and call immediately.
+          </p>
+        )}
         {destination.length > 0 && !valid && (
           <p className="mt-1 text-xs text-rose-700">
-            Enter a U.S. phone number such as <span className="font-mono">+1 530-441-9961</span> or{' '}
-            <span className="font-mono">530-441-9961</span>.
+            {isUk
+              ? 'Enter a UK number such as 020 7946 0018 or 07700 900123.'
+              : 'Enter a U.S. phone number such as +1 530-441-9961 or 530-441-9961.'}
           </p>
         )}
 
@@ -534,7 +572,13 @@ export function DialPage() {
         <div className="mt-4 flex flex-wrap gap-2">
           <button
             onClick={handleCall}
-            disabled={!valid || submitting || inCallMode || voice.micPermission === 'denied'}
+            disabled={
+              !selectedNumber.data ||
+              !valid ||
+              submitting ||
+              inCallMode ||
+              voice.micPermission === 'denied'
+            }
             className="rounded bg-emerald-600 px-3 py-1.5 text-sm font-semibold text-white hover:bg-emerald-700 disabled:cursor-not-allowed disabled:opacity-60"
           >
             {inCallMode ? 'In call' : submitting ? 'Calling…' : 'Call'}

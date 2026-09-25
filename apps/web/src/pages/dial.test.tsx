@@ -1,5 +1,5 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { fireEvent, render as renderBase, screen, waitFor } from '@testing-library/react';
+import { act, fireEvent, render as renderBase, screen, waitFor } from '@testing-library/react';
 import type { ReactElement } from 'react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
@@ -11,6 +11,12 @@ import { DialPage } from './dial';
 function render(ui: ReactElement) {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   return renderBase(<QueryClientProvider client={client}>{ui}</QueryClientProvider>);
+}
+
+async function renderDial() {
+  const view = render(<DialPage />);
+  await screen.findByText(/Caller ID:/);
+  return view;
 }
 
 const voiceMock = vi.hoisted(() => ({
@@ -114,6 +120,10 @@ describe('DialPage dialpad', () => {
     vi.mocked(watchRecordingDownload).mockClear();
     vi.mocked(api.calls.lastDial).mockClear();
     vi.mocked(api.calls.lastDial).mockResolvedValue(null);
+    vi.mocked(api.numbers.get).mockResolvedValue({
+      phoneNumberE164: '+18776524532',
+      country: 'US',
+    } as never);
   });
 
   it('has a plus key for destination entry before a call', () => {
@@ -157,7 +167,7 @@ describe('DialPage dialpad', () => {
     vi.mocked(api.calls.lastDial).mockRejectedValue(
       new ApiError(404, 'Cannot GET /api/numbers/pn1/last-dial'),
     );
-    render(<DialPage />);
+    await renderDial();
 
     fireEvent.change(screen.getByLabelText(/destination/i), {
       target: { value: '+12547024877' },
@@ -175,7 +185,7 @@ describe('DialPage dialpad', () => {
   });
 
   it('checks the last-dial endpoint before starting an outbound call', async () => {
-    render(<DialPage />);
+    await renderDial();
 
     fireEvent.change(screen.getByLabelText(/destination/i), {
       target: { value: '+12547024877' },
@@ -198,7 +208,7 @@ describe('DialPage dialpad', () => {
       destinationNumber: '+15304419961',
       lastDialedAt: '2026-06-07T18:31:57.652Z',
     });
-    render(<DialPage />);
+    await renderDial();
 
     fireEvent.change(screen.getByLabelText(/destination/i), { target: { value: '5304419961' } });
     fireEvent.click(screen.getByRole('button', { name: 'Call' }));
@@ -228,7 +238,7 @@ describe('DialPage dialpad', () => {
       options?.onPrepared?.(prepared);
       return { on: vi.fn() };
     });
-    render(<DialPage />);
+    await renderDial();
 
     expect(screen.getByRole('switch', { name: /record call/i })).toBeChecked();
     fireEvent.change(screen.getByLabelText(/destination/i), {
@@ -247,7 +257,7 @@ describe('DialPage dialpad', () => {
   });
 
   it('places an unrecorded call when recording is toggled off and remembers the choice', async () => {
-    const view = render(<DialPage />);
+    const view = await renderDial();
 
     fireEvent.click(screen.getByRole('switch', { name: /record call/i }));
     expect(screen.getByRole('switch', { name: /record call/i })).not.toBeChecked();
@@ -285,7 +295,7 @@ describe('DialPage dialpad', () => {
       });
       return null;
     });
-    render(<DialPage />);
+    await renderDial();
 
     fireEvent.change(screen.getByLabelText(/destination/i), {
       target: { value: '+12547024877' },
@@ -311,7 +321,7 @@ describe('DialPage dialpad', () => {
       destinationNumber: '+15304419961',
       lastDialedAt: '2026-06-07T18:31:57.652Z',
     });
-    render(<DialPage />);
+    await renderDial();
 
     fireEvent.change(screen.getByLabelText(/destination/i), { target: { value: '5304419961' } });
     fireEvent.click(screen.getByRole('button', { name: 'Call' }));
@@ -325,5 +335,69 @@ describe('DialPage dialpad', () => {
       ),
     );
     expect(api.calls.lastDial).toHaveBeenCalledTimes(1);
+  });
+
+  it('pastes a UK listing and calls immediately without a repeat-call lookup', async () => {
+    vi.mocked(api.numbers.get).mockResolvedValue({
+      phoneNumberE164: '+447458904436',
+      country: 'GB',
+    } as never);
+    Object.defineProperty(navigator, 'clipboard', {
+      configurable: true,
+      value: { readText: vi.fn().mockResolvedValue('London studio\n020 7946 0018') },
+    });
+    await renderDial();
+    fireEvent.click(screen.getByRole('button', { name: 'Paste' }));
+    await waitFor(() =>
+      expect(voiceMock.current.makeCall).toHaveBeenCalledWith(
+        'pn1',
+        '+442079460018',
+        expect.objectContaining({ recordCall: true }),
+      ),
+    );
+    expect(screen.getByLabelText(/destination/i)).toHaveValue('+442079460018');
+    expect(api.calls.lastDial).not.toHaveBeenCalled();
+  });
+
+  it('direct UK paste starts one call even with rapid repeated paste events', async () => {
+    vi.mocked(api.numbers.get).mockResolvedValue({
+      phoneNumberE164: '+447458904436',
+      country: 'GB',
+    } as never);
+    let finish!: () => void;
+    voiceMock.current.makeCall.mockImplementation(
+      () =>
+        new Promise<void>((resolve) => {
+          finish = resolve;
+        }),
+    );
+    await renderDial();
+    const pasted = { clipboardData: { getData: () => '+44 (0)20 7946 0018' } };
+    fireEvent.paste(screen.getByLabelText(/destination/i), pasted);
+    fireEvent.paste(screen.getByLabelText(/destination/i), pasted);
+    expect(voiceMock.current.makeCall).toHaveBeenCalledTimes(1);
+    expect(screen.getByLabelText(/destination/i)).toHaveValue('+442079460018');
+    await act(async () => finish());
+  });
+
+  it('leaves invalid UK clipboard text undialed', async () => {
+    vi.mocked(api.numbers.get).mockResolvedValue({
+      phoneNumberE164: '+447458904436',
+      country: 'GB',
+    } as never);
+    Object.defineProperty(navigator, 'clipboard', {
+      configurable: true,
+      value: { readText: vi.fn().mockResolvedValue('22 High Street SW1A 1AA') },
+    });
+    await renderDial();
+    fireEvent.click(screen.getByRole('button', { name: 'Paste' }));
+    await screen.findByText(/Copy one complete UK phone number/);
+    expect(voiceMock.current.makeCall).not.toHaveBeenCalled();
+  });
+
+  it('waits for the selected number country before enabling Paste', () => {
+    vi.mocked(api.numbers.get).mockReturnValue(new Promise(() => {}));
+    render(<DialPage />);
+    expect(screen.getByRole('button', { name: 'Paste' })).toBeDisabled();
   });
 });

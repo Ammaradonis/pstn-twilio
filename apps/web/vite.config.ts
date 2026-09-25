@@ -32,5 +32,14 @@ export default defineConfig({
     target: 'es2022',
     outDir: 'dist',
     sourcemap: true,
+    rollupOptions: {
+      output: {
+        manualChunks(id) {
+          // Cache numbering-plan metadata separately from softphone changes.
+          if (id.includes('libphonenumber-js')) return 'phone-numbers';
+          return undefined;
+        },
+      },
+    },
   },
 });

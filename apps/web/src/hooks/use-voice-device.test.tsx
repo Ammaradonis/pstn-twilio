@@ -459,6 +459,63 @@ describe('useVoiceDevice', () => {
     expect(mediaMock.getUserMedia).not.toHaveBeenCalled();
   });
 
+  it('cleans up 31603, stays registered, and ignores the declined call after a new call starts', async () => {
+    render(<Harness onChange={(voice) => (current = voice)} />);
+    await act(async () => {
+      await current!.init('pn1');
+    });
+    const device = voiceSdkMock.instances[0]!;
+    const handlers = new Map<string, (...args: unknown[]) => void>();
+    const call = {
+      on: vi.fn((event, handler) => handlers.set(event, handler)),
+      disconnect: vi.fn(),
+    };
+    device.connect.mockReturnValue(call);
+    await act(async () => {
+      await current!.makeCall('pn1', '+15304419961');
+    });
+    act(() => handlers.get('error')?.(Object.assign(new Error('Decline'), { code: 31603 })));
+    expect(current!.active).toBe(false);
+    expect(current!.error).toBeNull();
+    expect(current!.callNotice).toContain('declined');
+    expect(current!.registered).toBe(true);
+    expect(device.audio.unsetInputDevice).toHaveBeenCalled();
+    expect(call.disconnect).toHaveBeenCalled();
+    const next = { on: vi.fn(), sendDigits: vi.fn() };
+    device.connect.mockReturnValue(next);
+    await act(async () => {
+      await current!.makeCall('pn1', '+15304419961');
+    });
+    device.audio.unsetInputDevice.mockClear();
+    act(() => {
+      handlers.get('disconnect')?.();
+      handlers.get('error')?.(Object.assign(new Error('Late decline'), { code: 31603 }));
+      current!.sendDigits('5');
+    });
+    expect(current!.active).toBe(true);
+    expect(current!.error).toBeNull();
+    expect(current!.callNotice).toBeNull();
+    expect(next.sendDigits).toHaveBeenCalledWith('5');
+    expect(device.audio.unsetInputDevice).not.toHaveBeenCalled();
+    expect(device.register).toHaveBeenCalledTimes(1);
+  });
+
+  it('releases selected audio when connect rejects with a nested 31603 error', async () => {
+    render(<Harness onChange={(voice) => (current = voice)} />);
+    await act(async () => {
+      await current!.init('pn1');
+    });
+    const device = voiceSdkMock.instances[0]!;
+    device.connect.mockRejectedValue({ code: 31005, twilioError: { code: 31603 } });
+    await act(async () => {
+      await current!.makeCall('pn1', '+15304419961');
+    });
+    expect(current!.error).toBeNull();
+    expect(current!.callNotice).toContain('31603');
+    expect(current!.registered).toBe(true);
+    expect(device.audio.unsetInputDevice).toHaveBeenCalled();
+  });
+
   it('reports Twilio media failures from outbound connect without a duplicate mic preflight', async () => {
     render(<Harness onChange={(voice) => (current = voice)} />);
 
@@ -663,6 +720,20 @@ describe('useVoiceDevice', () => {
       expect(device.audio.unsetInputDevice).toHaveBeenCalled();
     });
 
+    it('uses setInputDevice for Automatic with a headset during a live call', async () => {
+      androidInputs('Speakerphone', 'Headset earpiece', 'Bluetooth headset');
+      const device = await initDevice();
+      device.connect.mockReturnValue({ on: vi.fn() });
+      await act(async () => {
+        await current!.makeCall('pn1', '+15304419961');
+        await current!.selectMicrophone('id-1');
+        await current!.selectMicrophone('');
+      });
+      expect(current!.microphoneError).toBeNull();
+      expect(device.audio.setInputDevice).toHaveBeenLastCalledWith('default');
+      expect(device.audio.unsetInputDevice).not.toHaveBeenCalled();
+    });
+
     it('does not silently substitute a missing microphone', async () => {
       androidInputs('Speakerphone', 'Headset earpiece');
       const device = await initDevice();
@@ -742,6 +813,7 @@ describe('useVoiceDevice', () => {
       });
 
       expect(call.accept).not.toHaveBeenCalled();
+      expect(device.audio.unsetInputDevice).toHaveBeenCalled();
     });
   });
 

@@ -134,6 +134,14 @@ export function AnswerPage() {
           {voice.error}
         </div>
       )}
+      {voice.callNotice && (
+        <p
+          role="status"
+          className="rounded border border-slate-200 bg-white p-3 text-sm text-slate-700"
+        >
+          {voice.callNotice}
+        </p>
+      )}
 
       {voice.incoming ? (
         <div className="rounded border border-emerald-300 bg-emerald-50 p-4">
