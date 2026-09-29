@@ -1,4 +1,4 @@
-# Cloudflare Pages — `app.webfitalchemist.online`
+# Cloudflare Pages — `app.bestsoftphone.site`
 
 The web bundle is a static SPA, so Cloudflare Pages is the simplest target.
 
@@ -10,8 +10,8 @@ The web bundle is a static SPA, so Cloudflare Pages is the simplest target.
 4. **Build output:** `apps/web/dist`
 5. **Root directory:** `/` (monorepo root).
 6. **Production environment variables:**
-   - `VITE_API_BASE_URL = https://api.webfitalchemist.online/api`
-   - `VITE_WS_URL       = wss://api.webfitalchemist.online`
+   - `VITE_API_BASE_URL = https://api.bestsoftphone.site/api`
+   - `VITE_WS_URL       = wss://api.bestsoftphone.site`
    - `VITE_APP_NAME     = pstn-twilio`
    - `VITE_REPEAT_DIAL_WARNING_ENABLED = false`
 7. **Copy these files into the deploy** (Cloudflare Pages picks them up
@@ -22,10 +22,11 @@ The web bundle is a static SPA, so Cloudflare Pages is the simplest target.
 
 ## Domain
 
-| Hostname                        | DNS record                                          | TLS  |
-| ------------------------------- | --------------------------------------------------- | ---- |
-| `app.webfitalchemist.online`    | CNAME → `pstn-twilio-web.pages.dev` (proxied)       | Auto |
-| `webfitalchemist.online` (apex) | CNAME flat → `app.webfitalchemist.online` (proxied) | Auto |
+| Hostname                    | DNS record                                         | TLS  |
+| --------------------------- | -------------------------------------------------- | ---- |
+| `app.bestsoftphone.site`    | CNAME → `pstn-twilio-web.pages.dev` (proxied)      | Auto |
+| `bestsoftphone.site` (apex) | CNAME flat → `pstn-twilio-web.pages.dev` (proxied) | Auto |
+| `api.bestsoftphone.site`    | A + AAAA from `fly certs add` (DNS only)           | Fly  |
 
 Make sure the apex domain is pointed at Cloudflare nameservers in Namecheap
 first (see [`docs/DEPLOYMENT.md`](../../docs/DEPLOYMENT.md)).

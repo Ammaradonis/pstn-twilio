@@ -174,7 +174,7 @@ All entries were accessed and verified on **2026-05-19** unless otherwise noted.
 - **Source URLs:** <https://developers.cloudflare.com/workers/runtime-apis/nodejs/>, <https://developers.cloudflare.com/pages/framework-guides/deploy-a-vite3-project/>
 - **Date accessed:** 2026-05-19
 - **Summary:** Cloudflare Workers with `nodejs_compat` supports most Node built-ins (assert, buffer, crypto, events, path, process, stream, util, partial net/tls/dns/fs). However Workers run a request/response model on `workerd`, not a persistent Node process — they cannot host a long-lived NestJS HTTP server, and Socket.IO is not directly supported (WebSocket via Durable Objects is supported but is a different programming model). Cloudflare Pages cleanly serves Vite output (`npm run build` → `dist/`) with per-branch preview deployments, env vars in the dashboard, custom domains, and `_redirects` for SPA routing.
-- **Implementation implication:** Architecture splits as follows. **Frontend** → Cloudflare Pages at `app.webfitalchemist.online`. **Backend** (NestJS + Socket.IO + Twilio webhook handler) → a Node-compatible host (Fly.io / Render / Railway) at `api.webfitalchemist.online`, fronted by Cloudflare DNS (proxy disabled or set to "DNS only" for the `api` subdomain to keep WebSocket pings working reliably and to keep `X-Twilio-Signature` URL validation deterministic). This decision is recorded in ADR-0001.
+- **Implementation implication:** Architecture splits as follows. **Frontend** → Cloudflare Pages at `app.bestsoftphone.site`. **Backend** (NestJS + Socket.IO + Twilio webhook handler) → a Node-compatible host (Fly.io / Render / Railway) at `api.bestsoftphone.site`, fronted by Cloudflare DNS (proxy disabled or set to "DNS only" for the `api` subdomain to keep WebSocket pings working reliably and to keep `X-Twilio-Signature` URL validation deterministic). This decision is recorded in ADR-0001.
 - **Compliance warning:** Cloudflare's orange-cloud proxy can rewrite request properties; for Twilio webhooks we either disable the proxy on `api` or set explicit Page Rules to preserve the host header.
 
 ## 19. Namecheap → Cloudflare nameservers
@@ -183,7 +183,7 @@ All entries were accessed and verified on **2026-05-19** unless otherwise noted.
 - **Source URL:** <https://www.namecheap.com/support/knowledgebase/article.aspx/767/10/how-to-change-dns-for-a-domain/>
 - **Date accessed:** 2026-05-19
 - **Summary:** In the Namecheap Domain List → Manage → Nameservers panel, pick `CustomDNS` and paste the two Cloudflare-supplied nameservers (e.g. `xxxx.ns.cloudflare.com`). Propagation typically completes within a few hours; can take up to 24h.
-- **Implementation implication:** Phase 10 will document this as a one-time manual step (using the project's Namecheap API credentials is also possible via `domains.dns.setCustom`, but the manual flow is simpler and auditable). After nameserver propagation, all DNS records for `webfitalchemist.online` are managed in Cloudflare via the Cloudflare API.
+- **Implementation implication:** Phase 10 will document this as a one-time manual step (using the project's Namecheap API credentials is also possible via `domains.dns.setCustom`, but the manual flow is simpler and auditable). After nameserver propagation, all DNS records for `bestsoftphone.site` are managed in Cloudflare via the Cloudflare API.
 - **Compliance warning:** N/A.
 
 ## 20. Neon PostgreSQL connection pooling

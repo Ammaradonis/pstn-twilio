@@ -23,8 +23,9 @@ function corsOrigins(config: ConfigService): string[] {
       ...parseOrigins(config.get<string>('WEB_APP_URL')),
       'http://localhost:5173',
       'http://127.0.0.1:5173',
-      'https://webfitalchemist.online',
-      'https://app.webfitalchemist.online',
+      'https://bestsoftphone.site',
+      'https://app.bestsoftphone.site',
+      'https://pstn-twilio-web.pages.dev',
     ]),
   );
 }

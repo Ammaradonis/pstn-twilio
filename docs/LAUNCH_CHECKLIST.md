@@ -29,8 +29,9 @@ top-to-bottom; do not skip ahead.
 ## DNS (Cloudflare via Namecheap)
 
 - [ ] Namecheap nameservers point at Cloudflare.
-- [ ] `app.webfitalchemist.online` CNAME → Cloudflare Pages.
-- [ ] `api.webfitalchemist.online` CNAME → Fly / Render (DNS-only).
+- [ ] `bestsoftphone.site` apex CNAME → `pstn-twilio-web.pages.dev` (proxied).
+- [ ] `app.bestsoftphone.site` CNAME → Cloudflare Pages.
+- [ ] `api.bestsoftphone.site` Fly A + AAAA records (DNS-only).
 - [ ] HTTPS works on both subdomains; no mixed-content warnings in the
       browser console.
 
@@ -42,9 +43,9 @@ top-to-bottom; do not skip ahead.
       unset and the API redeployed.
 - [ ] `JWT_SECRET` / `SESSION_SECRET` are ≥ 48 random bytes each.
 - [ ] `/api/health` / `/db` / `/redis` / `/twilio` all return `ok`.
-- [ ] CORS allowlist is exactly `https://app.webfitalchemist.online`.
+- [ ] CORS includes the apex, app hostname, and Pages fallback while it is enabled.
 - [ ] Helmet defaults are applied (smoke-test the response headers).
-- [ ] WebSocket upgrade works (`wss://api.webfitalchemist.online/socket.io/?...`).
+- [ ] WebSocket upgrade works (`wss://api.bestsoftphone.site/socket.io/?...`).
 
 ## Frontend (Cloudflare Pages)
 

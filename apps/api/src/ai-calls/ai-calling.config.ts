@@ -114,7 +114,7 @@ export class AiCallingConfig {
   }
 
   get webAppUrl(): string {
-    return (this.get('WEB_APP_URL') ?? 'https://webfitalchemist.online').replace(/\/$/, '');
+    return (this.get('WEB_APP_URL') ?? 'https://app.bestsoftphone.site').replace(/\/$/, '');
   }
 
   get tokenEncryptionKey(): string | undefined {

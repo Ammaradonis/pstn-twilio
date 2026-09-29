@@ -11,7 +11,7 @@ and answers/places PSTN calls in the browser via the Twilio Voice JavaScript SDK
 - **Frontend:** Vite + React + TypeScript + Tailwind + React Router + TanStack Query + Zustand + `@twilio/voice-sdk` + `socket.io-client`
 - **Backend:** NestJS + TypeScript + Prisma + PostgreSQL (Neon) + Redis (Upstash) + Twilio Node SDK
 - **Realtime:** Socket.IO over WebSockets
-- **Hosting:** Cloudflare Pages (web) + Node-friendly host (api), DNS on Cloudflare, domain on Namecheap (`webfitalchemist.online`)
+- **Hosting:** Cloudflare Pages (web) + Node-friendly host (api), DNS on Cloudflare, domain on Namecheap (`bestsoftphone.site`)
 
 ## Layout
 
@@ -44,7 +44,7 @@ pnpm prisma:migrate     # run migrations (use prisma:migrate:deploy in productio
 pnpm dev               # runs api + web concurrently
 ```
 
-Health check: <https://webfitalchemist.online/api/health>
+Health check: <https://api.bestsoftphone.site/api/health>
 Frontend: <http://localhost:5173>
 
 ## Top-level scripts

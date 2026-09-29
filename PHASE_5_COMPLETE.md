@@ -274,7 +274,7 @@ pnpm dev
 3. **Login:**
 
 ```bash
-curl -X POST https://webfitalchemist.online/api/auth/login \
+curl -X POST https://bestsoftphone.site/api/auth/login \
   -H "Content-Type: application/json" \
   -d '{"email":"owner@example.com","password":"ChangeMe123!"}'
 ```
@@ -282,14 +282,14 @@ curl -X POST https://webfitalchemist.online/api/auth/login \
 4. **Get current user:**
 
 ```bash
-curl https://webfitalchemist.online/api/auth/me \
+curl https://bestsoftphone.site/api/auth/me \
   -H "Authorization: Bearer <token>"
 ```
 
 5. **Change password:**
 
 ```bash
-curl -X POST https://webfitalchemist.online/api/auth/change-password \
+curl -X POST https://bestsoftphone.site/api/auth/change-password \
   -H "Authorization: Bearer <token>" \
   -H "Content-Type: application/json" \
   -d '{"oldPassword":"ChangeMe123!","newPassword":"NewPass456!"}'

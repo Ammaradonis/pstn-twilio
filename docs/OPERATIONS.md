@@ -6,16 +6,16 @@ Day-2 runbook for `pstn-twilio`. For first-time provisioning see
 
 ## Routine ops
 
-| Task                         | Command / location                                                                | Cadence                              |
-| ---------------------------- | --------------------------------------------------------------------------------- | ------------------------------------ |
-| Live health probe            | `curl https://api.webfitalchemist.online/api/health` and `/db` `/redis` `/twilio` | continuous (uptime checker)          |
-| Diagnostics overview         | `/settings/diagnostics` in the UI (owner-only)                                    | on every release / weekly            |
-| Verify Twilio ↔ DB drift     | `pnpm tsx scripts/twilio-sync.ts verify`                                          | weekly                               |
-| Reconfigure all webhooks     | `pnpm tsx scripts/twilio-sync.ts configure`                                       | after every `PUBLIC_BASE_URL` change |
-| JWT key rotation             | rotate `JWT_SECRET` Fly secret → redeploy → users re-login                        | every 90 days                        |
-| Twilio API key rotation      | new Standard API key → set `TWILIO_API_KEY_SID/SECRET` → redeploy → revoke old    | every 180 days                       |
-| Database backup verification | restore Neon point-in-time snapshot into a scratch project                        | quarterly                            |
-| Audit log review             | `GET /api/audit-logs?limit=200` or `/settings/diagnostics`                        | weekly                               |
+| Task                         | Command / location                                                             | Cadence                              |
+| ---------------------------- | ------------------------------------------------------------------------------ | ------------------------------------ |
+| Live health probe            | `curl https://api.bestsoftphone.site/api/health` and `/db` `/redis` `/twilio`  | continuous (uptime checker)          |
+| Diagnostics overview         | `/settings/diagnostics` in the UI (owner-only)                                 | on every release / weekly            |
+| Verify Twilio ↔ DB drift     | `pnpm tsx scripts/twilio-sync.ts verify`                                       | weekly                               |
+| Reconfigure all webhooks     | `pnpm tsx scripts/twilio-sync.ts configure`                                    | after every `PUBLIC_BASE_URL` change |
+| JWT key rotation             | rotate `JWT_SECRET` Fly secret → redeploy → users re-login                     | every 90 days                        |
+| Twilio API key rotation      | new Standard API key → set `TWILIO_API_KEY_SID/SECRET` → redeploy → revoke old | every 180 days                       |
+| Database backup verification | restore Neon point-in-time snapshot into a scratch project                     | quarterly                            |
+| Audit log review             | `GET /api/audit-logs?limit=200` or `/settings/diagnostics`                     | weekly                               |
 
 ## Observability surface
 

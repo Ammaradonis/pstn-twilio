@@ -140,7 +140,7 @@ self-contained.
 
 Every acceptance bullet in the plan is met in code and documentation. The
 only checkbox left in `PHASE_10_CHECKLIST.md` is the operator-action one
-("Deployment is live on `webfitalchemist.online` subdomains") because
+("Deployment is live on `bestsoftphone.site` subdomains") because
 this repo cannot push to your Fly / Cloudflare accounts on its own — the
 deploy instructions, secrets template, scripts, and manual / launch
 checklists in `docs/` are written so that the operator can do that

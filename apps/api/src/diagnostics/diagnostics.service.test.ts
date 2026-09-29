@@ -85,8 +85,8 @@ describe('DiagnosticsService.report', () => {
   it('flags non-HTTPS webhook base URL', async () => {
     const { service } = buildService({
       config: {
-        PUBLIC_BASE_URL: 'http://webfitalchemist.online',
-        TWILIO_WEBHOOK_BASE_URL: 'http://webfitalchemist.online',
+        PUBLIC_BASE_URL: 'http://bestsoftphone.site',
+        TWILIO_WEBHOOK_BASE_URL: 'http://bestsoftphone.site',
       },
     });
     const report = await service.report();

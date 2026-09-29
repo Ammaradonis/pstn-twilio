@@ -53,7 +53,7 @@ be signed with `TWILIO_API_KEY_SECRET`, have `iss=TWILIO_API_KEY_SID`, and
   drift still requires fixing the host clock.
 - Confirm the frontend is calling the intended API. Local dev should use
   `VITE_API_BASE_URL=http://localhost:3000/api`; production should use
-  `https://api.webfitalchemist.online/api`.
+  `https://api.bestsoftphone.site/api`.
 
 ### Browser shows Twilio `31005` / connection error
 
@@ -96,7 +96,7 @@ failure until proven otherwise.
 ### Outbound call drops immediately
 
 - The TwiML App's Voice URL is wrong. It must be
-  `https://api.webfitalchemist.online/webhooks/twilio/voice/outbound`.
+  `https://api.bestsoftphone.site/webhooks/twilio/voice/outbound`.
   Update in Twilio Console → _Voice → TwiML Apps → <app>_.
 - Or the `client:` identity does not match the selected number.
   `VoiceWebhookService.handleOutbound` enforces ownership and will return

@@ -17,8 +17,8 @@ automation, testing, observability, and launch checklist).
 ## Domain & DNS
 
 - [x] Namecheap → Cloudflare nameserver instructions in `docs/DEPLOYMENT.md`.
-- [x] `app.webfitalchemist.online` CNAME → Cloudflare Pages (proxied).
-- [x] `api.webfitalchemist.online` CNAME → Fly (DNS-only).
+- [x] `app.bestsoftphone.site` CNAME → Cloudflare Pages (proxied).
+- [x] `api.bestsoftphone.site` CNAME → Fly (DNS-only).
 - [x] HSTS / CSP / no-frame headers shipped from Cloudflare Pages.
 
 ## Twilio setup automation
@@ -109,7 +109,7 @@ automation, testing, observability, and launch checklist).
 - [x] UI clearly states WhatsApp compatibility is not guaranteed.
 - [x] No secret is committed.
 - [x] CI passes (install · lint · typecheck · test · build).
-- [ ] Deployment is **live** on `webfitalchemist.online` subdomains — requires
+- [ ] Deployment is **live** on `bestsoftphone.site` subdomains — requires
       operator to run the deploy (`fly deploy`, Cloudflare Pages build).
 
 Everything in the codebase is ready. The last box is the operator's

@@ -6,11 +6,11 @@ box, archive with the deploy in your incident folder.
 
 | #   | Step                                                          | Expected outcome                                                                | ✅  |
 | --- | ------------------------------------------------------------- | ------------------------------------------------------------------------------- | --- |
-| 1   | `curl https://api.webfitalchemist.online/api/health`          | `{ status: "ok" }`                                                              |     |
-| 2   | `curl https://api.webfitalchemist.online/api/health/db`       | `{ status: "ok" }`                                                              |     |
-| 3   | `curl https://api.webfitalchemist.online/api/health/redis`    | `{ status: "ok" }`                                                              |     |
-| 4   | `curl https://api.webfitalchemist.online/api/health/twilio`   | `{ status: "ok" }`                                                              |     |
-| 5   | Browse to `https://app.webfitalchemist.online`                | Login page loads with valid TLS.                                                |     |
+| 1   | `curl https://api.bestsoftphone.site/api/health`              | `{ status: "ok" }`                                                              |     |
+| 2   | `curl https://api.bestsoftphone.site/api/health/db`           | `{ status: "ok" }`                                                              |     |
+| 3   | `curl https://api.bestsoftphone.site/api/health/redis`        | `{ status: "ok" }`                                                              |     |
+| 4   | `curl https://api.bestsoftphone.site/api/health/twilio`       | `{ status: "ok" }`                                                              |     |
+| 5   | Browse to `https://app.bestsoftphone.site`                    | Login page loads with valid TLS.                                                |     |
 | 6   | Sign in as the owner                                          | Redirected to `/dashboard`; account email + role visible.                       |     |
 | 7   | `/settings/diagnostics`                                       | All four checks `ok`; webhook base URL is HTTPS.                                |     |
 | 8   | Buy a test number via `/numbers/new` (Local, +1, voice + SMS) | Number appears in `/numbers`; Twilio Console shows configured webhook URLs.     |     |

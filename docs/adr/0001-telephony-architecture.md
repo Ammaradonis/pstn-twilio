@@ -163,7 +163,7 @@ Based on RESEARCH.md #2, #3, #5, #15:
 
 - The backend is the only authorization gate for outbound calls and SMS.
 - Cloudflare Pages hosts the frontend; the backend runs on a Node-friendly
-  host (Fly.io / Render / Railway) at `api.webfitalchemist.online` fronted by
+  host (Fly.io / Render / Railway) at `api.bestsoftphone.site` fronted by
   Cloudflare DNS only, because Cloudflare Workers cannot host a persistent
   NestJS + Socket.IO server (RESEARCH.md #18). This split is recorded here
   as a knock-on of the "backend controls routing" decision and will be

@@ -7,43 +7,42 @@ the Twilio webhook / TwiML App wiring.
 
 Production hostnames (Namecheap domain → Cloudflare):
 
-| Hostname                     | Role                                                    |
-| ---------------------------- | ------------------------------------------------------- |
-| `webfitalchemist.online`     | Apex; redirected/flattened to `app.*`.                  |
-| `app.webfitalchemist.online` | Cloudflare Pages — React SPA.                           |
-| `api.webfitalchemist.online` | Fly.io / Render — NestJS + Socket.IO + Twilio webhooks. |
+| Hostname                 | Role                                                    |
+| ------------------------ | ------------------------------------------------------- |
+| `bestsoftphone.site`     | Cloudflare Pages — React SPA.                           |
+| `app.bestsoftphone.site` | Cloudflare Pages — same React SPA as the apex.          |
+| `api.bestsoftphone.site` | Fly.io / Render — NestJS + Socket.IO + Twilio webhooks. |
 
 ## 1. Prerequisites
 
-| Provider         | What you need                                                                                |
-| ---------------- | -------------------------------------------------------------------------------------------- |
-| Namecheap        | Owner of `webfitalchemist.online`.                                                           |
-| Cloudflare       | Account, API token with `Zone.DNS:Edit` + `Pages:Edit`, the zone for the domain.             |
-| Neon             | Project + a database, both pooled and direct connection strings.                             |
-| Redis            | Upstash (recommended) with TLS, or any TLS-capable provider.                                 |
-| Twilio           | Account SID, Auth Token, API Key SID + Secret, TwiML App SID, at least one purchased number. |
-| Fly.io or Render | Account with billing enabled and `fly` / `render` CLI installed.                             |
+| Provider         | What you need                                                                                       |
+| ---------------- | --------------------------------------------------------------------------------------------------- |
+| Namecheap        | Owner of `bestsoftphone.site`.                                                                      |
+| Cloudflare       | Account, API token with zone creation, DNS edit, and Pages edit permissions; a zone for the domain. |
+| Neon             | Project + a database, both pooled and direct connection strings.                                    |
+| Redis            | Upstash (recommended) with TLS, or any TLS-capable provider.                                        |
+| Twilio           | Account SID, Auth Token, API Key SID + Secret, TwiML App SID, at least one purchased number.        |
+| Fly.io or Render | Account with billing enabled and `fly` / `render` CLI installed.                                    |
 
 Each provider's secrets belong in [`deploy/.env.production.example`](../deploy/.env.production.example).
 Never commit real values — both `.env` and `env.txt` are gitignored.
 
 ## 2. Cloudflare DNS (Namecheap → Cloudflare)
 
-1. **Cloudflare:** add `webfitalchemist.online` to your account and note the
+1. **Cloudflare:** add `bestsoftphone.site` to your account and note the
    two Cloudflare nameservers.
 2. **Namecheap:** _Domain List → Manage → Nameservers → Custom DNS_ — paste
    both Cloudflare nameservers. Propagation is usually minutes.
 3. **Cloudflare → DNS → Records:**
 
-   | Type  | Name  | Content                             | Proxy                      |
-   | ----- | ----- | ----------------------------------- | -------------------------- |
-   | CNAME | `app` | `pstn-twilio-web.pages.dev`         | Proxied                    |
-   | CNAME | `api` | `pstn-twilio-api.fly.dev`           | DNS only (Fly handles TLS) |
-   | CNAME | `@`   | `app.webfitalchemist.online` (flat) | Proxied                    |
-   - The API record must be **DNS-only** because Fly already terminates TLS
-     and Cloudflare's proxy would double-wrap the certificate. If you prefer
-     to proxy, configure Cloudflare's _Origin Rules_ to forward `Host:` and
-     use a Fly TLS cert that matches `api.webfitalchemist.online`.
+   | Type  | Name  | Content                     | Proxy                      |
+   | ----- | ----- | --------------------------- | -------------------------- |
+   | CNAME | `@`   | `pstn-twilio-web.pages.dev` | Proxied                    |
+   | CNAME | `app` | `pstn-twilio-web.pages.dev` | Proxied                    |
+   | A     | `api` | `66.241.125.37`             | DNS only (Fly handles TLS) |
+   | AAAA  | `api` | `2a09:8280:1::118:4965:0`   | DNS only (Fly handles TLS) |
+   - Keep `api` DNS-only so Fly terminates TLS directly and Twilio webhook
+     signature validation sees the canonical `api.bestsoftphone.site` URL.
 
 4. **Cloudflare → SSL/TLS → Edge Certificates:** enable _Always Use HTTPS_,
    _HSTS_ with `max-age=63072000; includeSubDomains; preload`, and _Automatic
@@ -85,10 +84,10 @@ fly launch --no-deploy --copy-config --dockerfile deploy/api.Dockerfile
 fly secrets set \
   NODE_ENV=production \
   PORT=3000 \
-  PUBLIC_BASE_URL=https://api.webfitalchemist.online \
-  WEB_APP_URL=https://app.webfitalchemist.online \
-  CORS_ORIGINS=https://app.webfitalchemist.online \
-  TWILIO_WEBHOOK_BASE_URL=https://api.webfitalchemist.online \
+  PUBLIC_BASE_URL=https://api.bestsoftphone.site \
+  WEB_APP_URL=https://app.bestsoftphone.site \
+  CORS_ORIGINS=https://bestsoftphone.site,https://app.bestsoftphone.site \
+  TWILIO_WEBHOOK_BASE_URL=https://api.bestsoftphone.site \
   DATABASE_URL=... \
   DIRECT_DATABASE_URL=... \
   REDIS_URL=... \
@@ -102,14 +101,14 @@ fly secrets set \
   TWILIO_DEFAULT_COUNTRY=US
 
 # Custom domain + TLS cert
-fly certs create api.webfitalchemist.online
+fly certs create api.bestsoftphone.site
 
 # Deploy
 fly deploy --remote-only --config deploy/fly.toml --dockerfile deploy/api.Dockerfile
 ```
 
 Check the release: `fly status`, `fly logs`, then
-`curl https://api.webfitalchemist.online/api/health`.
+`curl https://api.bestsoftphone.site/api/health`.
 
 ### Render (alternative)
 
@@ -132,11 +131,18 @@ Root directory:  /
 Production env (Cloudflare Pages → Settings → Environment variables → Production):
 
 ```
-VITE_API_BASE_URL = https://api.webfitalchemist.online/api
-VITE_WS_URL       = wss://api.webfitalchemist.online
+VITE_API_BASE_URL = https://api.bestsoftphone.site/api
+VITE_WS_URL       = wss://api.bestsoftphone.site
 VITE_APP_NAME     = pstn-twilio
 VITE_REPEAT_DIAL_WARNING_ENABLED = false
 ```
+
+During the DNS transition, the live Pages build and Fly webhook callbacks use
+their provider hostnames (`pstn-twilio-web.pages.dev` and
+`pstn-twilio-api.fly.dev`). Once the custom DNS records resolve and Fly reports
+the API certificate as verified, switch the Pages variables and Fly public URL
+secrets to the custom hostnames shown above, then run the Twilio sync `configure`
+and `verify` commands in section 7.
 
 `apps/web/public/_headers` and `apps/web/public/_redirects` ship the security
 headers and SPA fallback, respectively.
@@ -149,8 +155,8 @@ performs all of the following from a single command.
 ### 7.1. TwiML App
 
 1. Twilio Console → _Voice → Manage → TwiML Apps → Create_.
-2. **Voice URL:** `https://api.webfitalchemist.online/webhooks/twilio/voice/outbound`
-3. **Voice Status Callback:** `https://api.webfitalchemist.online/webhooks/twilio/voice/status`
+2. **Voice URL:** `https://api.bestsoftphone.site/webhooks/twilio/voice/outbound`
+3. **Voice Status Callback:** `https://api.bestsoftphone.site/webhooks/twilio/voice/status`
 4. Copy the App SID into `TWILIO_TWIML_APP_SID`.
 
 ### 7.2. API Key
@@ -178,11 +184,11 @@ This:
 The five webhook URLs that must be configured per number:
 
 ```
-Voice inbound:     POST https://api.webfitalchemist.online/webhooks/twilio/voice/inbound
-Voice fallback:    POST https://api.webfitalchemist.online/webhooks/twilio/voice/fallback
-Voice status:      POST https://api.webfitalchemist.online/webhooks/twilio/voice/status
-Messaging inbound: POST https://api.webfitalchemist.online/webhooks/twilio/messaging/inbound
-Messaging status:  POST https://api.webfitalchemist.online/webhooks/twilio/messaging/status
+Voice inbound:     POST https://api.bestsoftphone.site/webhooks/twilio/voice/inbound
+Voice fallback:    POST https://api.bestsoftphone.site/webhooks/twilio/voice/fallback
+Voice status:      POST https://api.bestsoftphone.site/webhooks/twilio/voice/status
+Messaging inbound: POST https://api.bestsoftphone.site/webhooks/twilio/messaging/inbound
+Messaging status:  POST https://api.bestsoftphone.site/webhooks/twilio/messaging/status
 ```
 
 ## 8. First-time owner bootstrap
@@ -191,7 +197,7 @@ The API enforces that the owner can only be created **once**, and only when
 `BOOTSTRAP_TOKEN` is set in env.
 
 ```bash
-curl -X POST https://api.webfitalchemist.online/api/auth/bootstrap-owner \
+curl -X POST https://api.bestsoftphone.site/api/auth/bootstrap-owner \
   -H 'Content-Type: application/json' \
   -d '{ "email": "owner@example.com", "password": "<strong>", "token": "<BOOTSTRAP_TOKEN>" }'
 ```
@@ -204,13 +210,13 @@ BOOTSTRAP_TOKEN`) and redeploy.
 After every deploy run:
 
 ```bash
-curl -fsS https://api.webfitalchemist.online/api/health
-curl -fsS https://api.webfitalchemist.online/api/health/db
-curl -fsS https://api.webfitalchemist.online/api/health/redis
-curl -fsS https://api.webfitalchemist.online/api/health/twilio
+curl -fsS https://api.bestsoftphone.site/api/health
+curl -fsS https://api.bestsoftphone.site/api/health/db
+curl -fsS https://api.bestsoftphone.site/api/health/redis
+curl -fsS https://api.bestsoftphone.site/api/health/twilio
 ```
 
-Then load `https://app.webfitalchemist.online`, log in, open
+Then load `https://app.bestsoftphone.site`, log in, open
 `/settings/diagnostics`. Every check should be green.
 
 ## 10. Migrations & rollback

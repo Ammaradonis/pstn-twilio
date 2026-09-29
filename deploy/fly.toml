@@ -35,17 +35,6 @@ kill_timeout = "10s"
     timeout = "5s"
     path = "/api/health"
 
-[[services]]
-  internal_port = 3000
-  protocol = "tcp"
-  [[services.ports]]
-    port = 80
-    handlers = ["http"]
-    force_https = true
-  [[services.ports]]
-    port = 443
-    handlers = ["tls", "http"]
-
 [deploy]
   release_command = "node node_modules/prisma/build/index.js migrate deploy"
   strategy = "rolling"

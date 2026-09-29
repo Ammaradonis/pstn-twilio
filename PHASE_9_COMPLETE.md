@@ -89,7 +89,7 @@ Phase 9 (minimalistic frontend implementation) is finished. The web app now has 
 ## What's next (Phase 10)
 
 - Production deployment of the frontend (Cloudflare Pages or equivalent) and backend (Node-compatible target with WebSocket support).
-- Cloudflare DNS / Namecheap NS / TLS for `app.webfitalchemist.online` and `api.webfitalchemist.online`.
+- Cloudflare DNS / Namecheap NS / TLS for `app.bestsoftphone.site` and `api.bestsoftphone.site`.
 - `scripts/twilio-sync.ts` to import existing Twilio numbers, configure webhooks, and report mismatches.
 - Production launch checklist + smoke / E2E tests against the deployed environment.
 

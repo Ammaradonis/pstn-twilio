@@ -103,7 +103,7 @@ This requires real Twilio credentials and at least one real number.
 See [`MANUAL_TWILIO_CHECKLIST.md`](MANUAL_TWILIO_CHECKLIST.md) for the
 itemized form (printable).
 
-1. **Owner login.** `https://app.webfitalchemist.online` → log in.
+1. **Owner login.** `https://app.bestsoftphone.site` → log in.
    Expected: dashboard loads.
 2. **Diagnostics green.** `/settings/diagnostics` → all four checks `ok`,
    webhook ingest shows recent events when traffic flows.

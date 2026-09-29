@@ -74,47 +74,47 @@ node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"
 pnpm dev
 ```
 
-Should see: `🚀 API running on https://webfitalchemist.online/api`
-Should see: `🚀 API running on https://webfitalchemist.online/api`
+Should see: `🚀 API running on https://bestsoftphone.site/api`
+Should see: `🚀 API running on https://bestsoftphone.site/api`
 
 ### 7. Test Health Endpoints
 
 ````bash
 # Basic health
-curl https://webfitalchemist.online/api/health
-curl https://webfitalchemist.online/api/health
+curl https://bestsoftphone.site/api/health
+curl https://bestsoftphone.site/api/health
 # Database health
-curl https://webfitalchemist.online/api/health/db
-curl https://webfitalchemist.online/api/health/db
+curl https://bestsoftphone.site/api/health/db
+curl https://bestsoftphone.site/api/health/db
 
 ### 8. Test Authentication
 
 ```bash
-curl https://webfitalchemist.online/api/health
-curl -X POST https://webfitalchemist.online/api/auth/login \
-curl -X POST https://webfitalchemist.online/api/auth/login \
-curl https://webfitalchemist.online/api/health/db
-curl https://webfitalchemist.online/api/auth/me \
+curl https://bestsoftphone.site/api/health
+curl -X POST https://bestsoftphone.site/api/auth/login \
+curl -X POST https://bestsoftphone.site/api/auth/login \
+curl https://bestsoftphone.site/api/health/db
+curl https://bestsoftphone.site/api/auth/me \
 # Save the token from response
 TOKEN="<paste-token-here>"
 
-curl -X POST https://webfitalchemist.online/api/auth/change-password \
-curl https://webfitalchemist.online/api/auth/me \
+curl -X POST https://bestsoftphone.site/api/auth/change-password \
+curl https://bestsoftphone.site/api/auth/me \
   -H "Authorization: Bearer $TOKEN"
-curl https://webfitalchemist.online/api/auth/me \
+curl https://bestsoftphone.site/api/auth/me \
 # Change password
-curl -X POST https://webfitalchemist.online/api/auth/change-password \
+curl -X POST https://bestsoftphone.site/api/auth/change-password \
   -H "Authorization: Bearer $TOKEN" \
   -H "Content-Type: application/json" \
-curl https://webfitalchemist.online/api/auth/me \
+curl https://bestsoftphone.site/api/auth/me \
 ````
 
-curl https://webfitalchemist.online/api/auth/me
+curl https://bestsoftphone.site/api/auth/me
 
 ### 9. Verify Audit Logs
 
-curl -X POST https://webfitalchemist.online/api/auth/change-password \
-curl https://webfitalchemist.online/api/auth/me \
+curl -X POST https://bestsoftphone.site/api/auth/change-password \
+curl https://bestsoftphone.site/api/auth/me \
 pnpm prisma:studio
 
 ````
@@ -124,16 +124,16 @@ Open `audit_logs` table and verify:
 - Login event exists
 - Password change event exists (if you changed password)
 - IP address and user agent captured
-  curl https://webfitalchemist.online/api/health
+  curl https://bestsoftphone.site/api/health
 ### 10. Commit Changes
 
 ```bash
 git add .
 git commit -m "feat: implement Phase 5 - authentication and authorization"
-fetch('https://webfitalchemist.online/api/health')
+fetch('https://bestsoftphone.site/api/health')
 ````
 
-fetch('https://webfitalchemist.online/api/health')
+fetch('https://bestsoftphone.site/api/health')
 
 Before starting the API:
 
@@ -141,7 +141,7 @@ Before starting the API:
 - [ ] Prisma Client generated
 - [ ] Database migrations applied
 - [ ] Database seeded with owner user
-      curl -X POST https://webfitalchemist.online/api/auth/login \
+      curl -X POST https://bestsoftphone.site/api/auth/login \
 - [ ] `JWT_SECRET` is a strong random string (min 32 chars)
 - [ ] `DATABASE_URL` points to accessible database
 - [ ] `CORS_ORIGINS` includes your frontend URL
@@ -152,31 +152,31 @@ Before starting the API:
 
 # Should return: {"status":"ok","timestamp":"..."}
 
-curl https://webfitalchemist.online/api/health
+curl https://bestsoftphone.site/api/health
 
 ```bash
-curl https://webfitalchemist.online/api/health/db
+curl https://bestsoftphone.site/api/health/db
 ```
 
 Should see:
 
 - No errors
-- "🚀 API running on https://webfitalchemist.online/api"
+- "🚀 API running on https://bestsoftphone.site/api"
 
 ### 2. Health Checks Pass
 
 ```bash
-curl https://webfitalchemist.online/api/health
+curl https://bestsoftphone.site/api/health
 # Should return: {"status":"ok","timestamp":"..."}
 
-curl https://webfitalchemist.online/api/health/db
+curl https://bestsoftphone.site/api/health/db
 # Should return: {"status":"ok","database":"connected"}
 ```
 
 ### 3. Login Works
 
 ```bash
-curl -X POST https://webfitalchemist.online/api/auth/login \
+curl -X POST https://bestsoftphone.site/api/auth/login \
   -H "Content-Type: application/json" \
   -d '{"email":"owner@example.com","password":"ChangeMe123!"}'
 ```
@@ -198,10 +198,10 @@ Should return:
 
 ```bash
 # Without token - should return 401
-curl https://webfitalchemist.online/api/auth/me
+curl https://bestsoftphone.site/api/auth/me
 
 # With token - should return user
-curl https://webfitalchemist.online/api/auth/me \
+curl https://bestsoftphone.site/api/auth/me \
   -H "Authorization: Bearer <token>"
 ```
 
@@ -219,7 +219,7 @@ Open Prisma Studio and check `audit_logs` table:
 ```bash
 # Send 15 requests quickly
 for i in {1..15}; do
-  curl https://webfitalchemist.online/api/health
+  curl https://bestsoftphone.site/api/health
 done
 ```
 
@@ -230,7 +230,7 @@ Should see 429 (Too Many Requests) after 10 requests.
 Open browser console and try:
 
 ```javascript
-fetch('https://webfitalchemist.online/api/health')
+fetch('https://bestsoftphone.site/api/health')
   .then((r) => r.json())
   .then(console.log);
 ```

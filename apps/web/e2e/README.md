@@ -19,7 +19,7 @@ pnpm --filter @pstn-twilio/web test:e2e
 ## Run against a different base URL
 
 ```bash
-E2E_BASE_URL=https://app.webfitalchemist.online pnpm --filter @pstn-twilio/web test:e2e
+E2E_BASE_URL=https://app.bestsoftphone.site pnpm --filter @pstn-twilio/web test:e2e
 ```
 
 In that mode the API mocks still apply (they intercept any `**/api/*`), so a
