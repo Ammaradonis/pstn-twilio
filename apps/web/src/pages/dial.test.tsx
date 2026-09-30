@@ -85,7 +85,9 @@ vi.mock('../lib/api-client', () => {
         get: vi.fn(() => new Promise(() => {})),
       },
       sheets: {
-        status: vi.fn().mockResolvedValue({ connected: true, email: null, configured: true }),
+        status: vi
+          .fn()
+          .mockResolvedValue({ connected: true, email: null, configured: true, missing: [] }),
         listSpreadsheets: vi
           .fn()
           .mockResolvedValue([{ spreadsheetId: 'ss1', name: 'U.S. Conquest' }]),

@@ -1,6 +1,7 @@
 import { existsSync } from 'fs';
 import { join } from 'path';
 
+import type { ConfigService } from '@nestjs/config';
 import {
   pickFollowUpTemplate,
   pushCallResultSchema,
@@ -11,6 +12,7 @@ import { describe, expect, it } from 'vitest';
 
 import { encodeMessage, loadTemplate, renderTemplate, templateDir } from './gmail.service';
 import { parseUsAddress, resolveTimeZone } from './sheets-timezone.service';
+import { SheetsConfig } from './sheets.config';
 import { buildCellValue } from './sheets.service';
 import {
   a1,
@@ -228,5 +230,37 @@ describe('email templates', () => {
     const raw = Buffer.from(encodeMessage('a@b.co', 'Hi — there', 'Body'), 'base64url').toString();
     expect(raw).toContain('Subject: =?UTF-8?B?');
     expect(() => encodeMessage('a@b.co\r\nBcc: x@y.z', 's', 'b')).toThrow();
+  });
+});
+
+describe('Sheets OAuth client', () => {
+  const configWith = (env: Record<string, string>) =>
+    new SheetsConfig({ get: (key: string) => env[key] } as unknown as ConfigService);
+
+  it('uses GOOGLE_CLOUD_CLIENT_*, never the Calendar client', () => {
+    const cfg = configWith({
+      GOOGLE_CLIENT_ID: 'calendar-client',
+      GOOGLE_CLIENT_SECRET: 'calendar-secret',
+      TOKEN_ENCRYPTION_KEY: 'k',
+      JWT_SECRET: 'j',
+    });
+    expect(cfg.googleClientId).toBeUndefined();
+    expect(cfg.missing()).toEqual(['GOOGLE_CLOUD_CLIENT_ID', 'GOOGLE_CLOUD_CLIENT_SECRET']);
+    expect(cfg.isConfigured()).toBe(false);
+  });
+
+  it('is ready once its own client is set', () => {
+    const cfg = configWith({
+      GOOGLE_CLOUD_CLIENT_ID: 'sheets-client',
+      GOOGLE_CLOUD_CLIENT_SECRET: 'sheets-secret',
+      TOKEN_ENCRYPTION_KEY: 'k',
+      JWT_SECRET: 'j',
+      TWILIO_WEBHOOK_BASE_URL: 'https://api.bestsoftphone.site/',
+    });
+    expect(cfg.isConfigured()).toBe(true);
+    expect(cfg.googleClientId).toBe('sheets-client');
+    expect(cfg.oauthRedirectUri).toBe(
+      'https://api.bestsoftphone.site/webhooks/google-sheets/oauth/callback',
+    );
   });
 });

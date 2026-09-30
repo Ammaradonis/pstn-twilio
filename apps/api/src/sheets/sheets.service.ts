@@ -99,6 +99,7 @@ export class SheetsService {
       connected: Boolean(conn),
       email: conn?.googleEmail ?? null,
       configured: this.cfg.isConfigured(),
+      missing: this.cfg.missing(),
     };
   }
 
@@ -577,7 +578,9 @@ export class SheetsService {
 
   private requireConfigured(): void {
     if (!this.cfg.isConfigured()) {
-      throw new SheetsUnavailableError('Google Sheets is not configured on the API.');
+      throw new SheetsUnavailableError(
+        `Google Sheets is not configured on the API: set ${this.cfg.missing().join(', ')}.`,
+      );
     }
   }
 

@@ -2,9 +2,10 @@ import { Injectable } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 
 /**
- * Sheets/Gmail settings. Reuses the Calendar OAuth client
- * (GOOGLE_CLIENT_ID / GOOGLE_CLIENT_SECRET); its Google Cloud project needs the
- * Sheets, Drive and Gmail APIs enabled and the redirect URI below registered.
+ * Sheets/Gmail settings. Uses its own OAuth client, GOOGLE_CLOUD_CLIENT_ID /
+ * GOOGLE_CLOUD_CLIENT_SECRET (Google Cloud project local-gmail-510114), not the
+ * Calendar client (GOOGLE_CLIENT_ID). That project needs the Sheets, Drive and
+ * Gmail APIs enabled and the redirect URI below registered on the client.
  */
 @Injectable()
 export class SheetsConfig {
@@ -16,11 +17,11 @@ export class SheetsConfig {
   }
 
   get googleClientId(): string | undefined {
-    return this.get('GOOGLE_CLIENT_ID');
+    return this.get('GOOGLE_CLOUD_CLIENT_ID');
   }
 
   get googleClientSecret(): string | undefined {
-    return this.get('GOOGLE_CLIENT_SECRET');
+    return this.get('GOOGLE_CLOUD_CLIENT_SECRET');
   }
 
   get tokenEncryptionKey(): string | undefined {
@@ -57,12 +58,18 @@ export class SheetsConfig {
     return this.get('US_CONQUEST_SHEET_ID') ?? '1hEen_n9M27n5bjyXpsnaHXpvG7S5eHHmPl6HG2LhRnM';
   }
 
+  /** API settings that still need to be set; empty when ready. */
+  missing(): string[] {
+    const required: [string, string | undefined][] = [
+      ['GOOGLE_CLOUD_CLIENT_ID', this.googleClientId],
+      ['GOOGLE_CLOUD_CLIENT_SECRET', this.googleClientSecret],
+      ['TOKEN_ENCRYPTION_KEY', this.tokenEncryptionKey],
+      ['JWT_SECRET', this.stateSigningSecret],
+    ];
+    return required.filter(([, value]) => !value).map(([name]) => name);
+  }
+
   isConfigured(): boolean {
-    return Boolean(
-      this.googleClientId &&
-      this.googleClientSecret &&
-      this.tokenEncryptionKey &&
-      this.stateSigningSecret,
-    );
+    return this.missing().length === 0;
   }
 }

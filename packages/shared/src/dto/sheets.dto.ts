@@ -55,8 +55,9 @@ export interface SheetsStatusDto {
 export interface SheetsConnectionStatusDto {
   connected: boolean;
   email: string | null;
-  /** Missing API configuration, if any. */
   configured: boolean;
+  /** API settings still to be set (e.g. GOOGLE_CLOUD_CLIENT_SECRET). */
+  missing: string[];
 }
 
 export interface SheetsFollowUpDto {

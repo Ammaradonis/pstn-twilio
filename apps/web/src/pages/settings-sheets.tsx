@@ -121,7 +121,7 @@ export function SettingsSheets() {
             </p>
             {status.data && !status.data.configured && (
               <p className="text-xs text-amber-700">
-                The API is missing its Google OAuth settings, so connecting will fail.
+                The API is missing {status.data.missing.join(', ')}, so connecting will fail.
               </p>
             )}
             <button
