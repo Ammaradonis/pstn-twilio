@@ -10,6 +10,8 @@ import { useParams } from 'react-router-dom';
 import { AiAgentPanel } from '../components/ai-agent-panel';
 import { CallQualityPanel } from '../components/call-quality';
 import { MicrophonePicker } from '../components/microphone-picker';
+import { PostCallStatusPanel } from '../components/post-call-status-panel';
+import { readPersistedSpreadsheet, SpreadsheetPicker } from '../components/spreadsheet-picker';
 import { VoiceRecovery } from '../components/voice-recovery';
 import { useVoiceDevice } from '../hooks/use-voice-device';
 import { api, ApiError } from '../lib/api-client';
@@ -84,6 +86,22 @@ export function DialPage() {
   const [repeatDialWarning, setRepeatDialWarning] = useState<LastDialDto | null>(null);
   const [recordCall, setRecordCall] = useState<boolean>(readRecordCallsPreference);
   const [activeCallRecorded, setActiveCallRecorded] = useState(false);
+
+  // Google Sheets target for post-call status pushes, remembered across visits.
+  const [spreadsheetId, setSpreadsheetId] = useState<string | null>(
+    () => readPersistedSpreadsheet().spreadsheetId,
+  );
+  const [sheetTitle, setSheetTitle] = useState<string | null>(
+    () => readPersistedSpreadsheet().sheetTitle,
+  );
+  // The outbound call in progress, and the last one that ended (for the panel).
+  const outboundCallRef = useRef<{ destinationE164: string; callerE164: string } | null>(null);
+  const [endedCall, setEndedCall] = useState<{
+    destinationE164: string;
+    callerE164: string;
+    endedAt: string;
+  } | null>(null);
+
   const voice = useVoiceDevice();
   const outboundAnalytics = useQuery({
     queryKey: ['calls', numberId, 'analytics', 30],
@@ -150,6 +168,21 @@ export function DialPage() {
     if (inCallMode) return;
     setSentTones('');
     setActiveCallRecorded(false);
+  }, [inCallMode]);
+
+  // When an outbound call ends, open the post-call status panel for it. The
+  // hangup time is taken here so the sheet shows when the call really ended.
+  const wasInCallRef = useRef(false);
+  useEffect(() => {
+    if (inCallMode) {
+      wasInCallRef.current = true;
+      return;
+    }
+    if (!wasInCallRef.current) return;
+    wasInCallRef.current = false;
+    const call = outboundCallRef.current;
+    outboundCallRef.current = null;
+    if (call) setEndedCall({ ...call, endedAt: new Date().toISOString() });
   }, [inCallMode]);
 
   function toggleRecordCall() {
@@ -229,12 +262,17 @@ export function DialPage() {
         }
       }
       const prepared: { current: OutboundCallPreparationDto | null } = { current: null };
+      outboundCallRef.current = {
+        destinationE164: destinationNumber,
+        callerE164: selectedNumber.data.phoneNumberE164,
+      };
       const call = await voice.makeCall(numberId, destinationNumber, {
         recordCall,
         onPrepared: (p) => {
           prepared.current = p;
         },
       });
+      if (!call) outboundCallRef.current = null;
       // An API that predates the setting omits recordCall and always records.
       if (call && prepared.current && prepared.current.recordCall !== false) {
         setActiveCallRecorded(true);
@@ -246,6 +284,7 @@ export function DialPage() {
         });
       }
     } catch (err) {
+      if (!wasInCallRef.current) outboundCallRef.current = null;
       setPageError(err instanceof Error ? err.message : String(err));
     } finally {
       callInFlight.current = false;
@@ -637,6 +676,35 @@ export function DialPage() {
         {inCallMode && (
           <CallQualityPanel quality={voice.callQuality} warnings={voice.qualityWarnings} />
         )}
+      </div>
+
+      {endedCall && (
+        <PostCallStatusPanel
+          key={endedCall.endedAt}
+          destinationE164={endedCall.destinationE164}
+          callerE164={endedCall.callerE164}
+          callEndedAt={endedCall.endedAt}
+          spreadsheetId={spreadsheetId}
+          sheetTitle={sheetTitle}
+          onDismiss={() => setEndedCall(null)}
+        />
+      )}
+
+      <div className="space-y-2 rounded border border-slate-200 bg-white p-4">
+        <h2 className="text-sm font-semibold text-slate-700">Sheet target</h2>
+        <p className="text-xs text-slate-500">
+          The spreadsheet and tab you are calling from. After each call, the status goes to the row
+          whose phoneNumber matches the number you dialled.
+        </p>
+        <SpreadsheetPicker
+          spreadsheetId={spreadsheetId}
+          sheetTitle={sheetTitle}
+          onSpreadsheetChange={(id) => {
+            setSpreadsheetId(id);
+            setSheetTitle(null);
+          }}
+          onSheetTitleChange={setSheetTitle}
+        />
       </div>
 
       <AiAgentPanel destination={normalizedDestination} />

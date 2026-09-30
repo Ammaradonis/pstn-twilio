@@ -53,6 +53,8 @@ COPY --from=build /out/api/package.json ./package.json
 COPY --from=build /out/api/node_modules ./node_modules
 COPY --from=build /app/apps/api/dist ./dist
 COPY --from=build /app/apps/api/prisma ./prisma
+# Cold email templates, read at runtime by the Sheets follow-up sender.
+COPY --from=build /app/apps/api/templates ./templates
 EXPOSE 3000
 HEALTHCHECK --interval=30s --timeout=5s --retries=3 \
   CMD node -e "fetch('http://127.0.0.1:'+ (process.env.PORT||3000) +'/api/health').then(r=>{if(!r.ok)process.exit(1)}).catch(()=>process.exit(1))"

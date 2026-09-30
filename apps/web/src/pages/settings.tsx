@@ -57,6 +57,11 @@ export function Settings() {
                 Change password
               </Link>
             </li>
+            <li>
+              <Link to="/settings/sheets" className="text-slate-700 underline">
+                Google Sheets &amp; Gmail (post-call CRM)
+              </Link>
+            </li>
           </ul>
         </div>
 

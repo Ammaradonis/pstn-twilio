@@ -1,0 +1,13 @@
+Subject: Tried reaching you — your number may have changed
+Hi there,
+
+I tried to call your school on {{callDay}} but the number I had on file appears to be out of service. I wanted to reach out by email to make sure I have the right contact.
+
+I help martial arts schools grow their enrolment using a consistent, proven system — and I'd love to share what's working for schools in your area.
+
+{{customNote}}
+
+If this is still the right email address for your school, please reply and let me know the best number to reach you. Or feel free to call me at {{callerNumber}}.
+
+Best,
+Ammar

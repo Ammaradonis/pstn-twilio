@@ -1,0 +1,13 @@
+Subject: Spoke to your front desk — following up directly
+Hi there,
+
+I called your school on {{callDay}} and spoke with someone at the front desk. I wanted to reach out to you directly because what I have to share is really for the person who makes decisions about growing the school.
+
+I help martial arts school owners consistently attract new students without extra ad spend or gimmicks. I'd love to show you what's working in your area in a quick 10-minute call.
+
+{{customNote}}
+
+Reply here or reach me at {{callerNumber}} when you're available.
+
+Best,
+Ammar

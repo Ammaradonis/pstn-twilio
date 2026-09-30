@@ -33,3 +33,4 @@ export interface PhoneNumberCapabilities {
   mms: boolean;
   fax?: boolean;
 }
+export * from './call-status-tags';

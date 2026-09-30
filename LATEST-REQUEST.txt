@@ -1,0 +1,38 @@
+NEVER expose env vars in this chat log.
+I'm thinking about integrating my Google spreadsheets (ammar.webalchemist@gmail.com) for multiple locations (50 U.S. states, England, Scotland, etc.) that have (website URL, address, Facebook, school name, phone number, and multiple empty columns, etc.) with the softphone so that I push updates (rang out, line is busy, voicemail, hung up, not interested, has an answering service, out of service number, not available, has a receptionist, has an AI, handles calls himself, voicemail is full, booked a demo, stayed silent, custom explanation....) to the spreadsheet I'm working on after every cold call I make. The status update after the phone call must be clicks on a screen, not a drop-down menu. I must be able to select as many status updates as I wish. Upon clicking 'push', the updates must be sent automatically to the 'status' column, which will be created automatically, in the spreadsheet and I stay on the 'dial' page. The update must match the row of the called phone number for this feature to be effective. As a decoration for the status update field, there must be the time (dictated the moment I hang up based on THEIR location in the address column in the spreadsheet) of the call and the phone number from which I called so school owners can verify if they wish. In regards to the time, the UK is easy. But, for U.S. states, that's a bit tricky. With some U.S. states, there'll be edge cases the automation must handle based on the address column from the spreadsheet because we might have two cities in the same state under different time zones. To train the local algorithm on that, it will have access, through our Google Sheets API, to 'U.S. Conquest' that has almost 10,000 unique addresses for different martial arts schools across all U.S. states. At the end of the status update that would be something like: 'XYZ (based on my selection after calling them), from: 02045726501, time: 5:45pm' OR 'XYZ (based on my selection after calling them), from: 6672206726, time: 9:45am'
+
+Be careful, we are in winter months and timezones across the UK and multiple U.S. states will soon change
+
+There will be a Gmail API integration setup for cold emails after 48 hours (no matter what day or time of the week) from the initial cold call, depending on the chosen status updates. There will be multiple cold email templates as .txt files depending on the selected status updates .
+Google Cloud creds are in: "C:\Users\FingerWeg\CascadeProjects\pstn-twilio\env.txt"
+
+
+
+Project ID: local-gmail-510114
+Organization: ammar-webalchemist-org
+
+GOOGLE_CLOUD_CLIENT_ID is in "C:\Users\FingerWeg\CascadeProjects\pstn-twilio\env.txt"
+1. Spreadsheet selection UI: Do you want a dropdown on the Dial page to pick which spreadsheet you're working on, or is there one fixed active spreadsheet configured in
+  Settings? (You have multiple location sheets for 50 states + UK.)
+
+i do want a dropdown to pick the spreadsheet and then the specific sheet because in 'U.S. Conquest' and 'The Official UK' spreadsheets, i have independent sheets for each U.S. state and UK nation (England, Scotland, Wales, etc.). Sometimes i'll be working on a single spreadsheet that has a single sheet (Texas) and that is why loading all spreadsheets at first is important.
+  2. "U.S. Conquest" sheet access: Is this sheet in the same Google account (ammar.webalchemist@gmail.com)? What's its Spreadsheet ID? (Needed to build the city→tz corpus. I
+  can look it up if you give me permission to read the sheet list.)
+yes, is it in the same Google account (ammar.webalchemist@gmail.com). You have the permission to look up anything because Google Cloud creds are available. ID: 1hEen_n9M27n5bjyXpsnaHXpvG7S5eHHmPl6HG2LhRnM
+  3. Gmail send-from address: Should follow-up emails be sent from ammar.webalchemist@gmail.com or a different address? Will there be a separate Gmail OAuth or reuse the same
+  Google account credentials?
+the email address is ammar.webalchemist@gmail.com. reuse the same
+  Google account credentials.
+  4. Status + row matching: What is the header name of the phone number column in your sheets? (e.g. "Phone Number", "Phone", "Tel"?) Does it vary across sheets, or is it
+  consistent?
+it is: phoneNumber, it is the same across all spreadsheets
+  5. Follow-up email logic: Should the 48h email fire for all statuses, or only specific ones (e.g., only "Voicemail", "Not available", "Rang out" — not "Not interested" or
+  "Booked a demo")? You'll want to define which statuses trigger an email.
+only specific ones: rang out, line is busy, voicemail, hung up on me, not interested, has an answering service, out-of-service number, has a receptionist, has an AI, voicemail is full, stayed silent. the KEY is: the follow-up email template gets chosen based on the FIRST selected status update and I must be able to select UNLIMITED status updates along with a custom note for email personalization later. so find a way to give status updates a priority  based on time of selection. I might make a mistake and select on impulse, deselect, and select accurately again.
+ Handle edge cases. 
+
+  6. The OAuth redirect URI: When Sheets OAuth redirects back, should it go to the API (e.g., https://api.bestsoftphone.site/api/sheets/callback) or through the frontend? The
+  Calendar one goes through the API. I'll follow the same pattern unless you prefer otherwise.
+I don't care which path you take for the backend and API calls. choose what works. I want to see the dial page on the screen
+  7. Multi-call scenario: If you call the same number twice and push a status both times, should the second push overwrite the cell or append to it (e.g., Voicemail → No
+  answer)? my second status push must overwrite the cell. my custom explanation must enter the same cell that has status updates. and the WARNING is: in the cell, you don't write like this "Voicemail, Not interested | from: +442045726501 | time: 5:45pm". it must be like this "XYZ (based on my selection after calling them), from: 02045726501, time: 5:45pm' OR 'XYZ (based on my selection after calling them), from: 6672206726, time: 9:45am. mt email readers are locals who feel repelled by country codes.

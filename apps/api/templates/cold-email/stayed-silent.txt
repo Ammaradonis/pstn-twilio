@@ -1,0 +1,13 @@
+Subject: Just checking in — called on {{callDay}}
+Hi there,
+
+I called your school on {{callDay}}. I'm not sure if you heard me, but I wanted to reach out in writing just in case.
+
+I work with martial arts schools to help them bring in more students on a consistent, predictable basis — without relying on word of mouth alone. I'd love to take 10 minutes to show you how it works.
+
+{{customNote}}
+
+If this is the right contact for your school, please reply or call me at {{callerNumber}}. Happy to connect whenever is convenient.
+
+Best,
+Ammar

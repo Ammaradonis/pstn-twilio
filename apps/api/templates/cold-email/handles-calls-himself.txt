@@ -1,0 +1,13 @@
+Subject: Following up on our call on {{callDay}}
+Hi there,
+
+Great speaking with you briefly on {{callDay}}. I wanted to follow up in writing to make it easy for you to review when you have a moment.
+
+I help martial arts school owners like yourself grow their student numbers using a system that runs predictably in the background — without eating into your time on the mat.
+
+{{customNote}}
+
+I'd love to walk you through it in 10 minutes. Reply here or reach me at {{callerNumber}}.
+
+Kind regards,
+Ammar

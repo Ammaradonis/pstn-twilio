@@ -15,6 +15,7 @@ import { Numbers } from './pages/numbers';
 import { Settings } from './pages/settings';
 import { SettingsDiagnostics } from './pages/settings-diagnostics';
 import { SettingsSecurity } from './pages/settings-security';
+import { SettingsSheets } from './pages/settings-sheets';
 import { SettingsTwilio } from './pages/settings-twilio';
 
 export function App() {
@@ -37,6 +38,7 @@ export function App() {
           <Route path="/settings/twilio" element={<SettingsTwilio />} />
           <Route path="/settings/security" element={<SettingsSecurity />} />
           <Route path="/settings/diagnostics" element={<SettingsDiagnostics />} />
+          <Route path="/settings/sheets" element={<SettingsSheets />} />
         </Route>
       </Route>
 

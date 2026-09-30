@@ -1,0 +1,13 @@
+Subject: Totally understand — one last thought
+Hi there,
+
+When we spoke on {{callDay}} you mentioned you weren't interested, and I completely respect that.
+
+I just wanted to leave the door open — a lot of school owners I speak with feel the same way initially, until they see how differently this works from the typical marketing pitch. No pressure, no contracts, just results.
+
+{{customNote}}
+
+If your situation ever changes, I'd genuinely love to have that conversation. You can reach me at {{callerNumber}} or simply reply here.
+
+All the best,
+Ammar

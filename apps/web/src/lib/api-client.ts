@@ -18,6 +18,13 @@ import type {
   PurchaseNumberInput,
   RecordingPreferenceDto,
   SendMessageInput,
+  PushCallResultDto,
+  SheetsConnectionStatusDto,
+  SheetsFollowUpDto,
+  SheetsSpreadsheetDto,
+  SheetsStatusDto,
+  SheetsTimeZoneCheckDto,
+  SheetTabDto,
   SmsMessageDto,
   UserDto,
   VoicemailDto,
@@ -338,5 +345,23 @@ export const api = {
       request<PaginatedDto<AuditLogDto>>('/audit-logs', {
         query: opts as never,
       }),
+  },
+
+  sheets: {
+    status: () => request<SheetsConnectionStatusDto>('/sheets/status'),
+    connectUrl: () => request<{ url: string }>('/sheets/connect-url'),
+    disconnect: () => request<{ ok: true }>('/sheets', { method: 'DELETE' }),
+    listSpreadsheets: () => request<SheetsSpreadsheetDto[]>('/sheets/spreadsheets'),
+    listTabs: (spreadsheetId: string) =>
+      request<SheetTabDto[]>(`/sheets/tabs/${encodeURIComponent(spreadsheetId)}`),
+    push: (body: PushCallResultDto) =>
+      request<SheetsStatusDto>('/sheets/push', { method: 'POST', body }),
+    followUps: () => request<SheetsFollowUpDto[]>('/sheets/follow-ups'),
+    cancelFollowUp: (id: string) =>
+      request<{ ok: true }>(`/sheets/follow-ups/${encodeURIComponent(id)}/cancel`, {
+        method: 'POST',
+      }),
+    timezoneCheck: () =>
+      request<SheetsTimeZoneCheckDto>('/sheets/timezone-check', { method: 'POST' }),
   },
 };

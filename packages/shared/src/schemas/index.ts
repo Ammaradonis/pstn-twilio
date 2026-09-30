@@ -1,6 +1,7 @@
 import { z } from 'zod';
 
 import { normalizeDialablePhoneNumber } from '../phone';
+import { CALL_STATUS_TAGS } from '../types/call-status-tags';
 
 /**
  * E.164: + followed by 1-15 digits, leading non-zero per ITU recommendation.
@@ -111,3 +112,22 @@ export type StartAiCallInput = z.infer<typeof startAiCallSchema>;
 export type AiCallKeypadInput = z.infer<typeof aiCallKeypadSchema>;
 export type VoiceTokenRequestInput = z.infer<typeof voiceTokenRequestSchema>;
 export type LoginInput = z.infer<typeof loginSchema>;
+
+// Post-call push to Google Sheets. Tags arrive in selection order; duplicates
+// are dropped keeping the first position.
+export const pushCallResultSchema = z.object({
+  spreadsheetId: z.string().trim().min(1).max(200),
+  sheetTitle: z.string().min(1).max(200),
+  orderedTags: z
+    .array(z.enum(CALL_STATUS_TAGS))
+    .min(1, 'Pick at least one status.')
+    .max(CALL_STATUS_TAGS.length * 2)
+    .transform((tags) => [...new Set(tags)]),
+  customNote: z.string().max(1000).optional(),
+  destinationE164: e164Schema,
+  callerE164: e164Schema,
+  callEndedAt: z
+    .string()
+    .datetime({ offset: true })
+    .refine((v) => Date.parse(v) <= Date.now() + 5 * 60_000, 'Call end time is in the future.'),
+});

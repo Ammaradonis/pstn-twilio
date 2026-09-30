@@ -1,0 +1,13 @@
+Subject: Missed you on {{callDay}} — hope this email finds you well
+Hi there,
+
+I called your school on {{callDay}} but you weren't available. Rather than call back at an inconvenient time, I thought I'd reach out here instead.
+
+I help martial arts school owners across the country bring in new students consistently — without relying on discounts or referrals alone. It's a simple system, and I'd love to walk you through it in about 10 minutes.
+
+{{customNote}}
+
+Feel free to reply here or call me back at {{callerNumber}} when you have a free moment.
+
+Warm regards,
+Ammar

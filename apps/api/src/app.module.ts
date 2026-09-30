@@ -16,6 +16,7 @@ import { NumbersModule } from './numbers/numbers.module';
 import { PrismaModule } from './prisma/prisma.module';
 import { RealtimeModule } from './realtime/realtime.module';
 import { RedisModule } from './redis/redis.module';
+import { SheetsModule } from './sheets/sheets.module';
 import { TwilioModule } from './twilio/twilio.module';
 import { VoiceModule } from './voice/voice.module';
 import { WebhooksModule } from './webhooks/webhooks.module';
@@ -42,6 +43,7 @@ import { WebhooksModule } from './webhooks/webhooks.module';
     DiagnosticsModule,
     AuditLogsModule,
     AiCallsModule,
+    SheetsModule,
   ],
 })
 export class AppModule implements NestModule {

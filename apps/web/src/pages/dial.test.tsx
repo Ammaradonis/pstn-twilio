@@ -47,6 +47,7 @@ const voiceMock = vi.hoisted(() => ({
 
 vi.mock('react-router-dom', () => ({
   useParams: () => ({ numberId: 'pn1' }),
+  Link: ({ children }: { children: unknown }) => children,
 }));
 
 vi.mock('../components/ai-agent-panel', () => ({
@@ -82,6 +83,14 @@ vi.mock('../lib/api-client', () => {
       },
       numbers: {
         get: vi.fn(() => new Promise(() => {})),
+      },
+      sheets: {
+        status: vi.fn().mockResolvedValue({ connected: true, email: null, configured: true }),
+        listSpreadsheets: vi
+          .fn()
+          .mockResolvedValue([{ spreadsheetId: 'ss1', name: 'U.S. Conquest' }]),
+        listTabs: vi.fn().mockResolvedValue([{ sheetId: 1, title: 'Texas' }]),
+        push: vi.fn(),
       },
     },
   };
@@ -399,5 +408,66 @@ describe('DialPage dialpad', () => {
     vi.mocked(api.numbers.get).mockReturnValue(new Promise(() => {}));
     render(<DialPage />);
     expect(screen.getByRole('button', { name: 'Paste' })).toBeDisabled();
+  });
+
+  it('opens the post-call panel after an outbound call and pushes statuses in selection order', async () => {
+    window.localStorage.setItem('pstn-twilio.sheets.spreadsheetId', 'ss1');
+    window.localStorage.setItem('pstn-twilio.sheets.sheetTitle', 'Texas');
+    vi.mocked(api.sheets.push).mockResolvedValue({
+      spreadsheetId: 'ss1',
+      sheetTitle: 'Texas',
+      rowIndex: 7,
+      duplicateRows: [],
+      cellValue: 'Not interested, Voicemail, from: 8776524532, time: 9:45am',
+      timeZone: 'America/Chicago',
+      timeZoneSource: 'zip',
+      emailStatus: 'PENDING',
+      emailTo: 'info@dojo.com',
+      emailTemplate: 'not-interested',
+      emailDueAt: '2026-10-02T14:45:00.000Z',
+      emailNote: null,
+    });
+    voiceMock.current.makeCall = vi.fn(async () => ({ on: vi.fn() }));
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    const page = () => (
+      <QueryClientProvider client={client}>
+        <DialPage />
+      </QueryClientProvider>
+    );
+    const view = renderBase(page());
+    await screen.findByText(/Caller ID:/);
+
+    fireEvent.change(screen.getByLabelText(/destination/i), { target: { value: '+12547024877' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Call' }));
+    await waitFor(() => expect(voiceMock.current.makeCall).toHaveBeenCalled());
+    voiceMock.current = { ...voiceMock.current, active: true, connectionState: 'open' };
+    view.rerender(page());
+    expect(screen.queryByRole('region', { name: /post-call status/i })).toBeNull();
+    voiceMock.current = { ...voiceMock.current, active: false, connectionState: 'closed' };
+    view.rerender(page());
+
+    const panel = await screen.findByRole('region', { name: /post-call status/i });
+    expect(panel).toHaveTextContent('2547024877');
+    // Pick Voicemail, then Not interested, then re-pick Voicemail: it moves last.
+    fireEvent.click(screen.getByRole('button', { name: 'Voicemail' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Not interested' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Voicemail' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Voicemail' }));
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Push' })).toBeEnabled());
+    fireEvent.click(screen.getByRole('button', { name: 'Push' }));
+
+    await waitFor(() =>
+      expect(api.sheets.push).toHaveBeenCalledWith(
+        expect.objectContaining({
+          spreadsheetId: 'ss1',
+          sheetTitle: 'Texas',
+          orderedTags: ['Not interested', 'Voicemail'],
+          destinationE164: '+12547024877',
+          callerE164: '+18776524532',
+        }),
+      ),
+    );
+    expect(await screen.findByText(/Row 7 of Texas updated/)).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Push again (overwrites)' })).toBeInTheDocument();
   });
 });

@@ -1,0 +1,13 @@
+Subject: Following up after speaking with your AI system
+Hi there,
+
+I called your school on {{callDay}} and it looks like you've got an AI answering system in place — impressive! I wanted to follow up directly with the person behind the school.
+
+I work with martial arts school owners to help them grow their student base in a consistent and predictable way. Given that you're already ahead of the curve with AI, I think you'd find what I have to share genuinely interesting.
+
+{{customNote}}
+
+Would you be open to a quick 10-minute chat? Reply here or call me at {{callerNumber}}.
+
+Best regards,
+Ammar

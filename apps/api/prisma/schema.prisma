@@ -97,28 +97,29 @@ model User {
   lastLoginAt  DateTime? @map("last_login_at")
   disabledAt   DateTime? @map("disabled_at")
 
-  sessions         Session[]
-  phoneNumbers     PhoneNumber[]
-  numberSearches   NumberSearch[]
-  voiceIdentities  VoiceIdentity[]
+  sessions            Session[]
+  phoneNumbers        PhoneNumber[]
+  numberSearches      NumberSearch[]
+  voiceIdentities     VoiceIdentity[]
   outboundCallIntents OutboundCallIntent[]
-  auditLogs        AuditLog[]
-  updatedSettings  AppSetting[]
-  aiCalls          AiCall[]
-  googleCalendar   GoogleCalendarConnection?
+  auditLogs           AuditLog[]
+  updatedSettings     AppSetting[]
+  aiCalls             AiCall[]
+  googleCalendar      GoogleCalendarConnection?
+  googleSheets        GoogleSheetsConnection?
 
   @@map("users")
 }
 
 model Session {
-  id         String    @id @default(uuid())
-  userId     String    @map("user_id")
-  tokenHash  String    @map("token_hash")
-  userAgent  String?   @map("user_agent")
-  ipAddress  String?   @map("ip_address")
-  expiresAt  DateTime  @map("expires_at")
-  revokedAt  DateTime? @map("revoked_at")
-  createdAt  DateTime  @default(now()) @map("created_at")
+  id        String    @id @default(uuid())
+  userId    String    @map("user_id")
+  tokenHash String    @map("token_hash")
+  userAgent String?   @map("user_agent")
+  ipAddress String?   @map("ip_address")
+  expiresAt DateTime  @map("expires_at")
+  revokedAt DateTime? @map("revoked_at")
+  createdAt DateTime  @default(now()) @map("created_at")
 
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 
@@ -141,38 +142,38 @@ model TwilioAccount {
 }
 
 model PhoneNumber {
-  id                          String                       @id @default(uuid())
-  userId                      String?                      @map("user_id")
-  twilioAccountSid            String                       @map("twilio_account_sid")
-  twilioIncomingPhoneNumberSid String                      @unique @map("twilio_incoming_phone_number_sid")
-  phoneNumberE164             String                       @unique @map("phone_number_e164")
-  country                     String?
-  region                      String?
-  locality                    String?
-  postalCode                  String?                      @map("postal_code")
-  areaCode                    String?                      @map("area_code")
-  numberType                  NumberType                   @default(UNKNOWN) @map("number_type")
-  capabilitiesVoice           Boolean                      @default(false) @map("capabilities_voice")
-  capabilitiesSms             Boolean                      @default(false) @map("capabilities_sms")
-  capabilitiesMms             Boolean                      @default(false) @map("capabilities_mms")
-  capabilitiesWhatsappCandidate Boolean                    @default(false) @map("capabilities_whatsapp_candidate")
-  whatsappCompatibilityStatus WhatsAppCompatibilityStatus  @default(UNKNOWN) @map("whatsapp_compatibility_status")
-  voiceWebhookUrl             String?                      @map("voice_webhook_url")
-  smsWebhookUrl               String?                      @map("sms_webhook_url")
-  statusCallbackUrl           String?                      @map("status_callback_url")
-  friendlyName                String?                      @map("friendly_name")
-  tags                        Json?
-  active                      Boolean                      @default(true)
-  purchasedAt                 DateTime                     @default(now()) @map("purchased_at")
-  releasedAt                  DateTime?                    @map("released_at")
-  createdAt                   DateTime                     @default(now()) @map("created_at")
-  updatedAt                   DateTime                     @updatedAt @map("updated_at")
+  id                            String                      @id @default(uuid())
+  userId                        String?                     @map("user_id")
+  twilioAccountSid              String                      @map("twilio_account_sid")
+  twilioIncomingPhoneNumberSid  String                      @unique @map("twilio_incoming_phone_number_sid")
+  phoneNumberE164               String                      @unique @map("phone_number_e164")
+  country                       String?
+  region                        String?
+  locality                      String?
+  postalCode                    String?                     @map("postal_code")
+  areaCode                      String?                     @map("area_code")
+  numberType                    NumberType                  @default(UNKNOWN) @map("number_type")
+  capabilitiesVoice             Boolean                     @default(false) @map("capabilities_voice")
+  capabilitiesSms               Boolean                     @default(false) @map("capabilities_sms")
+  capabilitiesMms               Boolean                     @default(false) @map("capabilities_mms")
+  capabilitiesWhatsappCandidate Boolean                     @default(false) @map("capabilities_whatsapp_candidate")
+  whatsappCompatibilityStatus   WhatsAppCompatibilityStatus @default(UNKNOWN) @map("whatsapp_compatibility_status")
+  voiceWebhookUrl               String?                     @map("voice_webhook_url")
+  smsWebhookUrl                 String?                     @map("sms_webhook_url")
+  statusCallbackUrl             String?                     @map("status_callback_url")
+  friendlyName                  String?                     @map("friendly_name")
+  tags                          Json?
+  active                        Boolean                     @default(true)
+  purchasedAt                   DateTime                    @default(now()) @map("purchased_at")
+  releasedAt                    DateTime?                   @map("released_at")
+  createdAt                     DateTime                    @default(now()) @map("created_at")
+  updatedAt                     DateTime                    @updatedAt @map("updated_at")
 
-  user           User?           @relation(fields: [userId], references: [id], onDelete: SetNull)
-  twilioAccount  TwilioAccount   @relation(fields: [twilioAccountSid], references: [accountSid], onDelete: Cascade)
-  smsMessages    SmsMessage[]
-  calls          Call[]
-  voiceIdentities VoiceIdentity[]
+  user                User?                @relation(fields: [userId], references: [id], onDelete: SetNull)
+  twilioAccount       TwilioAccount        @relation(fields: [twilioAccountSid], references: [accountSid], onDelete: Cascade)
+  smsMessages         SmsMessage[]
+  calls               Call[]
+  voiceIdentities     VoiceIdentity[]
   outboundCallIntents OutboundCallIntent[]
 
   @@index([phoneNumberE164])
@@ -182,16 +183,16 @@ model PhoneNumber {
 }
 
 model NumberSearch {
-  id           String    @id @default(uuid())
-  userId       String    @map("user_id")
-  country      String
-  areaCode     String?   @map("area_code")
-  contains     String?
-  numberType   String?   @map("number_type")
-  requiredSms  Boolean   @default(false) @map("required_sms")
+  id            String   @id @default(uuid())
+  userId        String   @map("user_id")
+  country       String
+  areaCode      String?  @map("area_code")
+  contains      String?
+  numberType    String?  @map("number_type")
+  requiredSms   Boolean  @default(false) @map("required_sms")
   requiredVoice Boolean  @default(false) @map("required_voice")
-  resultCount  Int       @default(0) @map("result_count")
-  createdAt    DateTime  @default(now()) @map("created_at")
+  resultCount   Int      @default(0) @map("result_count")
+  createdAt     DateTime @default(now()) @map("created_at")
 
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 
@@ -200,21 +201,21 @@ model NumberSearch {
 }
 
 model SmsMessage {
-  id              String          @id @default(uuid())
-  phoneNumberId   String          @map("phone_number_id")
-  twilioMessageSid String?        @unique @map("twilio_message_sid")
-  direction       MessageDirection
-  fromE164        String          @map("from_e164")
-  toE164          String          @map("to_e164")
-  body            String?
-  numMedia        Int             @default(0) @map("num_media")
-  media           Json?
-  status          MessageStatus   @default(RECEIVED)
-  errorCode       String?         @map("error_code")
-  errorMessage    String?         @map("error_message")
-  rawPayload      Json?           @map("raw_payload")
-  createdAt       DateTime        @default(now()) @map("created_at")
-  updatedAt       DateTime        @updatedAt @map("updated_at")
+  id               String           @id @default(uuid())
+  phoneNumberId    String           @map("phone_number_id")
+  twilioMessageSid String?          @unique @map("twilio_message_sid")
+  direction        MessageDirection
+  fromE164         String           @map("from_e164")
+  toE164           String           @map("to_e164")
+  body             String?
+  numMedia         Int              @default(0) @map("num_media")
+  media            Json?
+  status           MessageStatus    @default(RECEIVED)
+  errorCode        String?          @map("error_code")
+  errorMessage     String?          @map("error_message")
+  rawPayload       Json?            @map("raw_payload")
+  createdAt        DateTime         @default(now()) @map("created_at")
+  updatedAt        DateTime         @updatedAt @map("updated_at")
 
   phoneNumber PhoneNumber @relation(fields: [phoneNumberId], references: [id], onDelete: Cascade)
 
@@ -224,28 +225,28 @@ model SmsMessage {
 }
 
 model Call {
-  id                String       @id @default(uuid())
-  phoneNumberId     String?      @map("phone_number_id")
-  twilioCallSid     String?      @unique @map("twilio_call_sid")
-  parentCallSid     String?      @map("parent_call_sid")
-  direction         CallDirection
-  fromE164          String       @map("from_e164")
-  toE164            String       @map("to_e164")
-  browserIdentity   String?      @map("browser_identity")
-  selectedCallerId  String?      @map("selected_caller_id")
-  destinationE164   String?      @map("destination_e164")
-  status            CallStatus   @default(INITIATED)
-  durationSeconds   Int?         @map("duration_seconds")
-  price             String?
-  priceUnit         String?      @map("price_unit")
-  rawPayload        Json?        @map("raw_payload")
-  startedAt         DateTime?    @map("started_at")
-  answeredAt        DateTime?    @map("answered_at")
-  endedAt           DateTime?    @map("ended_at")
-  createdAt         DateTime     @default(now()) @map("created_at")
-  updatedAt         DateTime     @updatedAt @map("updated_at")
+  id               String        @id @default(uuid())
+  phoneNumberId    String?       @map("phone_number_id")
+  twilioCallSid    String?       @unique @map("twilio_call_sid")
+  parentCallSid    String?       @map("parent_call_sid")
+  direction        CallDirection
+  fromE164         String        @map("from_e164")
+  toE164           String        @map("to_e164")
+  browserIdentity  String?       @map("browser_identity")
+  selectedCallerId String?       @map("selected_caller_id")
+  destinationE164  String?       @map("destination_e164")
+  status           CallStatus    @default(INITIATED)
+  durationSeconds  Int?          @map("duration_seconds")
+  price            String?
+  priceUnit        String?       @map("price_unit")
+  rawPayload       Json?         @map("raw_payload")
+  startedAt        DateTime?     @map("started_at")
+  answeredAt       DateTime?     @map("answered_at")
+  endedAt          DateTime?     @map("ended_at")
+  createdAt        DateTime      @default(now()) @map("created_at")
+  updatedAt        DateTime      @updatedAt @map("updated_at")
 
-  phoneNumber PhoneNumber?      @relation(fields: [phoneNumberId], references: [id], onDelete: SetNull)
+  phoneNumber PhoneNumber?    @relation(fields: [phoneNumberId], references: [id], onDelete: SetNull)
   recordings  CallRecording[]
 
   @@index([phoneNumberId, createdAt(sort: Desc)])
@@ -254,20 +255,20 @@ model Call {
 }
 
 model CallRecording {
-  id                  String          @id @default(uuid())
-  callId              String?         @map("call_id")
-  twilioCallSid       String          @map("twilio_call_sid")
-  twilioRecordingSid  String          @unique @map("twilio_recording_sid")
-  recordingUrl        String?         @map("recording_url")
-  status              RecordingStatus @default(IN_PROGRESS)
-  durationSeconds     Int?            @map("duration_seconds")
-  channels            Int?
-  source              String?
-  track               String?
-  rawPayload          Json?           @map("raw_payload")
-  startedAt           DateTime?       @map("started_at")
-  createdAt           DateTime        @default(now()) @map("created_at")
-  updatedAt           DateTime        @updatedAt @map("updated_at")
+  id                 String          @id @default(uuid())
+  callId             String?         @map("call_id")
+  twilioCallSid      String          @map("twilio_call_sid")
+  twilioRecordingSid String          @unique @map("twilio_recording_sid")
+  recordingUrl       String?         @map("recording_url")
+  status             RecordingStatus @default(IN_PROGRESS)
+  durationSeconds    Int?            @map("duration_seconds")
+  channels           Int?
+  source             String?
+  track              String?
+  rawPayload         Json?           @map("raw_payload")
+  startedAt          DateTime?       @map("started_at")
+  createdAt          DateTime        @default(now()) @map("created_at")
+  updatedAt          DateTime        @updatedAt @map("updated_at")
 
   call Call? @relation(fields: [callId], references: [id], onDelete: SetNull)
 
@@ -424,4 +425,56 @@ model GoogleCalendarConnection {
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@map("google_calendar_connections")
+}
+
+// OAuth access to the user's Google account for Sheets writes and Gmail sends.
+// Reuses the Calendar OAuth client (GOOGLE_CLIENT_ID / GOOGLE_CLIENT_SECRET).
+model GoogleSheetsConnection {
+  id                    String   @id @default(uuid())
+  userId                String   @unique @map("user_id")
+  googleEmail           String?  @map("google_email")
+  refreshTokenEncrypted String   @map("refresh_token_encrypted")
+  scopes                String
+  createdAt             DateTime @default(now()) @map("created_at")
+  updatedAt             DateTime @updatedAt @map("updated_at")
+
+  user     User            @relation(fields: [userId], references: [id], onDelete: Cascade)
+  pushLogs SheetsPushLog[]
+
+  @@map("google_sheets_connections")
+}
+
+// One row per post-call status push. Also the follow-up email schedule:
+// PENDING rows are sent by SheetsFollowUpService once emailDueAt passes.
+model SheetsPushLog {
+  id              String    @id @default(uuid())
+  connectionId    String    @map("connection_id")
+  spreadsheetId   String    @map("spreadsheet_id")
+  sheetTitle      String    @map("sheet_title")
+  rowIndex        Int       @map("row_index")
+  destinationE164 String    @map("destination_e164")
+  callerE164      String    @map("caller_e164")
+  tags            Json // string[] in selection order
+  customNote      String?   @map("custom_note")
+  cellValue       String    @map("cell_value")
+  timeZone        String    @map("time_zone")
+  schoolName      String?   @map("school_name")
+  // NONE | PENDING | SENDING | SENT | FAILED | CANCELLED
+  emailStatus     String    @default("NONE") @map("email_status")
+  emailTo         String?   @map("email_to")
+  emailTemplate   String?   @map("email_template")
+  emailDueAt      DateTime? @map("email_due_at")
+  emailAttempts   Int       @default(0) @map("email_attempts")
+  emailError      String?   @map("email_error")
+  emailSentAt     DateTime? @map("email_sent_at")
+  callEndedAt     DateTime  @map("call_ended_at")
+  createdAt       DateTime  @default(now()) @map("created_at")
+  updatedAt       DateTime  @updatedAt @map("updated_at")
+
+  connection GoogleSheetsConnection @relation(fields: [connectionId], references: [id], onDelete: Cascade)
+
+  @@index([connectionId, createdAt(sort: Desc)])
+  @@index([connectionId, destinationE164])
+  @@index([emailStatus, emailDueAt])
+  @@map("sheets_push_logs")
 }

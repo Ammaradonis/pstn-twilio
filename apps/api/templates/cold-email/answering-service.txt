@@ -1,0 +1,13 @@
+Subject: Quick note — called {{callDay}}, reached your service
+Hi there,
+
+I called your school on {{callDay}} and reached your answering service. I didn't want to leave a message there, so I'm following up directly.
+
+I work with martial arts schools to help them bring in new students on a consistent basis. I'd love to spend 10 minutes sharing what's working right now in your market.
+
+{{customNote}}
+
+Please reply to this email or give me a call at {{callerNumber}} whenever works for you.
+
+Kind regards,
+Ammar
