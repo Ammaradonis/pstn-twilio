@@ -86,12 +86,14 @@ export class AiCallingConfig {
     };
   }
 
+  // Calendar shares the Google Cloud OAuth client (project local-gmail-510114)
+  // with Sheets and Gmail.
   get googleClientId(): string | undefined {
-    return this.get('GOOGLE_CLIENT_ID');
+    return this.get('GOOGLE_CLOUD_CLIENT_ID');
   }
 
   get googleClientSecret(): string | undefined {
-    return this.get('GOOGLE_CLIENT_SECRET');
+    return this.get('GOOGLE_CLOUD_CLIENT_SECRET');
   }
 
   get publicApiBaseUrl(): string {
@@ -139,7 +141,9 @@ export class AiCallingConfig {
     if (!this.businessName) missing.push('Set AI_BUSINESS_NAME (who the agent calls for).');
     if (!this.hostName) missing.push('Set AI_HOST_NAME (who runs the consultation).');
     if (!this.googleClientId || !this.googleClientSecret) {
-      missing.push('Set GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET for calendar access.');
+      missing.push(
+        'Set GOOGLE_CLOUD_CLIENT_ID and GOOGLE_CLOUD_CLIENT_SECRET for calendar access.',
+      );
     }
     if (!this.tokenEncryptionKey) missing.push('Set TOKEN_ENCRYPTION_KEY on the API.');
     return missing;

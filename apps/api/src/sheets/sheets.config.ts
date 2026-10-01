@@ -2,10 +2,11 @@ import { Injectable } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 
 /**
- * Sheets/Gmail settings. Uses its own OAuth client, GOOGLE_CLOUD_CLIENT_ID /
- * GOOGLE_CLOUD_CLIENT_SECRET (Google Cloud project local-gmail-510114), not the
- * Calendar client (GOOGLE_CLIENT_ID). That project needs the Sheets, Drive and
- * Gmail APIs enabled and the redirect URI below registered on the client.
+ * Sheets/Gmail settings. OAuth client GOOGLE_CLOUD_CLIENT_ID /
+ * GOOGLE_CLOUD_CLIENT_SECRET (Google Cloud project local-gmail-510114), shared
+ * with Calendar. The retired GOOGLE_CLIENT_* pair is ignored. That project
+ * needs the Sheets, Drive and Gmail APIs enabled and the redirect URI below
+ * registered on the client.
  */
 @Injectable()
 export class SheetsConfig {

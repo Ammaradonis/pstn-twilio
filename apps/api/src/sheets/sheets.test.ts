@@ -237,7 +237,7 @@ describe('Sheets OAuth client', () => {
   const configWith = (env: Record<string, string>) =>
     new SheetsConfig({ get: (key: string) => env[key] } as unknown as ConfigService);
 
-  it('uses GOOGLE_CLOUD_CLIENT_*, never the Calendar client', () => {
+  it('uses GOOGLE_CLOUD_CLIENT_*, never the retired GOOGLE_CLIENT_* pair', () => {
     const cfg = configWith({
       GOOGLE_CLIENT_ID: 'calendar-client',
       GOOGLE_CLIENT_SECRET: 'calendar-secret',
@@ -262,5 +262,23 @@ describe('Sheets OAuth client', () => {
     expect(cfg.oauthRedirectUri).toBe(
       'https://api.bestsoftphone.site/webhooks/google-sheets/oauth/callback',
     );
+  });
+});
+
+describe('voicemail not set up status', () => {
+  it('writes the full label and sends its own template', () => {
+    const tag = "Rang out but voicemail box hasn't been set up yet";
+    expect(pickFollowUpTemplate([tag])).toMatchObject({ template: 'voicemail-not-set-up' });
+    // Picked before plain "Rang out", it decides the email.
+    expect(pickFollowUpTemplate([tag, 'Rang out'])).toMatchObject({
+      template: 'voicemail-not-set-up',
+    });
+    const { subject, body } = renderTemplate(loadTemplate('voicemail-not-set-up'), {
+      callDay: 'Tuesday',
+      callerNumber: '6672206726',
+    });
+    expect(subject).toContain('Tuesday');
+    expect(body).toContain("hasn't been set up");
+    expect(body).not.toMatch(/\{\{/);
   });
 });

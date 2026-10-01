@@ -284,8 +284,9 @@ export class GoogleCalendarService {
     };
     if (!res.ok || !body.access_token) {
       // invalid_grant: the refresh token was revoked or expired.
+      // unauthorized_client: it was issued to a different OAuth client.
       throw new CalendarUnavailableError(
-        body.error === 'invalid_grant'
+        body.error === 'invalid_grant' || body.error === 'unauthorized_client'
           ? 'Google Calendar access was revoked or expired. Reconnect it in Settings.'
           : `Google token request failed: ${body.error_description ?? body.error ?? res.status}`,
       );

@@ -2,6 +2,7 @@
 // The labels are written into the sheet's Status cell as-is.
 export const CALL_STATUS_TAGS = [
   'Rang out',
+  "Rang out but voicemail box hasn't been set up yet",
   'Line is busy',
   'Voicemail',
   'Hung up on me',
@@ -23,6 +24,7 @@ export type CallStatusTag = (typeof CALL_STATUS_TAGS)[number];
 // template file (apps/api/templates/cold-email/<name>.txt).
 export const TAG_EMAIL_TEMPLATE: Partial<Record<CallStatusTag, string>> = {
   'Rang out': 'rang-out',
+  "Rang out but voicemail box hasn't been set up yet": 'voicemail-not-set-up',
   'Line is busy': 'line-busy',
   Voicemail: 'voicemail',
   'Hung up on me': 'hung-up',
