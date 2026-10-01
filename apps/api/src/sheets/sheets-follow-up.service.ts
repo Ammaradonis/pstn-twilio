@@ -11,7 +11,7 @@ import { Injectable, Logger, OnModuleDestroy, OnModuleInit } from '@nestjs/commo
 
 import { PrismaService } from '../prisma/prisma.service';
 
-import { GmailService } from './gmail.service';
+import { GmailService, type TemplateVars } from './gmail.service';
 import { formatLocalTime, formatLocalWeekday, stripCountryCode } from './sheets.util';
 
 const SWEEP_MS = 5 * 60_000;
@@ -83,14 +83,12 @@ export class SheetsFollowUpService implements OnModuleInit, OnModuleDestroy {
     if (claimed.count === 0 || !log.emailTo || !log.emailTemplate) return;
 
     try {
-      await this.gmail.sendFromTemplate(log.connection.userId, log.emailTo, log.emailTemplate, {
-        schoolName: log.schoolName ?? '',
-        customNote: log.customNote ?? '',
-        callerNumber: stripCountryCode(log.callerE164),
-        phoneNumber: stripCountryCode(log.destinationE164),
-        callDay: formatLocalWeekday(log.callEndedAt, log.timeZone),
-        localTime: formatLocalTime(log.callEndedAt, log.timeZone),
-      });
+      await this.gmail.sendFromTemplate(
+        log.connection.userId,
+        log.emailTo,
+        log.emailTemplate,
+        templateVars(log),
+      );
       await this.prisma.sheetsPushLog.update({
         where: { id: log.id },
         data: { emailStatus: 'SENT', emailSentAt: new Date(), emailError: null },
@@ -115,4 +113,23 @@ export class SheetsFollowUpService implements OnModuleInit, OnModuleDestroy {
       );
     }
   }
+}
+
+/** Placeholder values for a push's follow-up email. */
+export function templateVars(log: {
+  schoolName: string | null;
+  customNote: string | null;
+  callerE164: string;
+  destinationE164: string;
+  callEndedAt: Date;
+  timeZone: string;
+}): TemplateVars {
+  return {
+    schoolName: log.schoolName ?? '',
+    customNote: log.customNote ?? '',
+    callerNumber: stripCountryCode(log.callerE164),
+    phoneNumber: stripCountryCode(log.destinationE164),
+    callDay: formatLocalWeekday(log.callEndedAt, log.timeZone),
+    localTime: formatLocalTime(log.callEndedAt, log.timeZone),
+  };
 }

@@ -18,9 +18,11 @@ import type {
   PurchaseNumberInput,
   RecordingPreferenceDto,
   SendMessageInput,
+  EmailFinderStatusDto,
   PushCallResultDto,
   SheetsConnectionStatusDto,
   SheetsFollowUpDto,
+  SheetsFollowUpMessageDto,
   SheetsSpreadsheetDto,
   SheetsStatusDto,
   SheetsTimeZoneCheckDto,
@@ -363,5 +365,27 @@ export const api = {
       }),
     timezoneCheck: () =>
       request<SheetsTimeZoneCheckDto>('/sheets/timezone-check', { method: 'POST' }),
+    followUpMessage: (id: string) =>
+      request<SheetsFollowUpMessageDto>(`/sheets/follow-ups/${encodeURIComponent(id)}/message`),
+    markFollowUpSent: (id: string) =>
+      request<{ ok: true }>(`/sheets/follow-ups/${encodeURIComponent(id)}/sent`, {
+        method: 'POST',
+      }),
+  },
+
+  emailFinder: {
+    start: (spreadsheetId: string, sheetTitle: string) =>
+      request<EmailFinderStatusDto>('/email-finder/start', {
+        method: 'POST',
+        body: { spreadsheetId, sheetTitle },
+      }),
+    status: (spreadsheetId: string, sheetTitle: string) =>
+      request<EmailFinderStatusDto>('/email-finder/status', {
+        query: { spreadsheetId, sheetTitle },
+      }),
+    setRunning: (jobId: string, action: 'pause' | 'resume' | 'cancel') =>
+      request<EmailFinderStatusDto>(`/email-finder/${encodeURIComponent(jobId)}/${action}`, {
+        method: 'POST',
+      }),
   },
 };

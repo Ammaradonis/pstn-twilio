@@ -9,13 +9,26 @@
  *  POST   /api/sheets/push                     post-call status push
  *  GET    /api/sheets/follow-ups               recent follow-up emails
  *  POST   /api/sheets/follow-ups/:id/cancel    cancel a pending email
+ *  GET    /api/sheets/follow-ups/:id/message   rendered email (for contact forms)
+ *  POST   /api/sheets/follow-ups/:id/sent      contact-form follow-up sent by hand
+ *  POST   /api/email-finder/start              queue a tab's rows for the email finder
+ *  GET    /api/email-finder/status             progress for a tab
+ *  POST   /api/email-finder/:jobId/{pause|resume|cancel}
+ *  POST   /api/email-finder/worker/{claim|results|heartbeat}   (worker token)
  *  POST   /api/sheets/timezone-check           check/learn from U.S. Conquest
  *  GET    /webhooks/google-sheets/oauth/callback   Google redirect (no JWT)
  */
 
+import { timingSafeEqual } from 'crypto';
+
 import {
   BadRequestException,
   Body,
+  CanActivate,
+  ExecutionContext,
+  Injectable,
+  ServiceUnavailableException,
+  UnauthorizedException,
   Controller,
   Delete,
   Get,
@@ -28,13 +41,21 @@ import {
   Res,
   UseGuards,
 } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
 import { Throttle } from '@nestjs/throttler';
-import { pushCallResultSchema, type PushCallResultDto } from '@pstn-twilio/shared';
+import {
+  pushCallResultSchema,
+  type PushCallResultDto,
+  type SheetsFollowUpMessageDto,
+} from '@pstn-twilio/shared';
 import type { Request, Response } from 'express';
 
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { ZodValidationPipe } from '../common/zod.pipe';
 
+import { EmailFinderService, type FinderResult } from './email-finder.service';
+import { loadTemplate, renderTemplate } from './gmail.service';
+import { templateVars } from './sheets-follow-up.service';
 import { SheetsConfig } from './sheets.config';
 import { SheetsService, SheetsUnavailableError } from './sheets.service';
 
@@ -106,6 +127,24 @@ export class SheetsController {
     return { ok: true };
   }
 
+  @Get('follow-ups/:id/message')
+  async followUpMessage(
+    @Req() req: AuthedRequest,
+    @Param('id') id: string,
+  ): Promise<SheetsFollowUpMessageDto> {
+    const log = await this.sheets.followUpLog(req.user.id, id);
+    if (!log.emailTemplate) throw new BadRequestException('This push has no follow-up email.');
+    const { subject, body } = renderTemplate(loadTemplate(log.emailTemplate), templateVars(log));
+    return { subject, body, contactFormUrl: log.contactFormUrl };
+  }
+
+  @Post('follow-ups/:id/sent')
+  @HttpCode(200)
+  async markFollowUpSent(@Req() req: AuthedRequest, @Param('id') id: string) {
+    await this.sheets.markFollowUpSent(req.user.id, id);
+    return { ok: true };
+  }
+
   @Post('timezone-check')
   @HttpCode(200)
   @Throttle({ short: { limit: 2, ttl: 60_000 } })
@@ -147,5 +186,95 @@ export class GoogleSheetsOAuthController {
           err instanceof SheetsUnavailableError ? err.message : 'Google Sheets connection failed.',
       });
     }
+  }
+}
+
+type TabQuery = { spreadsheetId?: string; sheetTitle?: string };
+
+function tabFrom(body: TabQuery): { spreadsheetId: string; sheetTitle: string } {
+  const spreadsheetId = body.spreadsheetId?.trim();
+  const sheetTitle = body.sheetTitle;
+  if (!spreadsheetId || !sheetTitle) {
+    throw new BadRequestException('spreadsheetId and sheetTitle are required.');
+  }
+  return { spreadsheetId, sheetTitle };
+}
+
+@Controller('email-finder')
+@UseGuards(JwtAuthGuard)
+export class EmailFinderController {
+  constructor(private readonly finder: EmailFinderService) {}
+
+  @Post('start')
+  @HttpCode(200)
+  start(@Req() req: AuthedRequest, @Body() body: TabQuery) {
+    const { spreadsheetId, sheetTitle } = tabFrom(body);
+    return userFacing(this.finder.start(req.user.id, spreadsheetId, sheetTitle));
+  }
+
+  @Get('status')
+  status(@Req() req: AuthedRequest, @Query() query: TabQuery) {
+    const { spreadsheetId, sheetTitle } = tabFrom(query);
+    return this.finder.status(req.user.id, spreadsheetId, sheetTitle);
+  }
+
+  @Post(':jobId/pause')
+  @HttpCode(200)
+  pause(@Req() req: AuthedRequest, @Param('jobId') jobId: string) {
+    return this.finder.setStatus(req.user.id, jobId, 'PAUSED');
+  }
+
+  @Post(':jobId/resume')
+  @HttpCode(200)
+  resume(@Req() req: AuthedRequest, @Param('jobId') jobId: string) {
+    return this.finder.setStatus(req.user.id, jobId, 'RUNNING');
+  }
+
+  @Post(':jobId/cancel')
+  @HttpCode(200)
+  cancel(@Req() req: AuthedRequest, @Param('jobId') jobId: string) {
+    return this.finder.setStatus(req.user.id, jobId, 'CANCELLED');
+  }
+}
+
+/** The email finder worker on the user's PC authenticates with a shared token. */
+@Injectable()
+export class FinderWorkerGuard implements CanActivate {
+  constructor(private readonly config: ConfigService) {}
+
+  canActivate(context: ExecutionContext): boolean {
+    const expected = this.config.get<string>('EMAIL_FINDER_WORKER_TOKEN')?.trim();
+    if (!expected) throw new ServiceUnavailableException('EMAIL_FINDER_WORKER_TOKEN is not set.');
+    const given = context.switchToHttp().getRequest<Request>().headers['x-worker-token'];
+    const a = Buffer.from(typeof given === 'string' ? given : '');
+    const b = Buffer.from(expected);
+    if (a.length !== b.length || !timingSafeEqual(a, b)) throw new UnauthorizedException();
+    return true;
+  }
+}
+
+@Controller('email-finder/worker')
+@UseGuards(FinderWorkerGuard)
+export class EmailFinderWorkerController {
+  constructor(private readonly finder: EmailFinderService) {}
+
+  @Post('heartbeat')
+  @HttpCode(200)
+  async heartbeat() {
+    await this.finder.heartbeat();
+    return { ok: true };
+  }
+
+  @Post('claim')
+  @HttpCode(200)
+  async claim(@Body() body: { max?: number }) {
+    return { rows: await this.finder.claim(Number(body?.max) || 3) };
+  }
+
+  @Post('results')
+  @HttpCode(200)
+  results(@Body() body: { results?: FinderResult[] }) {
+    if (!Array.isArray(body?.results)) throw new BadRequestException('results[] is required.');
+    return this.finder.submit(body.results.slice(0, 50));
   }
 }

@@ -1,0 +1,11 @@
+spacy>=3.8,<3.9
+httpx>=0.28
+beautifulsoup4>=4.12
+lxml>=5.3
+dnspython>=2.7
+email-validator>=2.2
+rapidfuzz>=3.10
+tldextract>=5.1
+playwright>=1.48
+python-dotenv>=1.0
+pytest>=8.3

@@ -30,7 +30,15 @@ export interface PushCallResultDto {
 
 export type SheetsTimeZoneSource = 'uk' | 'zip' | 'city' | 'state' | 'guess';
 
-export type SheetsEmailStatus = 'NONE' | 'PENDING' | 'SENDING' | 'SENT' | 'FAILED' | 'CANCELLED';
+// MANUAL: no email, so the follow-up waits for the user to send it through the school's contact form.
+export type SheetsEmailStatus =
+  | 'NONE'
+  | 'PENDING'
+  | 'SENDING'
+  | 'SENT'
+  | 'FAILED'
+  | 'CANCELLED'
+  | 'MANUAL';
 
 /** Response from the push endpoint. */
 export interface SheetsStatusDto {
@@ -71,6 +79,7 @@ export interface SheetsFollowUpDto {
   emailDueAt: string | null;
   emailSentAt: string | null;
   emailError: string | null;
+  contactFormUrl: string | null;
 }
 
 /** Result of checking the "U.S. Conquest" addresses against the time zone resolver. */
@@ -82,4 +91,31 @@ export interface SheetsTimeZoneCheckDto {
   learnedCities: number;
   /** Addresses in split-zone states that could only be guessed (first 50). */
   uncertain: { tab: string; row: number; address: string; timeZone: string }[];
+}
+
+/** A follow-up rendered for sending by hand through a contact form. */
+export interface SheetsFollowUpMessageDto {
+  subject: string;
+  body: string;
+  contactFormUrl: string | null;
+}
+
+// ── Email finder ──────────────────────────────────────────────────────────────
+
+export type EmailFinderJobStatus = 'RUNNING' | 'PAUSED' | 'DONE' | 'CANCELLED';
+
+export interface EmailFinderStatusDto {
+  jobId: string | null;
+  status: EmailFinderJobStatus | null;
+  /** Rows queued for this tab (rows that already had an email are skipped). */
+  total: number;
+  /** Rows the finder has finished. */
+  done: number;
+  found: number;
+  contactForms: number;
+  /** Rows that already had an email when the tab was queued. */
+  alreadyHadEmail: number;
+  /** The worker on the user's PC checked in during the last 2 minutes. */
+  workerOnline: boolean;
+  workerLastSeen: string | null;
 }

@@ -70,8 +70,8 @@ const RECENT_EMAIL_WINDOW_MS = 30 * 24 * 60 * 60 * 1000;
 const STATE_TTL_MS = 15 * 60_000;
 
 type OAuthState = { u: string; exp: number; n: string };
-type Cell = string | number | boolean | null | undefined;
-type Row = Cell[];
+export type Cell = string | number | boolean | null | undefined;
+export type Row = Cell[];
 
 export class SheetsUnavailableError extends Error {
   constructor(msg: string) {
@@ -283,9 +283,16 @@ export class SheetsService {
       { method: 'POST', body: { valueInputOption: 'RAW', data } },
     );
 
-    const email = await this.planFollowUp(conn.id, dto, extractEmail(text(row[cols.email])));
+    const contactFormUrl =
+      cols.contactForm !== -1 ? text(row[cols.contactForm]).trim() || null : null;
+    const email = await this.planFollowUp(
+      conn.id,
+      dto,
+      extractEmail(text(row[cols.email])),
+      contactFormUrl,
+    );
     const dueAt =
-      email.status === 'PENDING'
+      email.status === 'PENDING' || email.status === 'MANUAL'
         ? new Date(Math.max(callEndedAt.getTime() + FOLLOW_UP_DELAY_MS, Date.now()))
         : null;
 
@@ -295,7 +302,7 @@ export class SheetsService {
         where: {
           connectionId: conn.id,
           destinationE164: dto.destinationE164,
-          emailStatus: 'PENDING',
+          emailStatus: { in: ['PENDING', 'MANUAL'] },
         },
         data: { emailStatus: 'CANCELLED', emailError: 'Replaced by a newer push.' },
       }),
@@ -316,6 +323,7 @@ export class SheetsService {
           emailTo: email.to,
           emailTemplate: email.template,
           emailDueAt: dueAt,
+          contactFormUrl: email.status === 'MANUAL' ? contactFormUrl : null,
           callEndedAt,
         },
       }),
@@ -341,6 +349,7 @@ export class SheetsService {
     connectionId: string,
     dto: PushCallResultDto,
     to: string | null,
+    contactFormUrl: string | null,
   ): Promise<{
     status: SheetsEmailStatus;
     to: string | null;
@@ -350,6 +359,14 @@ export class SheetsService {
     const decision = pickFollowUpTemplate(dto.orderedTags);
     if (decision.template === null) {
       return { status: 'NONE', to, template: null, note: decision.reason };
+    }
+    if (!to && contactFormUrl) {
+      return {
+        status: 'MANUAL',
+        to: null,
+        template: decision.template,
+        note: 'No email, but the school has a contact form: the follow-up is waiting for you to send it there (Settings → Google Sheets & Gmail).',
+      };
     }
     if (!to) {
       return {
@@ -398,15 +415,33 @@ export class SheetsService {
       emailDueAt: r.emailDueAt?.toISOString() ?? null,
       emailSentAt: r.emailSentAt?.toISOString() ?? null,
       emailError: r.emailError,
+      contactFormUrl: r.contactFormUrl,
     }));
   }
 
   async cancelFollowUp(userId: string, id: string): Promise<void> {
     const res = await this.prisma.sheetsPushLog.updateMany({
-      where: { id, connection: { userId }, emailStatus: 'PENDING' },
+      where: { id, connection: { userId }, emailStatus: { in: ['PENDING', 'MANUAL'] } },
       data: { emailStatus: 'CANCELLED', emailError: 'Cancelled by you.' },
     });
     if (res.count === 0) throw new NotFoundException('No pending email with that id.');
+  }
+
+  /** A contact-form follow-up the user sent by hand. */
+  async markFollowUpSent(userId: string, id: string): Promise<void> {
+    const res = await this.prisma.sheetsPushLog.updateMany({
+      where: { id, connection: { userId }, emailStatus: 'MANUAL' },
+      data: { emailStatus: 'SENT', emailSentAt: new Date(), emailError: null },
+    });
+    if (res.count === 0) throw new NotFoundException('No contact-form follow-up with that id.');
+  }
+
+  async followUpLog(userId: string, id: string) {
+    const log = await this.prisma.sheetsPushLog.findFirst({
+      where: { id, connection: { userId } },
+    });
+    if (!log) throw new NotFoundException('No follow-up with that id.');
+    return log;
   }
 
   // ── U.S. Conquest time zone check ─────────────────────────────────────────
@@ -484,7 +519,7 @@ export class SheetsService {
 
   // ── Google API helpers ────────────────────────────────────────────────────
 
-  private async fetchTabs(
+  async fetchTabs(
     token: string,
     spreadsheetId: string,
   ): Promise<{ sheetId: number; title: string; columnCount: number }[]> {
@@ -504,11 +539,7 @@ export class SheetsService {
     }));
   }
 
-  private async fetchRows(
-    token: string,
-    spreadsheetId: string,
-    sheetTitle: string,
-  ): Promise<Row[]> {
+  async fetchRows(token: string, spreadsheetId: string, sheetTitle: string): Promise<Row[]> {
     const body = await this.google<{ values?: Row[] }>(
       token,
       `https://sheets.googleapis.com/v4/spreadsheets/${encodeURIComponent(spreadsheetId)}/values/${encodeURIComponent(a1(sheetTitle))}`,
@@ -517,12 +548,7 @@ export class SheetsService {
     return body.values ?? [];
   }
 
-  private async appendColumns(
-    token: string,
-    spreadsheetId: string,
-    sheetId: number,
-    length: number,
-  ) {
+  async appendColumns(token: string, spreadsheetId: string, sheetId: number, length: number) {
     await this.google(
       token,
       `https://sheets.googleapis.com/v4/spreadsheets/${encodeURIComponent(spreadsheetId)}:batchUpdate`,
@@ -534,7 +560,7 @@ export class SheetsService {
     );
   }
 
-  private async google<T>(
+  async google<T>(
     token: string,
     url: string,
     ctx: string,
@@ -618,7 +644,7 @@ export class SheetsService {
 
 // ── Row helpers ───────────────────────────────────────────────────────────────
 
-interface Columns {
+export interface Columns {
   phone: number;
   status: number;
   address: number;
@@ -627,11 +653,29 @@ interface Columns {
   zip: number;
   email: number;
   school: number;
+  website: number;
+  facebook: number;
+  instagram: number;
+  category: number;
+  emailType: number;
+  emailSource: number;
+  decisionMaker: number;
+  contactForm: number;
 }
 
-function findColumns(headers: string[]): Columns {
+// Columns the email finder adds (header text as written into row 1).
+export const FINDER_HEADERS = {
+  email: 'email',
+  emailType: 'emailType',
+  emailSource: 'emailSource',
+  decisionMaker: 'decisionMaker',
+  contactForm: 'contactForm',
+} as const;
+
+export function findColumns(headers: string[]): Columns {
   const exact = (...names: string[]) => headers.findIndex((h) => names.includes(h));
   const first = (...indexes: number[]) => indexes.find((i) => i !== -1) ?? -1;
+  const finderOwn = new Set(['emailtype', 'emailsource', 'decisionmaker', 'contactform']);
   return {
     phone: first(
       exact('phonenumber'),
@@ -648,17 +692,25 @@ function findColumns(headers: string[]): Columns {
     zip: exact('zip', 'zipcode', 'postalcode', 'postcode'),
     email: first(
       exact('email', 'emailaddress'),
-      headers.findIndex((h) => h.includes('email')),
+      headers.findIndex((h) => h.includes('email') && !finderOwn.has(h)),
     ),
     school: first(
-      exact('schoolname', 'school', 'businessname', 'name'),
+      exact('schoolname', 'school', 'businessname', 'title', 'name'),
       headers.findIndex((h) => h.includes('school')),
     ),
+    website: first(exact('websiteurl', 'website', 'url', 'site', 'web')),
+    facebook: first(exact('facebookurl', 'facebook', 'fb')),
+    instagram: first(exact('instagramurl', 'instagram', 'ig')),
+    category: exact('category', 'type', 'style'),
+    emailType: exact('emailtype'),
+    emailSource: exact('emailsource'),
+    decisionMaker: exact('decisionmaker'),
+    contactForm: exact('contactform'),
   };
 }
 
 /** The row's address, completed with separate city/state/zip columns if present. */
-function rowAddress(row: Row, cols: Columns): string | null {
+export function rowAddress(row: Row, cols: Columns): string | null {
   let address = cols.address !== -1 ? text(row[cols.address]).trim() : '';
   const lower = address.toLowerCase();
   const extra = [cols.city, cols.state, cols.zip]
@@ -670,12 +722,14 @@ function rowAddress(row: Row, cols: Columns): string | null {
 }
 
 /** First column that is empty in every row (header included). */
-function firstEmptyColumn(rows: Row[]): number {
+export function firstEmptyColumn(rows: Row[], skip: number[] = []): number {
   const width = Math.max(0, ...rows.map((r) => r.length));
   for (let c = 0; c < width; c++) {
-    if (rows.every((r) => !text(r[c]).trim())) return c;
+    if (!skip.includes(c) && rows.every((r) => !text(r[c]).trim())) return c;
   }
-  return width;
+  let c = width;
+  while (skip.includes(c)) c++;
+  return c;
 }
 
 /** "Voicemail, Not interested, <note>, from: 6672206726, time: 9:45am" */
@@ -687,7 +741,7 @@ export function buildCellValue(dto: PushCallResultDto, localTime: string): strin
   return parts.join(', ');
 }
 
-function text(cell: Cell): string {
+export function text(cell: Cell): string {
   return cell === null || cell === undefined ? '' : String(cell);
 }
 

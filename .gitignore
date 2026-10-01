@@ -52,3 +52,13 @@ pids/
 # --- misc ---
 tmp/
 temp/
+
+# --- email finder worker (Python, runs on the user's PC) ---
+workers/email-finder/.venv/
+workers/email-finder/.cache/
+workers/email-finder/reports/
+__pycache__/
+*.pyc
+.pytest_cache/
+# sample lead sheets (contain business contact data)
+*.csv

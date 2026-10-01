@@ -63,6 +63,17 @@ vi.mock('../hooks/use-voice-device', () => ({
 }));
 
 vi.mock('../lib/api-client', () => {
+  const finderStatus = {
+    jobId: 'job1',
+    status: 'RUNNING',
+    total: 10,
+    done: 4,
+    found: 3,
+    contactForms: 1,
+    alreadyHadEmail: 0,
+    workerOnline: true,
+    workerLastSeen: null,
+  };
   class MockApiError extends Error {
     constructor(
       readonly status: number,
@@ -93,6 +104,11 @@ vi.mock('../lib/api-client', () => {
           .mockResolvedValue([{ spreadsheetId: 'ss1', name: 'U.S. Conquest' }]),
         listTabs: vi.fn().mockResolvedValue([{ sheetId: 1, title: 'Texas' }]),
         push: vi.fn(),
+      },
+      emailFinder: {
+        start: vi.fn().mockResolvedValue(finderStatus),
+        status: vi.fn().mockResolvedValue(finderStatus),
+        setRunning: vi.fn(),
       },
     },
   };

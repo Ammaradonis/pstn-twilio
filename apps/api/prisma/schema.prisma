@@ -107,6 +107,7 @@ model User {
   aiCalls             AiCall[]
   googleCalendar      GoogleCalendarConnection?
   googleSheets        GoogleSheetsConnection?
+  emailFinderJobs     EmailFinderJob[]
 
   @@map("users")
 }
@@ -459,7 +460,7 @@ model SheetsPushLog {
   cellValue       String    @map("cell_value")
   timeZone        String    @map("time_zone")
   schoolName      String?   @map("school_name")
-  // NONE | PENDING | SENDING | SENT | FAILED | CANCELLED
+  // NONE | PENDING | SENDING | SENT | FAILED | CANCELLED | MANUAL (contact form, sent by hand)
   emailStatus     String    @default("NONE") @map("email_status")
   emailTo         String?   @map("email_to")
   emailTemplate   String?   @map("email_template")
@@ -467,6 +468,7 @@ model SheetsPushLog {
   emailAttempts   Int       @default(0) @map("email_attempts")
   emailError      String?   @map("email_error")
   emailSentAt     DateTime? @map("email_sent_at")
+  contactFormUrl  String?   @map("contact_form_url")
   callEndedAt     DateTime  @map("call_ended_at")
   createdAt       DateTime  @default(now()) @map("created_at")
   updatedAt       DateTime  @updatedAt @map("updated_at")
@@ -477,4 +479,54 @@ model SheetsPushLog {
   @@index([connectionId, destinationE164])
   @@index([emailStatus, emailDueAt])
   @@map("sheets_push_logs")
+}
+
+// Background email finding for one sheet tab. The worker runs on the user's PC
+// (workers/email-finder) and pulls rows from this queue.
+model EmailFinderJob {
+  id            String    @id @default(uuid())
+  userId        String    @map("user_id")
+  spreadsheetId String    @map("spreadsheet_id")
+  sheetTitle    String    @map("sheet_title")
+  // RUNNING | PAUSED | DONE | CANCELLED
+  status        String    @default("RUNNING")
+  createdAt     DateTime  @default(now()) @map("created_at")
+  updatedAt     DateTime  @updatedAt @map("updated_at")
+  finishedAt    DateTime? @map("finished_at")
+
+  user User             @relation(fields: [userId], references: [id], onDelete: Cascade)
+  rows EmailFinderRow[]
+
+  @@unique([userId, spreadsheetId, sheetTitle])
+  @@map("email_finder_jobs")
+}
+
+// One sheet row to research. Identified by a fingerprint (name + phone +
+// website) so it is found again after the user sorts or inserts rows.
+model EmailFinderRow {
+  id             String    @id @default(uuid())
+  jobId          String    @map("job_id")
+  fingerprint    String
+  input          Json
+  // PENDING | CLAIMED | FOUND | CONTACT_FORM | NOT_FOUND | FAILED
+  status         String    @default("PENDING")
+  attempts       Int       @default(0)
+  claimedAt      DateTime? @map("claimed_at")
+  email          String?
+  emailType      String?   @map("email_type")
+  confidence     Int?
+  sourceUrl      String?   @map("source_url")
+  decisionMaker  String?   @map("decision_maker")
+  contactFormUrl String?   @map("contact_form_url")
+  notes          String?
+  writtenAt      DateTime? @map("written_at")
+  createdAt      DateTime  @default(now()) @map("created_at")
+  updatedAt      DateTime  @updatedAt @map("updated_at")
+
+  job EmailFinderJob @relation(fields: [jobId], references: [id], onDelete: Cascade)
+
+  @@unique([jobId, fingerprint])
+  @@index([jobId, status])
+  @@index([status, claimedAt])
+  @@map("email_finder_rows")
 }

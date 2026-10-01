@@ -18,6 +18,7 @@ const EMAIL_STATUS_LABEL: Record<SheetsEmailStatus, string> = {
   SENT: 'Sent',
   FAILED: 'Failed',
   CANCELLED: 'Cancelled',
+  MANUAL: 'Contact form: send it yourself',
 };
 
 export function SettingsSheets() {
@@ -66,6 +67,23 @@ export function SettingsSheets() {
     onSuccess: () => void queryClient.invalidateQueries({ queryKey: ['sheets', 'follow-ups'] }),
   });
   const tzCheck = useMutation({ mutationFn: () => api.sheets.timezoneCheck() });
+  const [copied, setCopied] = useState<string | null>(null);
+  // Contact-form schools: copy the rendered email and open their form.
+  const sendViaForm = useMutation({
+    mutationFn: async (id: string) => {
+      const message = await api.sheets.followUpMessage(id);
+      await navigator.clipboard.writeText(`${message.subject}
+
+${message.body}`);
+      if (message.contactFormUrl) window.open(message.contactFormUrl, '_blank', 'noopener');
+      return id;
+    },
+    onSuccess: (id) => setCopied(id),
+  });
+  const markSent = useMutation({
+    mutationFn: (id: string) => api.sheets.markFollowUpSent(id),
+    onSuccess: () => void queryClient.invalidateQueries({ queryKey: ['sheets', 'follow-ups'] }),
+  });
 
   return (
     <section className="max-w-2xl space-y-4">
@@ -156,16 +174,37 @@ export function SettingsSheets() {
                   </p>
                   <p className="text-slate-500">
                     {EMAIL_STATUS_LABEL[f.emailStatus]}
-                    {f.emailStatus === 'PENDING' && f.emailDueAt
-                      ? ` for ${new Date(f.emailDueAt).toLocaleString()}`
+                    {(f.emailStatus === 'PENDING' || f.emailStatus === 'MANUAL') && f.emailDueAt
+                      ? ` ${f.emailStatus === 'MANUAL' ? 'from' : 'for'} ${new Date(f.emailDueAt).toLocaleString()}`
                       : ''}
+                    {copied === f.id ? ' · message copied, paste it into the form' : ''}
                     {f.emailStatus === 'SENT' && f.emailSentAt
                       ? ` ${new Date(f.emailSentAt).toLocaleString()}`
                       : ''}
                     {f.emailError && f.emailStatus !== 'SENT' ? ` · ${f.emailError}` : ''}
                   </p>
                 </div>
-                {f.emailStatus === 'PENDING' && (
+                {f.emailStatus === 'MANUAL' && (
+                  <span className="flex gap-1">
+                    <button
+                      type="button"
+                      onClick={() => sendViaForm.mutate(f.id)}
+                      disabled={sendViaForm.isPending}
+                      className="rounded bg-indigo-600 px-2 py-1 font-medium text-white hover:bg-indigo-700 disabled:opacity-60"
+                    >
+                      Copy message &amp; open form
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => markSent.mutate(f.id)}
+                      disabled={markSent.isPending}
+                      className="rounded border border-slate-300 px-2 py-1 text-slate-700 hover:bg-slate-50 disabled:opacity-60"
+                    >
+                      Mark sent
+                    </button>
+                  </span>
+                )}
+                {(f.emailStatus === 'PENDING' || f.emailStatus === 'MANUAL') && (
                   <button
                     type="button"
                     onClick={() => cancel.mutate(f.id)}
@@ -245,10 +284,18 @@ export function SettingsSheets() {
             overwrites it.
           </li>
           <li>
+            Picking a tab on the Dial page starts the email finder on your PC: it researches every
+            row without an email (the school&apos;s website, search results, public Facebook and
+            Instagram snippets, martial-arts directories and federations) and fills the email,
+            emailType, emailSource, decisionMaker and contactForm columns.
+          </li>
+          <li>
             Follow-up emails go to the address in the row&apos;s email column, 48 hours after the
             call, using the template of the first status you picked that sends email. Booked a demo
             cancels it; Not available and Handles calls himself don&apos;t send email on their own.
-            A school already emailed in the last 30 days isn&apos;t emailed again.
+            A school already emailed in the last 30 days isn&apos;t emailed again. Schools with only
+            a contact form show up above at the same time with a button that copies the email and
+            opens their form.
           </li>
         </ul>
         <p className="text-xs text-slate-500">

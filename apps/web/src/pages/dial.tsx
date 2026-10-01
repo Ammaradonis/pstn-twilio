@@ -9,6 +9,7 @@ import { useParams } from 'react-router-dom';
 
 import { AiAgentPanel } from '../components/ai-agent-panel';
 import { CallQualityPanel } from '../components/call-quality';
+import { EmailFinderStatus } from '../components/email-finder-status';
 import { MicrophonePicker } from '../components/microphone-picker';
 import { PostCallStatusPanel } from '../components/post-call-status-panel';
 import { readPersistedSpreadsheet, SpreadsheetPicker } from '../components/spreadsheet-picker';
@@ -705,6 +706,9 @@ export function DialPage() {
           }}
           onSheetTitleChange={setSheetTitle}
         />
+        {spreadsheetId && sheetTitle && (
+          <EmailFinderStatus spreadsheetId={spreadsheetId} sheetTitle={sheetTitle} />
+        )}
       </div>
 
       <AiAgentPanel destination={normalizedDestination} />
