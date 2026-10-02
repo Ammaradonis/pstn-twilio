@@ -3,16 +3,24 @@
 Only reads what the page shows a visitor: mailto links, visible text
 (including "name [at] domain [dot] com" spellings), and the structured
 business data many sites publish (schema.org JSON-LD).
+
+Extra decode layers:
+  - Cloudflare __cf_email__ obfuscation (data-cfemail XOR decode)
+  - Math-challenge email reveals: pages that hide the address behind
+    "Solve 3+4 to see our email" — we evaluate the expression and trigger
+    the reveal; Playwright then re-reads the page.
 """
 
 from __future__ import annotations
 
 import json
+import operator
 import re
 from dataclasses import dataclass, field
 from urllib.parse import unquote, urljoin, urlsplit
 
 from bs4 import BeautifulSoup
+from .urls import form_host
 
 EMAIL_RE = re.compile(
     r"(?<![\w.+-])([a-z0-9][a-z0-9._%+-]{0,63}@[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?(?:\.[a-z0-9-]{1,63})*\.[a-z]{2,24})(?![\w-])",
@@ -28,8 +36,10 @@ SPELLED_PLAIN_RE = re.compile(
     r"\b([a-z0-9][a-z0-9._-]{1,40})\s+at\s+([a-z0-9-]{2,40}(?:\s+dot\s+[a-z]{2,10}){1,3})\b",
     re.I,
 )
-# "ruth.tkd AT aol.co.uk": a capitalised AT stands in for @ (the page tells visitors so).
-SPELLED_CAPS_RE = re.compile(r"\b([A-Za-z0-9][A-Za-z0-9._%+-]{0,63})\s+AT\s+([A-Za-z0-9-]+(?:\.[A-Za-z0-9-]+)*\.[A-Za-z]{2,24})\b")
+# "ruth.tkd AT aol.co.uk": a capitalised AT stands in for @
+SPELLED_CAPS_RE = re.compile(
+    r"\b([A-Za-z0-9][A-Za-z0-9._%+-]{0,63})\s+AT\s+([A-Za-z0-9-]+(?:\.[A-Za-z0-9-]+)*\.[A-Za-z]{2,24})\b"
+)
 ASSET_TLDS = {"png", "jpg", "jpeg", "gif", "webp", "svg", "css", "js", "ico", "pdf", "mp4", "woff", "woff2"}
 
 CONTACT_WORDS = re.compile(
@@ -51,15 +61,32 @@ FORM_HOSTS = (
 )
 CHALLENGE_RE = re.compile(
     r"(solve|answer|complete).{0,40}(reveal|show|see).{0,20}(e-?mail|address)|"
-    r"(reveal|show).{0,15}e-?mail.{0,40}(captcha|challenge|sum|math)",
+    r"(reveal|show).{0,15}e-?mail.{0,40}(captcha|challenge|sum|math)|"
+    r"(\d+\s*[\+\-\*x×÷/]\s*\d+\s*=\s*\?).{0,80}(email|mail|contact)|"
+    r"what\s+is\s+\d+\s*[\+\-\*x×]\s*\d+",
     re.I,
 )
+
+# Cloudflare email protection data attribute
+CF_EMAIL_RE = re.compile(r'''(?:data-cfemail\s*=\s*['"]|/cdn-cgi/l/email-protection#)([0-9a-f]+)''', re.I)
+
+# Safe arithmetic evaluator: digits, spaces, +, -, *, /, (, )
+_MATH_SAFE_RE = re.compile(r"^[\d\s\+\-\*\/\(\)x×÷]+$")
+_OPS = {
+    "+": operator.add,
+    "-": operator.sub,
+    "*": operator.mul,
+    "x": operator.mul,
+    "×": operator.mul,
+    "/": operator.truediv,
+    "÷": operator.truediv,
+}
 
 
 @dataclass
 class Candidate:
     email: str
-    source: str  # mailto | text | spelled | jsonld | snippet
+    source: str  # mailto | text | spelled | jsonld | snippet | cf_decode
     url: str
     context: str
 
@@ -73,6 +100,7 @@ class PageInfo:
     social: set[str] = field(default_factory=set)
     forms: list[str] = field(default_factory=list)
     challenge: bool = False
+    math_answer: int | None = None  # answer the page expects, if a math challenge was found
 
 
 def clean_email(raw: str) -> str | None:
@@ -107,8 +135,69 @@ def emails_in_text(text: str, url: str, source: str = "text") -> list[Candidate]
     return found
 
 
+def decode_cloudflare_email(html: str, url: str) -> list[Candidate]:
+    """Decode Cloudflare data-cfemail XOR obfuscation.
+
+    Cloudflare replaces foo@example.com with:
+      <a href="/cdn-cgi/l/email-protection#...">
+        <span class="__cf_email__" data-cfemail="[hex]">[email protected]</span>
+      </a>
+    The hex string XOR-decodes to the real email.
+    """
+    found: list[Candidate] = []
+    for m in CF_EMAIL_RE.finditer(html):
+        hex_str = m.group(1)
+        try:
+            encoded = bytes.fromhex(hex_str)
+            key = encoded[0]
+            decoded = "".join(chr(b ^ key) for b in encoded[1:])
+            email = clean_email(decoded)
+            if email:
+                ctx = _context(html, m.start(), m.end())
+                found.append(Candidate(email, "cf_decode", url, ctx))
+        except Exception:  # noqa: BLE001
+            pass
+    return found
+
+
+def extract_math_challenge(text: str) -> int | None:
+    """Detect and evaluate a simple arithmetic challenge in the page text.
+
+    Returns the integer answer if found, or None.
+    Examples:
+      "What is 3 + 4?" → 7
+      "Solve 12 × 3 to reveal the email" → 36
+      "Answer: 15 - 7 = ?" → 8
+    """
+    # Pattern: digits, optional space, operator, optional space, digits
+    pattern = re.compile(
+        r"(?:what\s+is|solve|answer|calculate)\s*:?\s*(\d{1,4})\s*([\+\-\*\/x×÷])\s*(\d{1,4})",
+        re.I,
+    )
+    matches = list(pattern.finditer(text))
+    if not matches:
+        matches = list(re.finditer(r"(\d{1,4})\s*([+\-*/x×÷])\s*(\d{1,4})\s*=\s*\?", text, re.I))
+    for m in matches:
+        a, op, b = int(m.group(1)), m.group(2).lower(), int(m.group(3))
+        op_fn = _OPS.get(op)
+        if op_fn:
+            try:
+                result = op_fn(a, b)
+                if isinstance(result, float) and result.is_integer():
+                    result = int(result)
+                if isinstance(result, int) and 0 <= result <= 9999:
+                    return int(result)
+            except ZeroDivisionError:
+                pass
+    return None
+
+
 def parse_page(url: str, html: str) -> PageInfo:
     soup = BeautifulSoup(html, "lxml")
+
+    # ── Cloudflare email decode (before stripping scripts) ───────────────────
+    cf_candidates = decode_cloudflare_email(html, url)
+
     for tag in soup(["script", "style", "noscript", "svg", "template"]):
         if tag.name == "script" and tag.get("type") == "application/ld+json":
             continue
@@ -120,7 +209,10 @@ def parse_page(url: str, html: str) -> PageInfo:
     text = soup.get_text(" ", strip=True)
     info = PageInfo(url=url, text=text)
 
-    # mailto links: the anchor's surroundings are the context.
+    # Inject Cloudflare-decoded candidates first
+    info.candidates.extend(cf_candidates)
+
+    # mailto links
     for a in soup.find_all("a", href=True):
         href = a["href"].strip()
         if href.lower().startswith("mailto:"):
@@ -137,7 +229,7 @@ def parse_page(url: str, html: str) -> PageInfo:
         host = urlsplit(absolute).netloc.lower().removeprefix("www.").removeprefix("m.")
         if host in ("facebook.com", "instagram.com") and _is_profile(absolute):
             info.social.add(absolute.split("?")[0])
-        if any(f in absolute for f in FORM_HOSTS):
+        if form_host(absolute):
             info.forms.append(absolute)
 
     info.candidates.extend(emails_in_text(text, url))
@@ -146,23 +238,24 @@ def parse_page(url: str, html: str) -> PageInfo:
         for email in _jsonld_emails(block):
             info.candidates.append(Candidate(email, "jsonld", url, "structured business data"))
 
-    # Contact forms on the page itself: a form with a message box.
+    # Contact forms on the page itself
     for form in soup.find_all("form"):
         if form.find("textarea") and (form.find("input", attrs={"type": "email"}) or "mail" in str(form).lower()):
             info.forms.append(url)
             break
     for frame in soup.find_all("iframe", src=True):
         src = urljoin(url, frame["src"])
-        if any(f in src for f in FORM_HOSTS):
+        if form_host(src):
             info.forms.append(src)
 
-    info.challenge = bool(CHALLENGE_RE.search(text))
+    # Math challenge detection
+    if CHALLENGE_RE.search(text):
+        info.challenge = True
+        info.math_answer = extract_math_challenge(text)
     return info
 
 
 def _block_text(node) -> str:
-    """Text of the listing/row/paragraph around a link: in directories the
-    school's name sits in a sibling cell, so climb until there is enough."""
     row = node.find_parent("tr")
     if row is not None:
         return re.sub(r"\s+", " ", row.get_text(" ", strip=True))[:600]
@@ -207,7 +300,10 @@ def _is_profile(url: str) -> bool:
     if not path:
         return False
     first = path.split("/")[0].lower()
-    return first not in {"sharer", "sharer.php", "share", "dialog", "plugins", "tr", "p", "reel", "explore", "hashtag"}
+    return first not in {
+        "sharer", "sharer.php", "share", "dialog", "plugins", "tr", "p",
+        "reel", "explore", "hashtag",
+    }
 
 
 def contact_like_links(info: PageInfo, site_host: str, limit: int) -> list[str]:

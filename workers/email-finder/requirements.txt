@@ -1,11 +1,43 @@
-spacy>=3.8,<3.9
+# Email Finder Worker — Python dependencies
+# ==========================================
+# Install:   .venv\Scripts\pip install -r requirements.txt
+# Setup:     .venv\Scripts\python -m spacy download en_core_web_sm
+#
+# All packages are pinned to minimum stable versions known to work together.
+# Run 'pip install --upgrade -r requirements.txt' to update.
+
+# ── Core NLP ─────────────────────────────────────────────────────────────────
+spacy>=3.8,<4.0
+# en_core_web_sm is installed separately:
+#   .venv\Scripts\python -m spacy download en_core_web_sm
+
+# ── HTTP & browser automation ─────────────────────────────────────────────────
 httpx>=0.28
+playwright>=1.48
+
+# ── HTML parsing ─────────────────────────────────────────────────────────────
 beautifulsoup4>=4.12
 lxml>=5.3
+
+# ── Email validation ──────────────────────────────────────────────────────────
 dnspython>=2.7
 email-validator>=2.2
+
+# ── String matching ────────────────────────────────────────────────────────────
 rapidfuzz>=3.10
 tldextract>=5.1
-playwright>=1.48
+
+# ── Config / environment ──────────────────────────────────────────────────────
 python-dotenv>=1.0
+
+# ── Google Cloud / Vertex AI Search ──────────────────────────────────────────
+# Discovery Engine client — provides discoveryengine.SearchServiceClient etc.
+google-cloud-discoveryengine>=0.11,<1.0
+# Core auth library — used by all google-cloud-* packages (FIXED: was >=2.28/**)
+google-auth>=2.28
+# Optional: service-account impersonation helpers
+google-auth-httplib2>=0.2
+
+# ── Tests ─────────────────────────────────────────────────────────────────────
 pytest>=8.3
+pytest-asyncio>=0.24

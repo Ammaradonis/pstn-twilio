@@ -1,5 +1,6 @@
 import { Module } from '@nestjs/common';
 
+import { ContactFormService } from './contact-form.service';
 import { EmailFinderService } from './email-finder.service';
 import { GmailService } from './gmail.service';
 import { SheetsFollowUpService } from './sheets-follow-up.service';
@@ -29,6 +30,7 @@ import { SheetsService } from './sheets.service';
     GmailService,
     SheetsFollowUpService,
     EmailFinderService,
+    ContactFormService,
     FinderWorkerGuard,
   ],
 })

@@ -57,8 +57,13 @@ temp/
 workers/email-finder/.venv/
 workers/email-finder/.cache/
 workers/email-finder/reports/
+workers/email-finder/form-answers.json
 __pycache__/
 *.pyc
 .pytest_cache/
 # sample lead sheets (contain business contact data)
 *.csv
+
+# GCP service account credentials – never commit
+gcp-creds.json
+Google-search-engine-configuration-files/

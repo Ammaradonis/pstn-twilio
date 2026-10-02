@@ -49,11 +49,13 @@ import {
   type SheetsFollowUpMessageDto,
 } from '@pstn-twilio/shared';
 import type { Request, Response } from 'express';
+import { z } from 'zod';
 
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { ZodValidationPipe } from '../common/zod.pipe';
 
-import { EmailFinderService, type FinderResult } from './email-finder.service';
+import { ContactFormService } from './contact-form.service';
+import { EmailFinderService } from './email-finder.service';
 import { loadTemplate, renderTemplate } from './gmail.service';
 import { templateVars } from './sheets-follow-up.service';
 import { SheetsConfig } from './sheets.config';
@@ -256,7 +258,10 @@ export class FinderWorkerGuard implements CanActivate {
 @Controller('email-finder/worker')
 @UseGuards(FinderWorkerGuard)
 export class EmailFinderWorkerController {
-  constructor(private readonly finder: EmailFinderService) {}
+  constructor(
+    private readonly finder: EmailFinderService,
+    private readonly forms: ContactFormService,
+  ) {}
 
   @Post('heartbeat')
   @HttpCode(200)
@@ -273,8 +278,78 @@ export class EmailFinderWorkerController {
 
   @Post('results')
   @HttpCode(200)
-  results(@Body() body: { results?: FinderResult[] }) {
-    if (!Array.isArray(body?.results)) throw new BadRequestException('results[] is required.');
-    return this.finder.submit(body.results.slice(0, 50));
+  results(@Body() body: unknown) {
+    const parsed = finderResultsSchema.safeParse(body);
+    if (!parsed.success) throw new BadRequestException('Invalid email finder results.');
+    return this.finder.submit(parsed.data.results);
+  }
+
+  @Post('forms/claim')
+  @HttpCode(200)
+  async claimForms() {
+    return { forms: await this.forms.claim() };
+  }
+
+  @Post('forms/:id/arm')
+  @HttpCode(200)
+  armForm(@Param('id') id: string, @Body() body: unknown) {
+    const parsed = formReceiptSchema.safeParse(body);
+    if (!parsed.success) throw new BadRequestException('Invalid form lease.');
+    return this.forms.arm(id, parsed.data.leaseToken);
+  }
+
+  @Post('forms/:id/result')
+  @HttpCode(200)
+  formResult(@Param('id') id: string, @Body() body: unknown) {
+    const parsed = formReceiptSchema
+      .extend({
+        status: z.enum(['SENT', 'MANUAL', 'FAILED']),
+        notes: z.string().max(500).optional(),
+      })
+      .safeParse(body);
+    if (!parsed.success) throw new BadRequestException('Invalid form result.');
+    return this.forms.complete(id, parsed.data.leaseToken, parsed.data.status, parsed.data.notes);
   }
 }
+
+const formReceiptSchema = z.object({ leaseToken: z.string().uuid() });
+const publicHttpUrl = z
+  .string()
+  .max(1000)
+  .url()
+  .refine((v) => /^https?:\/\//i.test(v));
+const finderResultsSchema = z.object({
+  results: z
+    .array(
+      z
+        .object({
+          id: z.string().uuid(),
+          leaseToken: z.string().uuid(),
+          status: z.enum(['FOUND', 'CONTACT_FORM', 'NOT_FOUND', 'FAILED', 'RETRY']),
+          email: z.string().max(254).email().nullish(),
+          emailType: z.enum(['decision-maker', 'business', 'staff']).nullish(),
+          confidence: z.number().int().min(0).max(100).nullish(),
+          sourceUrl: publicHttpUrl.nullish(),
+          decisionMaker: z.string().max(200).nullish(),
+          contactFormUrl: publicHttpUrl.nullish(),
+          notes: z.string().max(1000).nullish(),
+          researchComplete: z.boolean(),
+          retryAfter: z.number().int().min(60).max(86400).optional(),
+        })
+        .superRefine((r, ctx) => {
+          if (r.status === 'FOUND' && !r.email)
+            ctx.addIssue({ code: 'custom', message: 'FOUND requires email' });
+          if (
+            r.status === 'CONTACT_FORM' &&
+            (!r.contactFormUrl || !r.researchComplete || r.email)
+          ) {
+            ctx.addIssue({
+              code: 'custom',
+              message: 'CONTACT_FORM requires complete research and no email',
+            });
+          }
+        }),
+    )
+    .min(1)
+    .max(50),
+});

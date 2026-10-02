@@ -23,12 +23,13 @@ export function EmailFinderStatus({ spreadsheetId, sheetTitle }: Props) {
   const key = ['email-finder', spreadsheetId, sheetTitle];
 
   const start = useMutation({
-    mutationFn: () => api.emailFinder.start(spreadsheetId, sheetTitle),
-    onSuccess: (data) => queryClient.setQueryData(key, data),
+    mutationFn: (tab: Props) => api.emailFinder.start(tab.spreadsheetId, tab.sheetTitle),
+    onSuccess: (data, tab) =>
+      queryClient.setQueryData(['email-finder', tab.spreadsheetId, tab.sheetTitle], data),
   });
   // Queue the tab whenever it is selected; the API skips rows already done.
   useEffect(() => {
-    start.mutate();
+    start.mutate({ spreadsheetId, sheetTitle });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [spreadsheetId, sheetTitle]);
 
@@ -65,6 +66,8 @@ export function EmailFinderStatus({ spreadsheetId, sheetTitle }: Props) {
             ? 'every row already has an email.'
             : `${s.done.toLocaleString()} of ${s.total.toLocaleString()} rows checked · ${s.found.toLocaleString()} emails · ${s.contactForms.toLocaleString()} contact forms only`}
           {s.alreadyHadEmail > 0 && ` · ${s.alreadyHadEmail.toLocaleString()} rows already had one`}
+          {!!s.retrying && ` · ${s.retrying} waiting to retry`}
+          {!!s.failed && ` · ${s.failed} failed`}
         </p>
         {s.jobId && (s.status === 'RUNNING' || s.status === 'PAUSED') && s.done < s.total && (
           <button
@@ -88,6 +91,18 @@ export function EmailFinderStatus({ spreadsheetId, sheetTitle }: Props) {
             ? 'Running on your PC in the background.'
             : 'Waiting for the email finder on your PC. It starts when you log in to Windows, or run workers\\email-finder\\start-email-finder.ps1.'}
         </p>
+      )}
+      {!!s.issues?.length && (
+        <details className="text-amber-800">
+          <summary className="cursor-pointer">Research needs attention</summary>
+          <ul className="mt-1 space-y-1">
+            {s.issues.map((issue, i) => (
+              <li key={i}>
+                {issue.school}: {issue.note}
+              </li>
+            ))}
+          </ul>
+        </details>
       )}
     </div>
   );

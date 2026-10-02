@@ -707,7 +707,11 @@ export function DialPage() {
           onSheetTitleChange={setSheetTitle}
         />
         {spreadsheetId && sheetTitle && (
-          <EmailFinderStatus spreadsheetId={spreadsheetId} sheetTitle={sheetTitle} />
+          <EmailFinderStatus
+            key={`${spreadsheetId}:${sheetTitle}`}
+            spreadsheetId={spreadsheetId}
+            sheetTitle={sheetTitle}
+          />
         )}
       </div>
 

@@ -16,3 +16,11 @@
 **/*.log
 docs
 env.txt
+gcp-creds.json
+Google-search-engine-configuration-files
+workers
+*.csv
+recordings
+background.js
+EMAIL-HUNETR-REQUEST.txt
+email-hunt.txt

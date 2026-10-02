@@ -1,0 +1,15 @@
+{
+  "version": 1,
+  "weights": {
+    "decision_bonus": 20,
+    "own_domain_bonus": 20,
+    "free_mail_with_own_bonus": 0,
+    "minimum_score": 60
+  },
+  "calibration": {
+    "seed": 20261001,
+    "rows": 2400,
+    "accepted": true,
+    "report": "reports/training-20261001/tuning-report.json"
+  }
+}

@@ -34,6 +34,9 @@ export type SheetsTimeZoneSource = 'uk' | 'zip' | 'city' | 'state' | 'guess';
 export type SheetsEmailStatus =
   | 'NONE'
   | 'PENDING'
+  | 'WAITING_RESEARCH'
+  | 'FORM_PREPARING'
+  | 'FORM_SENDING'
   | 'SENDING'
   | 'SENT'
   | 'FAILED'
@@ -118,4 +121,7 @@ export interface EmailFinderStatusDto {
   /** The worker on the user's PC checked in during the last 2 minutes. */
   workerOnline: boolean;
   workerLastSeen: string | null;
+  retrying?: number;
+  failed?: number;
+  issues?: { school: string; note: string }[];
 }

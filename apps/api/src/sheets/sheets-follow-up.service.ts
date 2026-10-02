@@ -12,7 +12,12 @@ import { Injectable, Logger, OnModuleDestroy, OnModuleInit } from '@nestjs/commo
 import { PrismaService } from '../prisma/prisma.service';
 
 import { GmailService, type TemplateVars } from './gmail.service';
-import { formatLocalTime, formatLocalWeekday, stripCountryCode } from './sheets.util';
+import {
+  formatLocalTime,
+  formatLocalWeekday,
+  stripCountryCode,
+  nationalDigits,
+} from './sheets.util';
 
 const SWEEP_MS = 5 * 60_000;
 const MAX_ATTEMPTS = 4;
@@ -45,6 +50,7 @@ export class SheetsFollowUpService implements OnModuleInit, OnModuleDestroy {
     if (this.running) return;
     this.running = true;
     try {
+      await this.resolveResearch();
       await this.prisma.sheetsPushLog.updateMany({
         where: {
           emailStatus: 'SENDING',
@@ -57,7 +63,7 @@ export class SheetsFollowUpService implements OnModuleInit, OnModuleDestroy {
       });
 
       const due = await this.prisma.sheetsPushLog.findMany({
-        where: { emailStatus: 'PENDING', emailDueAt: { lte: now } },
+        where: { emailStatus: 'PENDING', emailTo: { not: null }, emailDueAt: { lte: now } },
         orderBy: { emailDueAt: 'asc' },
         take: 20,
         include: { connection: { select: { userId: true } } },
@@ -67,6 +73,78 @@ export class SheetsFollowUpService implements OnModuleInit, OnModuleDestroy {
       this.logger.error(`Follow-up sweep failed: ${(err as Error).message}`);
     } finally {
       this.running = false;
+    }
+  }
+
+  private async resolveResearch(): Promise<void> {
+    const waiting = await this.prisma.sheetsPushLog.findMany({
+      where: { emailStatus: 'WAITING_RESEARCH' },
+      take: 100,
+      orderBy: { createdAt: 'asc' },
+      include: { connection: { select: { userId: true } } },
+    });
+    for (const log of waiting) {
+      const rows = await this.prisma.emailFinderRow.findMany({
+        where: {
+          job: {
+            userId: log.connection.userId,
+            spreadsheetId: log.spreadsheetId,
+            sheetTitle: log.sheetTitle,
+          },
+        },
+        select: {
+          input: true,
+          status: true,
+          email: true,
+          contactFormUrl: true,
+          researchComplete: true,
+        },
+      });
+      const matches = rows.filter((r) => {
+        const input = r.input as { phone?: string; title?: string };
+        return (
+          nationalDigits(input.phone ?? '') === nationalDigits(log.destinationE164) &&
+          (!log.schoolName ||
+            input.title?.toLowerCase().trim() === log.schoolName.toLowerCase().trim())
+        );
+      });
+      const found =
+        matches.find((r) => r.status === 'FOUND' && r.email) ??
+        matches.find((r) => r.researchComplete && r.status === 'CONTACT_FORM' && r.contactFormUrl);
+      if (!found) {
+        if (matches.length && matches.every((r) => ['NOT_FOUND', 'FAILED'].includes(r.status))) {
+          await this.prisma.sheetsPushLog.updateMany({
+            where: { id: log.id, emailStatus: 'WAITING_RESEARCH' },
+            data: {
+              emailStatus: 'NONE',
+              emailError: 'Research finished without a usable contact.',
+            },
+          });
+        }
+        continue;
+      }
+      const recent = await this.prisma.sheetsPushLog.findFirst({
+        where: {
+          connectionId: log.connectionId,
+          id: { not: log.id },
+          emailStatus: { in: ['PENDING', 'SENDING', 'SENT', 'FORM_PREPARING', 'FORM_SENDING'] },
+          createdAt: { gte: new Date(Date.now() - 30 * 86400_000) },
+          ...(found.email
+            ? { emailTo: { equals: found.email, mode: 'insensitive' } }
+            : { contactFormUrl: found.contactFormUrl }),
+        },
+        select: { id: true },
+      });
+      await this.prisma.sheetsPushLog.updateMany({
+        where: { id: log.id, emailStatus: 'WAITING_RESEARCH' },
+        data: recent
+          ? { emailStatus: 'NONE', emailError: 'A recent follow-up already targets this contact.' }
+          : {
+              emailStatus: 'PENDING',
+              emailTo: found.email,
+              contactFormUrl: found.email ? null : found.contactFormUrl,
+            },
+      });
     }
   }
 

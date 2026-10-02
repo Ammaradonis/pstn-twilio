@@ -1,0 +1,79 @@
+To find the contact details of martial arts school owners at scale, you need to target the larger infrastructure that keeps these schools running. These organizations frequently publish lists of chartered schools, certified instructors, or regional tournament directors, making them excellent resources for identifying decision-makers.
+These are the official associations that oversee specific styles. They often maintain public directories of "affiliated clubs" or "certified branch managers" which include the owner's or head instructor's direct contact info.
+
+*
+* Taekwondo: Organizations like or the [World Taekwondo (WT)](https://www.worldtaekwondo.org) ecosystem. They list registered club owners and state directors.
+* Brazilian Jiu-Jitsu (BJJ): The [International Brazilian Jiu-Jitsu Federation (IBJJF)](https://ibjjf.com) lists registered academies and certified black belt professors who typically own the academies.
+* Karate: The or traditional style organizations like the International Shotokan Karate Federation (ISKF) feature directories of dojo owners and regional representatives.
+* Mixed Martial Arts (MMA): Regional sanctioning bodies and state athletic commissions often publish lists of licensed gyms and promoters.
+*
+
+Tournament organizers handle a massive amount of school-owner data because owners are the ones who register entire teams of competitors.
+
+*
+* Sport Karate & Open Tournaments: Major independent circuits like the or the publish event coordinators and promoter contact lists.
+* BJJ Tournament Platforms: Software platforms like Smoothcomp are widely used to manage combat sports events. While they protect private data, public event pages list participating "Teams/Academies" and their head coaches. [1]
+*
+
+Several niche directories explicitly exist for school owners to promote their businesses, and these pages often feature direct contact forms or listed emails. [2]
+
+*
+* Niche Directories: Sites like [USADOJO.com](https://www.usadojo.com) and are hub sites where owners list their credentials, event dates, and contact forms to recruit students and network. [2]
+* Business Software Providers: While you cannot access their private databases, company blogs, podcasts, and user communities for software like , , or are heavily populated by gym owners.
+*
+
+If you are looking to network organically, school owners gather in private peer-to-peer groups to discuss marketing, business growth, and curriculum.
+
+*
+* Facebook Groups: Search for terms like "Martial Arts School Owners," "Martial Arts Business Growth," or "Dojo Owners Mastermind." These groups are restricted to verified owners and are highly active.
+* Industry Association Hubs: Organizations like the specifically cater to the business side of running a school and host major annual trade shows and networking events.
+*
+
+Are you looking to pitch a specific product or service to these owners, or are you trying to map out a specific geographic area? Knowing your goal can help me point you toward the most effective platform.
+
+[1] [https://usamartialartists.org](http://usamartialartists.org/representatives.aspx)
+[2] [https://www.facebook.com](https://www.facebook.com/groups/1378321420613463/posts/1429637725481832/)
+
+**School websites and Google/Yelp/business listings are the most direct places** you’d expect a martial arts school owner’s (or head instructor’s) contact email. Many list an `info@`, `sensei@`, or personal Gmail/Yahoo address on the Contact page, About page, or in the footer. Owners often claim/update these listings themselves.
+
+Beyond individual school sites, here are the main associations, organizations, directories, competitions, and communities that commonly surface emails for school owners/instructors:
+
+### National & Multi-Style Federations / Associations with School Directories
+These often publish member school or club lists that include names, websites, phones, and emails:
+
+- **United States Martial Arts Federation (USMAF)** — National school/club directory with many explicit emails for owners/instructors (e.g., by state).
+- **United States of America Wushu Kungfu Federation (USAWKF)** — School search with emails and websites for affiliated schools.
+- **Martial Arts Teachers’ Association (MATA)** — Runs BestMartialArtsSchools.com and MartialArtsTeachers.com directories aimed at school owners and instructors; free listings for visibility and networking.
+- **USAdojo / Martial Arts Schools Directory** (Martial Arts Enterprises) — Large classified-style directory of schools, businesses, and organizations; supports contact via listings.
+- **British Martial Arts & Boxing Association (BMABA)** — UK National Register of clubs and instructors (verification-focused).
+- Style-specific or regional ones (examples): Australian Martial Arts Industry Association members, various national karate/taekwondo/judo federations, World Karate Confederation member orgs, World Kuo Shu Federation members, International Mixed Martial Arts Federation national bodies, etc. Many list affiliated schools or contacts.
+
+### Dedicated Martial Arts Directories
+These aggregate thousands of schools worldwide and frequently include or link to contact details:
+
+- The Martial Arts Directory (themartialartsdirectory.com) — Claims 63,000+ schools.
+- Dojos.com, Dojos.info, DojoMap (DojoDesk), Dojo Atlas, martialartsdirectory.org.
+- World Martial Arts Media Directory.
+- Commercial data sources (e.g., DataLane-style “martial arts school owner email lists”) compile owner-level contacts from public business registrations, Google, membership software, etc. (paid).
+
+### Competitions, Tournaments & Sanctioning Bodies
+Tournament sites, registration platforms, and sanctioning orgs often list participating schools, head coaches, or club contacts (sometimes with emails for team registration or results):
+
+- Platforms like Kihapp (tournament management software) surface event organizers and registered teams/schools.
+- Local/regional circuits (e.g., NY Tournament Circuit, Invictus Games Open Martial Arts Tournaments) and larger events publish school packets or contact lists.
+- Sanctioning bodies (ISCF, various karate/MMA federations) maintain gym/school affiliations.
+- Event pages and post-tournament results frequently name schools and coaches.
+
+### Bigger Communities & Networking Spaces
+- **MATA** and similar professional associations for school owners (curriculum, business training, networking).
+- Style-specific international federations (karate, BJJ, taekwondo, kung fu/wushu, judo, etc.) and their national branches — many maintain member school lists or “find a school” tools.
+- Facebook groups, Instagram, LinkedIn pages for martial arts school owners/instructors, and local dojo networks.
+- Forums, Reddit communities (style-specific or r/martialarts), and media sites (World Martial Arts Media, USAdojo articles/events).
+
+### Practical Tips on Where Emails Appear
+- **Highest yield**: Individual school websites + Google Business Profile / Yelp.
+- **Organized lists**: Federation member directories (USMAF, USAWKF, national governing bodies) and MATA-style directories.
+- **Indirect but useful**: Tournament registration/contact pages, association “find a school” tools, and claimed directory listings.
+- Many smaller or independent schools use personal emails; larger ones or franchises prefer generic `info@` or contact forms. Listings go out of date, so cross-check the school’s own site.
+
+Start with a specific style or location + “school directory” or the federation name for that art, then dig into the school’s own contact page for the most current owner/instructor email.

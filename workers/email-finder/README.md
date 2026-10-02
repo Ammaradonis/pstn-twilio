@@ -1,47 +1,193 @@
-# Email finder worker
+# Local email finder
 
-Runs on your PC. When you pick a spreadsheet tab on the Dial page, the API
-queues every row without an email; this worker researches them in the
-background and the API writes the results into the tab's `email`,
-`emailType`, `emailSource`, `decisionMaker` and `contactForm` columns.
+Selecting a spreadsheet tab on any Dial page creates the output columns and
+queues every named row without an existing email. The worker runs on this PC,
+below normal CPU priority, with two rows at a time by default. Calls do not
+depend on the worker.
 
-For each school it tries, cheapest first:
+## Discovery and ranking
 
-1. The school's website: home, contact, about/team/instructor and privacy
-   pages (JavaScript-only pages are rendered in headless Chrome).
-2. Brave search by name + town: snippets from Google listings, public
-   Facebook/Instagram pages and directories; finds the website when the sheet
-   has none or only a Facebook page.
-3. Martial-arts directories, federations and tournament listings for the
-   school's style and country (from `email-hunt.txt`, in `sources.py`).
+- Read the supplied website and contact, about, instructor, team and policy
+  pages. Render JavaScript pages when needed.
+- Decode mailto, visible and obfuscated addresses, JSON-LD and Cloudflare email
+  protection. A dedicated arithmetic email-reveal form can be answered without
+  submitting a contact message.
+- Search Google first when both its API key and Programmable Search Engine ID
+  are configured. Otherwise use Brave. The user's `BEAVE_API_KEY` is a Brave
+  key alias, sent only to Brave's documented endpoint.
+- Discover missing websites and business profiles using school name, street,
+  town, phone and country. Cross-check discovered sites before trusting them.
+- Read public Facebook/Instagram business profiles and Contact/About panels
+  through a dedicated browser profile or an explicitly configured local CDP
+  browser. Never open or close the user's calling tabs.
+- Search every configured source group: general directories, country/style
+  federations, association school registers, public tournament/team pages and
+  owner references. Domains in the root `email-hunt.txt` are loaded at runtime.
+  Private groups and membership databases are not harvested.
+- Use spaCy's English NER, martial-arts honorific patterns and role proximity to
+  distinguish named owners/head instructors, other staff and generic inboxes.
+  A personal-looking Gmail address alone is not proof of ownership.
+- Check syntax and DNS, including MX, null MX and RFC 5321 A/AAAA fallback.
+  DNS timeouts defer research. This checks the domain, not whether an individual
+  mailbox exists; no SMTP mailbox probing or SendGrid verification is used.
 
-spaCy (`en_core_web_sm` + martial-arts honorifics) works out who runs the
-school and whose address each email is; addresses are checked for valid
-syntax and a domain that receives mail (MX). It reads only public pages,
-follows robots.txt and identifies itself; it does not log in anywhere.
+Writes include `email`, `emailType`, `emailSource`, `decisionMaker` and
+`contactForm`. Existing addresses are preserved. Identity includes name, phone,
+website and address, so ordinary sorting and duplicate rows are handled.
+Changing identity fields during a run requires selecting the sheet again.
 
-## Setup (once)
+Search and page budgets are finite. No email or owner can be guaranteed.
+Human verification/checkpoints are reported; the engine does not claim to
+automatically solve arbitrary CAPTCHAs. Ordinary sessions, request spacing,
+limited concurrency, caching and cooldowns reduce unnecessary challenges.
+
+## Follow-up delivery
+
+Sheet selection only researches contacts. Sending remains tied to the existing
+post-call follow-up schedule and templates. If research is still running when a
+call outcome is pushed, the follow-up waits for it.
+
+When research finishes without an email but with a contact form, a due follow-up
+is passed to this PC. The browser fills the real sender's name, email and caller
+number, and places **subject + blank line + body** in the message field. Hosted
+forms, Google Forms redirects, embedded forms and simple multi-step forms are
+supported through their visible browser controls.
+
+Unknown required choices, student/medical questions, consent, file uploads,
+sign-in and human verification become manual review. No fabricated prospective
+student answers are used. Optional unknown questions stay blank. Additional
+truthful answers can be configured in ignored `form-answers.json` as
+`{ "school.example": { "Exact field label": "Your answer" } }`.
+
+Each form has a lease, then a one-use arm step immediately before Submit.
+An explicit success message is required for SENT. An uncertain outcome is never
+automatically submitted again. Review/cancel follow-ups in Settings → Google
+Sheets & Gmail.
+
+## Install and run
+
+From this directory:
 
 ```powershell
-cd workers\email-finder
-python -m venv .venv
-.venv\Scripts\pip install -r requirements.txt
-.venv\Scripts\python -m spacy download en_core_web_sm
-.\install-autostart.ps1      # start at Windows logon
-.\start-email-finder.ps1     # start now
+.\setup-email-finder.ps1
+.\install-autostart.ps1
+.\start-email-finder.ps1
 ```
 
-Needs `EMAIL_FINDER_WORKER_TOKEN` and `BRAVE_API_KEY` in the repo's root `.env`.
-Optional: `EMAIL_FINDER_CONCURRENCY` (3), `EMAIL_FINDER_BRAVE_DAILY_LIMIT` (3000
-searches/day), `EMAIL_FINDER_USE_BROWSER` (1).
+The API must include the `20261001180000_email_finder_recovery_and_forms`
+migration and matching build. A pre-v2 API cannot supply research leases.
 
-Log: `.cache\worker.log`. Stop: end the `pythonw.exe` process running
-`email_finder.worker`; unfinished rows return to the queue after 20 minutes.
+Settings load from process environment, then root `.env`, then root `env.txt`.
+Credential values are never intentionally logged. Search API error URLs are
+not logged, because Google puts its key in the query string.
 
-## Checking quality
+| Setting                                                         | Purpose                                                                       |
+| --------------------------------------------------------------- | ----------------------------------------------------------------------------- |
+| EMAIL_FINDER_WORKER_TOKEN                                       | Shared secret with the API                                                    |
+| EMAIL_FINDER_API_BASE                                           | API origin; defaults to PUBLIC_BASE_URL                                       |
+| GOOGLE_SEARCH_API_KEY / GOOGLE_CLOUD_API_KEY                    | Google search key                                                             |
+| GOOGLE_SEARCH_CX / GOOGLE_CSE_ID                                | Google search-engine ID; OAuth client ID is not this                          |
+| BEAVE_API_KEY / BRAVE_API_KEY                                   | Brave search fallback                                                         |
+| EMAIL_FINDER_GOOGLE_DAILY_LIMIT                                 | Google request ceiling, default 100                                           |
+| EMAIL_FINDER_BEAVE_DAILY_LIMIT / EMAIL_FINDER_BRAVE_DAILY_LIMIT | Per-key Brave ceilings, default 300 each; identical keys share a ceiling      |
+| EMAIL_FINDER_CONCURRENCY                                        | Parallel rows, default 2, maximum 4                                           |
+| EMAIL_FINDER_PER_HOST_DELAY                                     | Request spacing, default 1.5 seconds                                          |
+| EMAIL_FINDER_MAX_SITE_PAGES                                     | Per-school page budget, default 10                                            |
+| EMAIL_FINDER_ROW_TIMEOUT                                        | Time limit per row, default 900 seconds                                       |
+| EMAIL_FINDER_USE_BROWSER                                        | Set 0 to disable browser research and form delivery                           |
+| EMAIL_FINDER_BROWSER_CDP_URL                                    | Optional local browser debugging endpoint                                     |
+| EMAIL_FINDER_CHROME_PROFILE_PATH                                | Optional dedicated automation profile                                         |
+| EMAIL_FINDER_SENDER_NAME / EMAIL / PHONE / COMPANY / WEBSITE    | Optional truthful sender fields; use the EMAIL*FINDER_SENDER* prefix for each |
+
+Google's API requires both a key and an engine ID and is unavailable to new
+customers; existing access is scheduled to end on January 1, 2027.
+See [Google's API overview](https://developers.google.com/custom-search/v1/overview)
+and [Brave's API reference](https://api-dashboard.search.brave.com/api-reference/web/search/get).
+
+## Social session setup
+
+The main Chrome profile cannot reliably be automated while Chrome is running.
+A normal browser login is not automatically available to Playwright.
+See [Playwright's profile restrictions](https://playwright.dev/python/docs/api/class-browsertype).
 
 ```powershell
-.venv\Scripts\python scripts\evaluate.py "..\..\Texas.csv" --rows 40 --seed 101
-.venv\Scripts\python scripts\debug_row.py "..\..\Texas.csv" "school name"
+# Attempts a headless login once using the local Facebook/Instagram credentials.
+.venv\Scripts\python scripts\social_session.py
+
+# Run this explicitly if a manual login/checkpoint is needed.
+.venv\Scripts\python scripts\social_session.py --interactive
+```
+
+Close/stop the research worker before preparing its dedicated session. Session
+cookies stay in the ignored local `.cache/browser-profile` folder. Do not share it.
+
+## Recovery, limits and evaluation
+
+SQLite caches searches and pages, stores daily request reservations and keeps an
+outbox of completed research/results awaiting API acknowledgment. The API
+recovers unfinished sheet writes after restart, rejects stale leases and
+reschedules transient DNS/search failures. Search allowance resets at UTC
+midnight. Work paused in the Dial page stays paused.
+
+```powershell
 .venv\Scripts\python -m pytest -q tests
+.venv\Scripts\python scripts\audit_samples.py
+.venv\Scripts\python scripts\evaluate.py "..\..\Texas.csv" --rows 25 --seed 7
 ```
+
+The audit chooses website, social-only and no-website rows from both supplied
+CSVs. Results are in ignored `reports/request-audit.json`. Samples contain no
+verified owner labels, so measured coverage is not a precision/accuracy score or
+supervised model training. Browser submission tests use intercepted fixtures
+and send no live messages.
+
+Logs: `.cache/worker.log`. End only the `email_finder.worker` Python process to
+stop; another instance is prevented with a process lock.
+
+## Large-sample calibration
+
+Collect a reproducible sample from each CSV, then calibrate against the saved
+evidence. Collection reads public websites with per-host pacing, DNS validation
+and bounded concurrency. It disables browser sessions and paid search and never
+sends messages or submits forms. The input hashes and exact random sample are
+saved in a manifest; each completed row is checkpointed for resuming.
+
+```powershell
+.venv\Scripts\python scripts\training_corpus.py --rows 1200 --seed 20261001 --pages 6 --concurrency 24
+.venv\Scripts\python scripts\training_corpus.py --rows 1200 --seed 20261001 --pages 6 --concurrency 24 --retry-errors
+.venv\Scripts\python scripts\tune.py reports\training-20261001 --apply
+```
+
+On a memory-constrained PC, use `--concurrency 16 --nlp-processes 1`.
+`--resume-timeout 300 --retry-errors` allows slow rows more time while preserving
+the original sample. Execution settings and retries are logged alongside the
+corpus. CPU work runs below normal priority on Windows.
+
+The sweep is entirely offline, including DNS. It uses the production scoring
+implementation and frozen domain-validation results. Related phone numbers,
+website domains and social profiles stay together across training, validation
+and test splits. Training selects among 81 parameter sets; validation and final
+holdout checks gate adoption without further parameter searches. Without improvement, existing
+default weights are retained. `--apply` writes the validated runtime weights to
+`email_finder/scoring-parameters.json`, loaded when an Engine is constructed.
+
+These CSVs contain no verified email or owner labels. Calibration uses explicit
+and corroborated website evidence as weak labels. Coverage and evidence scores
+are **not email accuracy, ownership accuracy, or mailbox-deliverability scores**.
+The experiment measures website-only discovery and frozen candidate ranking;
+it does not measure the full browser/search workflow. Reports include every
+sampled row, collection failures, per-country results and split assignments.
+See [the October 2026 calibration results](CALIBRATION.md) for the completed run.
+
+The workbook cleanup runs separately from the repository root:
+
+```powershell
+workers\email-finder\.venv\Scripts\python scripts\dedup_us_conquest.py --apply
+```
+
+It keeps the first normalised phone occurrence within each tab, supports both
+`phoneNumber` and the legacy lead-export `number` header, and preserves blank
+phones. Country codes and extensions remain distinct. Workbook metadata and
+editable grid data for changed tabs are backed up locally before deletion;
+every tab is read again and verified. OAuth credentials load from environment
+or ignored `.cache/sheets-oauth.json`; no credentials belong in the script.

@@ -14,11 +14,14 @@ import { api } from '../lib/api-client';
 const EMAIL_STATUS_LABEL: Record<SheetsEmailStatus, string> = {
   NONE: 'Not sent',
   PENDING: 'Scheduled',
+  WAITING_RESEARCH: 'Waiting for email research',
+  FORM_PREPARING: 'Preparing contact form',
+  FORM_SENDING: 'Submitting contact form',
   SENDING: 'Sending',
   SENT: 'Sent',
   FAILED: 'Failed',
   CANCELLED: 'Cancelled',
-  MANUAL: 'Contact form: send it yourself',
+  MANUAL: 'Contact form needs review',
 };
 
 export function SettingsSheets() {
@@ -167,7 +170,7 @@ ${message.body}`);
               >
                 <div className="min-w-0">
                   <p className="truncate font-medium text-slate-800">
-                    {f.emailTo ?? '—'}{' '}
+                    {f.emailTo ?? (f.contactFormUrl ? 'Contact form' : 'Researching contact')}{' '}
                     <span className="font-normal text-slate-500">
                       ({f.emailTemplate}, {f.sheetTitle} row {f.rowIndex})
                     </span>
@@ -204,7 +207,9 @@ ${message.body}`);
                     </button>
                   </span>
                 )}
-                {(f.emailStatus === 'PENDING' || f.emailStatus === 'MANUAL') && (
+                {['PENDING', 'MANUAL', 'WAITING_RESEARCH', 'FORM_PREPARING'].includes(
+                  f.emailStatus,
+                ) && (
                   <button
                     type="button"
                     onClick={() => cancel.mutate(f.id)}
@@ -294,8 +299,9 @@ ${message.body}`);
             call, using the template of the first status you picked that sends email. Booked a demo
             cancels it; Not available and Handles calls himself don&apos;t send email on their own.
             A school already emailed in the last 30 days isn&apos;t emailed again. Schools with only
-            a contact form show up above at the same time with a button that copies the email and
-            opens their form.
+            a contact form receive the same subject and body through that form after research is
+            complete. Forms requiring sign-in, human verification, or unknown required answers
+            appear here for review. Uncertain submissions are never repeated automatically.
           </li>
         </ul>
         <p className="text-xs text-slate-500">

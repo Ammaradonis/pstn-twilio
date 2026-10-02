@@ -11,6 +11,10 @@ export default [
   {
     ignores: [
       '**/node_modules/**',
+      '**/.venv/**',
+      '**/.cache/**',
+      'workers/email-finder/reports/**',
+      'Google-search-engine-configuration-files/**',
       '**/dist/**',
       '**/build/**',
       '**/coverage/**',
@@ -91,6 +95,14 @@ export default [
     },
   },
 
+  // The reference browser-extension engine runs in Chrome's background context.
+  {
+    files: ['background.js'],
+    languageOptions: {
+      globals: { ...globals.browser, chrome: 'readonly' },
+    },
+  },
+
   // Ad-hoc Node.js helper scripts (CommonJS or plain Node ESM)
   {
     files: ['scripts/**/*.{js,cjs}'],
@@ -106,7 +118,7 @@ export default [
   },
 
   {
-    files: ['apps/api/prisma/**/*.ts', 'scripts/**/*.ts'],
+    files: ['apps/api/prisma/**/*.ts', 'apps/*/scripts/**/*.ts', 'scripts/**/*.ts'],
     rules: {
       'no-console': 'off',
     },

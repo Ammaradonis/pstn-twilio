@@ -7,3 +7,8 @@ coverage
 pnpm-lock.yaml
 *.tsbuildinfo
 apps/api/prisma/migrations
+**/.venv/**
+**/.cache/**
+workers/email-finder/reports/**
+gcp-creds.json
+Google-search-engine-configuration-files/**

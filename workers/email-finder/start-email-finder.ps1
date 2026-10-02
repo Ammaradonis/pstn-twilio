@@ -7,7 +7,7 @@ if (-not (Test-Path $python)) {
     exit 1
 }
 # Only one worker at a time.
-$running = Get-CimInstance Win32_Process -Filter "Name='pythonw.exe'" |
+$running = Get-CimInstance Win32_Process -Filter "Name='pythonw.exe' OR Name='python.exe'" |
     Where-Object { $_.CommandLine -match 'email_finder\.worker' }
 if ($running) { Write-Output "Email finder already running (PID $($running.ProcessId))."; exit 0 }
 Start-Process -FilePath $python -ArgumentList "-m", "email_finder.worker" -WorkingDirectory $here -WindowStyle Hidden

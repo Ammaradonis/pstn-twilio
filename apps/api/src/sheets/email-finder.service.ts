@@ -10,9 +10,15 @@
  * row that already has an email is never overwritten.
  */
 
-import { createHash } from 'crypto';
+import { createHash, randomUUID } from 'crypto';
 
-import { Injectable, Logger, NotFoundException, OnModuleDestroy } from '@nestjs/common';
+import {
+  Injectable,
+  Logger,
+  NotFoundException,
+  OnModuleDestroy,
+  OnModuleInit,
+} from '@nestjs/common';
 import type { EmailFinderJobStatus, EmailFinderStatusDto } from '@pstn-twilio/shared';
 
 import { PrismaService } from '../prisma/prisma.service';
@@ -51,7 +57,10 @@ export interface FinderRowInput {
 
 export interface FinderResult {
   id: string;
-  status: 'FOUND' | 'CONTACT_FORM' | 'NOT_FOUND' | 'FAILED';
+  status: 'FOUND' | 'CONTACT_FORM' | 'NOT_FOUND' | 'FAILED' | 'RETRY';
+  leaseToken: string;
+  retryAfter?: number;
+  researchComplete?: boolean;
   email?: string | null;
   emailType?: string | null;
   confidence?: number | null;
@@ -62,10 +71,33 @@ export interface FinderResult {
 }
 
 @Injectable()
-export class EmailFinderService implements OnModuleDestroy {
+export class EmailFinderService implements OnModuleDestroy, OnModuleInit {
   private readonly logger = new Logger(EmailFinderService.name);
   private readonly flushTimers = new Map<string, ReturnType<typeof setTimeout>>();
   private readonly flushing = new Map<string, Promise<void>>();
+
+  private recoveryTimer: ReturnType<typeof setInterval> | null = null;
+  private readonly starts = new Map<string, Promise<EmailFinderStatusDto>>();
+
+  onModuleInit(): void {
+    void this.recover();
+    this.recoveryTimer = setInterval(() => void this.recover(), 60_000);
+    this.recoveryTimer.unref?.();
+  }
+
+  private async recover(): Promise<void> {
+    try {
+      const pending = await this.prisma.emailFinderRow.findMany({
+        where: { writtenAt: null, status: { in: FINAL }, job: { status: { not: 'CANCELLED' } } },
+        distinct: ['jobId'],
+        select: { jobId: true },
+        take: 100,
+      });
+      for (const row of pending) this.scheduleFlush(row.jobId, 100);
+    } catch {
+      this.logger.warn('Email finder recovery unavailable; retrying in one minute.');
+    }
+  }
 
   constructor(
     private readonly prisma: PrismaService,
@@ -74,13 +106,25 @@ export class EmailFinderService implements OnModuleDestroy {
   ) {}
 
   onModuleDestroy(): void {
+    if (this.recoveryTimer) clearInterval(this.recoveryTimer);
     for (const t of this.flushTimers.values()) clearTimeout(t);
   }
 
   // ── Dial page ─────────────────────────────────────────────────────────────
 
   /** Queue a tab's rows that have no email yet; safe to call on every selection. */
-  async start(
+  start(userId: string, spreadsheetId: string, sheetTitle: string): Promise<EmailFinderStatusDto> {
+    const key = JSON.stringify([userId, spreadsheetId, sheetTitle]);
+    const existing = this.starts.get(key);
+    if (existing) return existing;
+    const run = this.startTab(userId, spreadsheetId, sheetTitle).finally(() =>
+      this.starts.delete(key),
+    );
+    this.starts.set(key, run);
+    return run;
+  }
+
+  private async startTab(
     userId: string,
     spreadsheetId: string,
     sheetTitle: string,
@@ -129,17 +173,49 @@ export class EmailFinderService implements OnModuleDestroy {
       });
     }
 
-    const existing = await this.prisma.emailFinderJob.findUnique({
+    const job = await this.prisma.emailFinderJob.upsert({
       where: { userId_spreadsheetId_sheetTitle: { userId, spreadsheetId, sheetTitle } },
+      create: { userId, spreadsheetId, sheetTitle },
+      update: {},
     });
-    const job = existing
-      ? await this.prisma.emailFinderJob.update({
-          where: { id: existing.id },
-          // Re-selecting a finished tab picks up rows added since; a paused
-          // tab stays paused. Touching updatedAt puts this tab first in line.
-          data: { status: existing.status === 'PAUSED' ? 'PAUSED' : 'RUNNING', finishedAt: null },
-        })
-      : await this.prisma.emailFinderJob.create({ data: { userId, spreadsheetId, sheetTitle } });
+    if (job.status === 'DONE') {
+      await this.prisma.emailFinderJob.update({
+        where: { id: job.id },
+        data: { status: 'RUNNING', finishedAt: null },
+      });
+    }
+    // Create the output columns as soon as a sheet is selected, even if no address is found.
+    await this.writeToSheet(job, []);
+
+    // Upgrade pre-v2 identities in place so existing pending work remains writable.
+    const existingRows = await this.prisma.emailFinderRow.findMany({
+      where: { jobId: job.id },
+      select: { id: true, fingerprint: true, input: true },
+    });
+    const fingerprints = new Set(existingRows.map((r) => r.fingerprint));
+    const inputColumns = findColumns(['title', 'phone', 'website', 'address']);
+    for (const row of existingRows) {
+      const input = row.input as unknown as FinderRowInput;
+      const upgraded = fingerprint(
+        [input.title, input.phone, input.website, input.address],
+        inputColumns,
+      );
+      if (row.fingerprint !== upgraded && !fingerprints.has(upgraded)) {
+        await this.prisma.emailFinderRow.updateMany({
+          where: { id: row.id, fingerprint: row.fingerprint, status: { not: 'CLAIMED' } },
+          data: { fingerprint: upgraded },
+        });
+        fingerprints.add(upgraded);
+      }
+    }
+    await this.prisma.emailFinderRow.updateMany({
+      where: {
+        jobId: job.id,
+        researchComplete: false,
+        status: { in: ['CONTACT_FORM', 'NOT_FOUND'] },
+      },
+      data: { status: 'PENDING', attempts: 0, writtenAt: null },
+    });
 
     for (let i = 0; i < queued.length; i += 1000) {
       await this.prisma.emailFinderRow.createMany({
@@ -152,6 +228,7 @@ export class EmailFinderService implements OnModuleDestroy {
       });
     }
     await this.redis.client.set(`email-finder:job:${job.id}:had-email`, String(alreadyHadEmail));
+    this.scheduleFlush(job.id, 100);
     await this.finishIfComplete(job.id);
     return this.status(userId, spreadsheetId, sheetTitle);
   }
@@ -189,6 +266,16 @@ export class EmailFinderService implements OnModuleDestroy {
     const had = await this.redis.client
       .get(`email-finder:job:${job.id}:had-email`)
       .catch(() => null);
+    const issues = await this.prisma.emailFinderRow.findMany({
+      where: {
+        jobId: job.id,
+        notes: { not: null },
+        status: { in: ['RETRY', 'FAILED', 'NOT_FOUND'] },
+      },
+      orderBy: { updatedAt: 'desc' },
+      take: 5,
+      select: { input: true, notes: true },
+    });
     return {
       jobId: job.id,
       status: job.status as EmailFinderJobStatus,
@@ -197,6 +284,12 @@ export class EmailFinderService implements OnModuleDestroy {
       found: count('FOUND'),
       contactForms: count('CONTACT_FORM'),
       alreadyHadEmail: Number(had ?? 0),
+      retrying: count('RETRY'),
+      failed: count('FAILED'),
+      issues: issues.map((r) => ({
+        school: (r.input as unknown as FinderRowInput).title,
+        note: r.notes ?? '',
+      })),
       workerOnline,
       workerLastSeen: lastSeen,
     };
@@ -215,13 +308,17 @@ export class EmailFinderService implements OnModuleDestroy {
     await this.redis.client.set(WORKER_SEEN_KEY, new Date().toISOString(), 'EX', 3600);
   }
 
-  async claim(max: number): Promise<{ id: string; input: FinderRowInput }[]> {
+  async claim(max: number): Promise<{ id: string; leaseToken: string; input: FinderRowInput }[]> {
     await this.heartbeat();
+    await this.prisma.emailFinderRow.updateMany({
+      where: { status: 'RETRY', nextAttemptAt: { lte: new Date() } },
+      data: { status: 'PENDING', nextAttemptAt: null },
+    });
     const stale = new Date(Date.now() - CLAIM_TIMEOUT_MS);
     // Rows a crashed or closed worker never finished go back in the queue.
     await this.prisma.emailFinderRow.updateMany({
       where: { status: 'CLAIMED', claimedAt: { lt: stale }, attempts: { lt: MAX_ATTEMPTS } },
-      data: { status: 'PENDING' },
+      data: { status: 'PENDING', leaseToken: null },
     });
     await this.prisma.emailFinderRow.updateMany({
       where: { status: 'CLAIMED', claimedAt: { lt: stale }, attempts: { gte: MAX_ATTEMPTS } },
@@ -236,15 +333,20 @@ export class EmailFinderService implements OnModuleDestroy {
     });
     if (next.length === 0) return [];
     const claimedAt = new Date();
+    const leaseToken = randomUUID();
     await this.prisma.emailFinderRow.updateMany({
       where: { id: { in: next.map((r) => r.id) }, status: 'PENDING' },
-      data: { status: 'CLAIMED', claimedAt, attempts: { increment: 1 } },
+      data: { status: 'CLAIMED', claimedAt, leaseToken, attempts: { increment: 1 } },
     });
     const claimed = await this.prisma.emailFinderRow.findMany({
-      where: { id: { in: next.map((r) => r.id) }, status: 'CLAIMED', claimedAt },
+      where: { id: { in: next.map((r) => r.id) }, status: 'CLAIMED', leaseToken },
       select: { id: true, input: true },
     });
-    return claimed.map((r) => ({ id: r.id, input: r.input as unknown as FinderRowInput }));
+    return claimed.map((r) => ({
+      id: r.id,
+      leaseToken,
+      input: r.input as unknown as FinderRowInput,
+    }));
   }
 
   async submit(results: FinderResult[]): Promise<{ saved: number }> {
@@ -252,16 +354,28 @@ export class EmailFinderService implements OnModuleDestroy {
     const jobs = new Set<string>();
     let saved = 0;
     for (const r of results) {
-      if (!FINAL.includes(r.status)) continue;
+      if (!FINAL.includes(r.status) && r.status !== 'RETRY') continue;
       const row = await this.prisma.emailFinderRow.findFirst({
-        where: { id: r.id, status: 'CLAIMED' },
+        where: {
+          id: r.id,
+          status: 'CLAIMED',
+          leaseToken: r.leaseToken,
+          job: { status: { not: 'CANCELLED' } },
+        },
         select: { jobId: true },
       });
       if (!row) continue;
-      await this.prisma.emailFinderRow.update({
-        where: { id: r.id },
+      const updated = await this.prisma.emailFinderRow.updateMany({
+        where: { id: r.id, status: 'CLAIMED', leaseToken: r.leaseToken },
         data: {
           status: r.status,
+          researchComplete: r.researchComplete === true,
+          nextAttemptAt:
+            r.status === 'RETRY'
+              ? new Date(Date.now() + Math.min(86400, Math.max(60, r.retryAfter ?? 1800)) * 1000)
+              : null,
+          // Deferred work has not failed; do not consume crash retry attempts.
+          ...(r.status === 'RETRY' ? { attempts: { decrement: 1 } } : {}),
           email: clip(r.email?.toLowerCase(), 254),
           emailType: clip(r.emailType, 32),
           confidence: r.confidence ?? null,
@@ -271,6 +385,7 @@ export class EmailFinderService implements OnModuleDestroy {
           notes: clip(r.notes, 1000),
         },
       });
+      if (!updated.count) continue;
       jobs.add(row.jobId);
       saved++;
     }
@@ -301,7 +416,7 @@ export class EmailFinderService implements OnModuleDestroy {
 
   async flush(jobId: string): Promise<void> {
     const job = await this.prisma.emailFinderJob.findUnique({ where: { id: jobId } });
-    if (!job) return;
+    if (!job || job.status === 'CANCELLED') return;
     const rows = await this.prisma.emailFinderRow.findMany({
       where: { jobId, writtenAt: null, status: { in: FINAL } },
     });
@@ -365,9 +480,12 @@ export class EmailFinderService implements OnModuleDestroy {
       );
     }
 
-    const rowByFingerprint = new Map<string, number>();
+    const rowByFingerprint = new Map<string, number[]>();
     sheetRows.forEach((row, i) => {
-      if (i > 0 && text(row[cols.school]).trim()) rowByFingerprint.set(fingerprint(row, cols), i);
+      if (i > 0 && text(row[cols.school]).trim()) {
+        const fp = fingerprint(row, cols);
+        rowByFingerprint.set(fp, [...(rowByFingerprint.get(fp) ?? []), i]);
+      }
     });
     const cell = (col: number, rowIdx: number, value: string) =>
       data.push({
@@ -376,19 +494,21 @@ export class EmailFinderService implements OnModuleDestroy {
       });
 
     for (const r of results) {
-      const i = rowByFingerprint.get(r.fingerprint);
-      if (i === undefined) continue; // the row was deleted meanwhile
-      const row = sheetRows[i] ?? [];
-      // Never overwrite an email someone typed in while the finder ran.
-      if (r.email && !extractEmail(text(row[at.email]))) {
-        cell(at.email, i, r.email);
-        cell(at.emailType, i, r.emailType ?? '');
-        cell(at.emailSource, i, r.sourceUrl ?? '');
+      const indexes = rowByFingerprint.get(r.fingerprint) ?? [];
+      for (const i of indexes) {
+        // the row was deleted meanwhile
+        const row = sheetRows[i] ?? [];
+        // Never overwrite an email someone typed in while the finder ran.
+        if (r.email && !extractEmail(text(row[at.email]))) {
+          cell(at.email, i, r.email);
+          cell(at.emailType, i, r.emailType ?? '');
+          cell(at.emailSource, i, r.sourceUrl ?? '');
+        }
+        if (r.decisionMaker && !text(row[at.decisionMaker]).trim())
+          cell(at.decisionMaker, i, r.decisionMaker);
+        if (r.contactFormUrl && !text(row[at.contactForm]).trim())
+          cell(at.contactForm, i, r.contactFormUrl);
       }
-      if (r.decisionMaker && !text(row[at.decisionMaker]).trim())
-        cell(at.decisionMaker, i, r.decisionMaker);
-      if (r.contactFormUrl && !text(row[at.contactForm]).trim())
-        cell(at.contactForm, i, r.contactFormUrl);
     }
     for (let i = 0; i < data.length; i += 400) {
       await this.sheets.google(
@@ -402,7 +522,10 @@ export class EmailFinderService implements OnModuleDestroy {
 
   private async finishIfComplete(jobId: string): Promise<void> {
     const open = await this.prisma.emailFinderRow.count({
-      where: { jobId, OR: [{ status: { in: ['PENDING', 'CLAIMED'] } }, { writtenAt: null }] },
+      where: {
+        jobId,
+        OR: [{ status: { in: ['PENDING', 'CLAIMED', 'RETRY'] } }, { writtenAt: null }],
+      },
     });
     if (open === 0) {
       await this.prisma.emailFinderJob.updateMany({
@@ -418,7 +541,11 @@ export function fingerprint(row: Row, cols: Columns): string {
   const title = text(row[cols.school]).trim().toLowerCase().replace(/\s+/g, ' ');
   const phone = nationalDigits(text(row[cols.phone])) ?? '';
   const host = hostOf(text(row[cols.website]));
-  return createHash('sha1').update(`${title}|${phone}|${host}`).digest('hex').slice(0, 20);
+  const address = (rowAddress(row, cols) ?? '').toLowerCase().replace(/\s+/g, ' ').trim();
+  return createHash('sha1')
+    .update(`${title}|${phone}|${host}|${address}`)
+    .digest('hex')
+    .slice(0, 20);
 }
 
 function hostOf(url: string): string {

@@ -469,6 +469,7 @@ model SheetsPushLog {
   emailError      String?   @map("email_error")
   emailSentAt     DateTime? @map("email_sent_at")
   contactFormUrl  String?   @map("contact_form_url")
+  formLeaseToken  String?   @map("form_lease_token")
   callEndedAt     DateTime  @map("call_ended_at")
   createdAt       DateTime  @default(now()) @map("created_at")
   updatedAt       DateTime  @updatedAt @map("updated_at")
@@ -504,29 +505,33 @@ model EmailFinderJob {
 // One sheet row to research. Identified by a fingerprint (name + phone +
 // website) so it is found again after the user sorts or inserts rows.
 model EmailFinderRow {
-  id             String    @id @default(uuid())
-  jobId          String    @map("job_id")
-  fingerprint    String
-  input          Json
+  id               String    @id @default(uuid())
+  jobId            String    @map("job_id")
+  fingerprint      String
+  input            Json
   // PENDING | CLAIMED | FOUND | CONTACT_FORM | NOT_FOUND | FAILED
-  status         String    @default("PENDING")
-  attempts       Int       @default(0)
-  claimedAt      DateTime? @map("claimed_at")
-  email          String?
-  emailType      String?   @map("email_type")
-  confidence     Int?
-  sourceUrl      String?   @map("source_url")
-  decisionMaker  String?   @map("decision_maker")
-  contactFormUrl String?   @map("contact_form_url")
-  notes          String?
-  writtenAt      DateTime? @map("written_at")
-  createdAt      DateTime  @default(now()) @map("created_at")
-  updatedAt      DateTime  @updatedAt @map("updated_at")
+  status           String    @default("PENDING")
+  attempts         Int       @default(0)
+  claimedAt        DateTime? @map("claimed_at")
+  leaseToken       String?   @map("lease_token")
+  nextAttemptAt    DateTime? @map("next_attempt_at")
+  researchComplete Boolean   @default(false) @map("research_complete")
+  email            String?
+  emailType        String?   @map("email_type")
+  confidence       Int?
+  sourceUrl        String?   @map("source_url")
+  decisionMaker    String?   @map("decision_maker")
+  contactFormUrl   String?   @map("contact_form_url")
+  notes            String?
+  writtenAt        DateTime? @map("written_at")
+  createdAt        DateTime  @default(now()) @map("created_at")
+  updatedAt        DateTime  @updatedAt @map("updated_at")
 
   job EmailFinderJob @relation(fields: [jobId], references: [id], onDelete: Cascade)
 
   @@unique([jobId, fingerprint])
   @@index([jobId, status])
   @@index([status, claimedAt])
+  @@index([status, nextAttemptAt])
   @@map("email_finder_rows")
 }

@@ -291,10 +291,9 @@ export class SheetsService {
       extractEmail(text(row[cols.email])),
       contactFormUrl,
     );
-    const dueAt =
-      email.status === 'PENDING' || email.status === 'MANUAL'
-        ? new Date(Math.max(callEndedAt.getTime() + FOLLOW_UP_DELAY_MS, Date.now()))
-        : null;
+    const dueAt = ['PENDING', 'MANUAL', 'WAITING_RESEARCH'].includes(email.status)
+      ? new Date(Math.max(callEndedAt.getTime() + FOLLOW_UP_DELAY_MS, Date.now()))
+      : null;
 
     // An overwrite replaces the earlier outcome, so its unsent email goes too.
     await this.prisma.$transaction([
@@ -302,7 +301,7 @@ export class SheetsService {
         where: {
           connectionId: conn.id,
           destinationE164: dto.destinationE164,
-          emailStatus: { in: ['PENDING', 'MANUAL'] },
+          emailStatus: { in: ['PENDING', 'MANUAL', 'WAITING_RESEARCH', 'FORM_PREPARING'] },
         },
         data: { emailStatus: 'CANCELLED', emailError: 'Replaced by a newer push.' },
       }),
@@ -323,7 +322,7 @@ export class SheetsService {
           emailTo: email.to,
           emailTemplate: email.template,
           emailDueAt: dueAt,
-          contactFormUrl: email.status === 'MANUAL' ? contactFormUrl : null,
+          contactFormUrl: !email.to ? contactFormUrl : null,
           callEndedAt,
         },
       }),
@@ -360,20 +359,14 @@ export class SheetsService {
     if (decision.template === null) {
       return { status: 'NONE', to, template: null, note: decision.reason };
     }
-    if (!to && contactFormUrl) {
-      return {
-        status: 'MANUAL',
-        to: null,
-        template: decision.template,
-        note: 'No email, but the school has a contact form: the follow-up is waiting for you to send it there (Settings → Google Sheets & Gmail).',
-      };
-    }
     if (!to) {
       return {
-        status: 'NONE',
+        status: 'WAITING_RESEARCH',
         to: null,
         template: decision.template,
-        note: 'No email address in this row, so no follow-up email.',
+        note: contactFormUrl
+          ? 'Follow-up will use the contact form after email research is complete.'
+          : 'Follow-up is waiting for email research on this school.',
       };
     }
     const recent = await this.prisma.sheetsPushLog.findFirst({
@@ -421,7 +414,11 @@ export class SheetsService {
 
   async cancelFollowUp(userId: string, id: string): Promise<void> {
     const res = await this.prisma.sheetsPushLog.updateMany({
-      where: { id, connection: { userId }, emailStatus: { in: ['PENDING', 'MANUAL'] } },
+      where: {
+        id,
+        connection: { userId },
+        emailStatus: { in: ['PENDING', 'MANUAL', 'WAITING_RESEARCH', 'FORM_PREPARING'] },
+      },
       data: { emailStatus: 'CANCELLED', emailError: 'Cancelled by you.' },
     });
     if (res.count === 0) throw new NotFoundException('No pending email with that id.');
