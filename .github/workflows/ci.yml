@@ -5,13 +5,16 @@ on:
     branches: [main]
   pull_request:
     branches: [main]
+  # "Run workflow" in the Actions tab: runs CI, then redeploys the API.
+  workflow_dispatch:
 
 permissions:
   contents: read
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: true
+  # Supersede stale PR runs, but queue main runs so a deploy is never cut off.
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
   ci:
@@ -61,3 +64,53 @@ jobs:
 
       - name: Build
         run: pnpm build
+
+  api-changes:
+    name: detect API changes
+    if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    outputs:
+      deploy: ${{ steps.diff.outputs.deploy }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Diff against the previous push
+        id: diff
+        env:
+          EVENT: ${{ github.event_name }}
+          BEFORE: ${{ github.event.before }}
+        run: |
+          # Everything the API image is built from (see deploy/api.Dockerfile).
+          api='^(apps/api/|packages/shared/|patches/|deploy/fly\.toml$|deploy/api\.Dockerfile$|\.dockerignore$|apps/web/package\.json$|package\.json$|pnpm-lock\.yaml$|pnpm-workspace\.yaml$|\.npmrc$|tsconfig(\.base)?\.json$)'
+          # Manual runs, and pushes whose base isn't known, always deploy.
+          if [ "$EVENT" = workflow_dispatch ] || ! git cat-file -e "$BEFORE^{commit}" 2>/dev/null; then
+            deploy=true
+          elif git diff --name-only "$BEFORE" "$GITHUB_SHA" | grep -qE "$api"; then
+            deploy=true
+          else
+            deploy=false
+          fi
+          echo "deploy=$deploy" >> "$GITHUB_OUTPUT"
+
+  deploy-api:
+    name: deploy API to Fly
+    needs: [ci, api-changes]
+    if: needs.api-changes.outputs.deploy == 'true'
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup flyctl
+        uses: superfly/flyctl-actions/setup-flyctl@master
+
+      # Builds on Fly's remote builder; release_command runs prisma migrate
+      # deploy, and the deploy fails if the new machine fails /api/health.
+      - name: Deploy
+        run: flyctl deploy . -c deploy/fly.toml --dockerfile deploy/api.Dockerfile --remote-only
+        env:
+          FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}

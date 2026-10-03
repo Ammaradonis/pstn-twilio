@@ -110,6 +110,16 @@ fly deploy --remote-only --config deploy/fly.toml --dockerfile deploy/api.Docker
 Check the release: `fly status`, `fly logs`, then
 `curl https://api.bestsoftphone.site/api/health`.
 
+**Automatic deploys.** The `deploy-api` job in
+[`.github/workflows/ci.yml`](../.github/workflows/ci.yml) runs the deploy
+command above on every push to `main` that touches files the API image is built
+from (`apps/api`, `packages/shared`, lockfile, patches, Dockerfile, …), and
+only after lint, typecheck, test and build pass. Web-only pushes skip it, so the
+API isn't restarted mid-call for nothing. To redeploy by hand, use **Run
+workflow** on the CI workflow in the Actions tab. It authenticates with the
+`FLY_API_TOKEN` repo secret, an app-scoped deploy token
+(`fly tokens create deploy -a pstn-twilio-api`).
+
 ### Render (alternative)
 
 Apply [`deploy/render.yaml`](../deploy/render.yaml) via Render's blueprint
