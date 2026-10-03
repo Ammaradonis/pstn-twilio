@@ -20,6 +20,7 @@ import {
   columnLetter,
   extractEmail,
   formatLocalTime,
+  formatStatusTime,
   nationalDigits,
   stripCountryCode,
 } from './sheets.util';
@@ -126,6 +127,17 @@ describe('addresses and time zones', () => {
     expect(formatLocalTime(new Date('2026-07-01T16:45:00Z'), 'America/Phoenix')).toBe('9:45am');
     expect(formatLocalTime(new Date('2026-07-01T00:05:00Z'), 'America/New_York')).toBe('8:05pm');
   });
+
+  it('formats status time with weekday', () => {
+    // 2026-10-25 is a Sunday (17:40 UTC is 5:40pm London GMT after DST ends)
+    expect(formatStatusTime(new Date('2026-10-25T17:40:00Z'), 'Europe/London')).toBe(
+      '5:40pm on a Sunday',
+    );
+    // 2026-10-03 02:29 UTC is 2026-10-02 21:29 CDT (Friday 9:29pm Chicago)
+    expect(formatStatusTime(new Date('2026-10-03T02:29:00Z'), 'America/Chicago')).toBe(
+      '9:29pm on a Friday',
+    );
+  });
 });
 
 describe('status cell', () => {
@@ -136,13 +148,13 @@ describe('status cell', () => {
     callEndedAt: '2026-09-30T14:45:00Z',
   };
 
-  it('matches the requested format without country codes', () => {
+  it('matches the requested format without country codes and with weekday', () => {
     expect(
       buildCellValue(
         { ...base, orderedTags: ['Voicemail', 'Not interested'], callerE164: '+442045726501' },
-        '5:45pm',
+        '5:40pm on a Sunday',
       ),
-    ).toBe('Voicemail, Not interested, from: 02045726501, time: 5:45pm');
+    ).toBe('Voicemail, Not interested, from: 02045726501, time: 5:40pm on a Sunday');
     expect(
       buildCellValue(
         {
@@ -151,9 +163,11 @@ describe('status cell', () => {
           customNote: '  owner is Coach Mike,\n call after 4  ',
           callerE164: '+16672206726',
         },
-        '9:45am',
+        '9:29pm on a Friday',
       ),
-    ).toBe('Has a receptionist, owner is Coach Mike, call after 4, from: 6672206726, time: 9:45am');
+    ).toBe(
+      'Has a receptionist, owner is Coach Mike, call after 4, from: 6672206726, time: 9:29pm on a Friday',
+    );
   });
 
   it('builds quoted A1 ranges', () => {

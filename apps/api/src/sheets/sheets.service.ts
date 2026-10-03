@@ -49,7 +49,7 @@ import {
   cellHasPhone,
   columnLetter,
   extractEmail,
-  formatLocalTime,
+  formatStatusTime,
   nationalDigits,
   normalizeHeader,
   stripCountryCode,
@@ -261,7 +261,7 @@ export class SheetsService {
 
     const callEndedAt = new Date(dto.callEndedAt);
     const { timeZone, source } = await this.tz.resolve(rowAddress(row, cols), dto.destinationE164);
-    const cellValue = buildCellValue(dto, formatLocalTime(callEndedAt, timeZone));
+    const cellValue = buildCellValue(dto, formatStatusTime(callEndedAt, timeZone));
 
     const data = [
       {

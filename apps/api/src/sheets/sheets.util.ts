@@ -23,6 +23,14 @@ export function formatLocalWeekday(date: Date, timeZone: string): string {
 }
 
 /**
+ * Format a moment for the status column with time and weekday:
+ * "5:40pm on a Sunday" or "9:29pm on a Friday".
+ */
+export function formatStatusTime(date: Date, timeZone: string): string {
+  return `${formatLocalTime(date, timeZone)} on a ${formatLocalWeekday(date, timeZone)}`;
+}
+
+/**
  * A phone number the way a local reader writes it: no country code, digits
  * only. +442045726501 → 02045726501, +16672206726 → 6672206726.
  */
