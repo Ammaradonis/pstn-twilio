@@ -304,6 +304,18 @@ def test_a_challenge_stops_the_session_and_the_phone(tmp_path, monkeypatch):
     assert phone.phone_paused_for() > 11 * 3600
 
 
+def test_a_login_screen_pauses_only_that_app(tmp_path, monkeypatch):
+    """The app not being signed in is the user's job, not an account incident:
+    it must not take the whole phone away for 12 hours."""
+    _quick(monkeypatch)
+    phone = FakePhone(tmp_path, [REEL], foreground=f"{IG}/com.instagram.activity.LoginActivity")
+    assert asyncio.run(phone._watch_one(_session())) is False
+    assert phone.taps() == []
+    assert phone.paused_for("instagram") > 11 * 3600
+    assert phone.phone_paused_for() == 0
+    assert phone.paused_for("facebook") == 0  # the other app is still usable
+
+
 def test_an_unreadable_reel_is_never_guessed_at(tmp_path, monkeypatch):
     _quick(monkeypatch)
     phone = FakePhone(tmp_path, [REEL])

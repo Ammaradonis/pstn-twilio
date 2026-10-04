@@ -72,6 +72,10 @@ STATE_NS = "social-state"
 APP_PAUSE = 12 * 3600
 # Screens that need the user, never the worker.
 STOP_SCREEN = re.compile(r"challenge|checkpoint|login|signup|nux|twofac|captcha|confirm", re.I)
+# Of those, the ones that mean the account itself was challenged. A plain login
+# or signup screen only means the app is not signed in, which is the user's job
+# to fix but is not an incident: it pauses that app, it does not stop the phone.
+CHALLENGE_SCREEN = re.compile(r"challenge|checkpoint|twofac|captcha|confirm", re.I)
 EMAIL = re.compile(r"[A-Za-z0-9._%+-]+@[A-Za-z0-9-]+(?:\.[A-Za-z0-9-]+)*\.[A-Za-z]{2,}")
 BOUNDS = re.compile(r"\[(\d+),(\d+)\]\[(\d+),(\d+)\]")
 PHONE = re.compile(r"^\+?[\d\s().-]{7,20}$")
@@ -420,7 +424,10 @@ class Galaxy:
         package, _, name = activity.partition("/")
         if package.startswith(("com.instagram", "com.facebook")) and STOP_SCREEN.search(name):
             self._pause(app, f"a {name.rsplit('.', 1)[-1]} screen")
-            if self.ambient.stop_lookups_on_challenge:
+            if CHALLENGE_SCREEN.search(name) and self.ambient.stop_lookups_on_challenge:
+                # A challenge is about the account, so the phone stops entirely.
+                # A login screen is not: the app just needs signing in again, and
+                # the other app, and the phone, stay usable.
                 self._stop_everything(f"a {name.rsplit('.', 1)[-1]} screen")
             return name
         return None

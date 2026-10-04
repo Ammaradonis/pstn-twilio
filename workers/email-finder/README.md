@@ -81,12 +81,12 @@ depend on the worker.
   used up the day's page loads, or the browser found no address, the profile is
   opened in the real app. The Instagram app has the Contact button the website
   lacks. The phone only reads the screen and taps the profile's own buttons;
-  it never types or sends, and on a security challenge or login screen it stops,
-  leaves that app alone for 12 hours and — unless
-  `EMAIL_FINDER_AMBIENT_STOP_LOOKUPS=off` — takes the phone out of the worker's
-  hands entirely, because a challenge is the loudest signal the account gets.
-  A find made there says "on the Galaxy A20e" in its method and in the Dial page
-  notification.
+  it never types or sends, and on a login screen it stops and leaves that app
+  alone for 12 hours. On a security challenge — a checkpoint, a CAPTCHA, a
+  two-factor prompt — it also takes the phone out of the worker's hands entirely
+  (unless `EMAIL_FINDER_AMBIENT_STOP_LOOKUPS=off`), because a challenge is the
+  loudest signal the account gets. A find made there says "on the Galaxy A20e"
+  in its method and in the Dial page notification.
 - Between lookups the phone watches Reels, so the account looks like what it is
   logged in as rather than like something that only ever opens profiles. The
   session scrolls with randomised gestures, watches each reel for a drawn
