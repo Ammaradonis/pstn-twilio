@@ -162,7 +162,9 @@ describe('useVoiceDevice', () => {
     act(() => {
       device.emit('error', Object.assign(new Error('signaling disconnected'), { code: 31005 }));
     });
-    expect(current!.error).toContain('31005');
+    // Idle: the Reconnecting state reports this, not a red error.
+    expect(current!.error).toBeNull();
+    expect(current!.reconnecting).toBe(true);
 
     await act(async () => {
       await vi.advanceTimersByTimeAsync(1_000);
@@ -174,7 +176,7 @@ describe('useVoiceDevice', () => {
     expect(device.updateToken).not.toHaveBeenCalled();
     expect(device.register).toHaveBeenCalledTimes(1);
     expect(current!.registered).toBe(false);
-    expect(current!.error).toContain('31005');
+    expect(current!.reconnecting).toBe(true);
 
     act(() => {
       device.emit('registered');
@@ -231,7 +233,8 @@ describe('useVoiceDevice', () => {
     act(() => {
       device.emit('error', Object.assign(new Error('transport unavailable'), { code: 31009 }));
     });
-    expect(current!.error).toContain('31009');
+    expect(current!.error).toBeNull();
+    expect(current!.reconnecting).toBe(true);
 
     await act(async () => {
       await vi.advanceTimersByTimeAsync(1_000);
@@ -383,6 +386,92 @@ describe('useVoiceDevice', () => {
     expect(call.disconnect).toHaveBeenCalledTimes(1);
   });
 
+  // What SDK 2.18 emits when Android closes Chrome's signaling socket (close
+  // code 1006) while the user is in another app.
+  const androidSocketDrop = () =>
+    Object.assign(new Error('ConnectionError (31005): Websocket connection ended'), {
+      code: 31005,
+      originalError: {
+        code: 31005,
+        message: "Websocket connection to Twilio's signaling servers were unexpectedly ended.",
+        twilioError: { code: 53000 },
+      },
+    });
+
+  it('treats an app-switch socket drop while idle as reconnecting, not an error', async () => {
+    render(<Harness onChange={(voice) => (current = voice)} />);
+    await act(async () => {
+      await current!.init('pn1');
+    });
+    const device = voiceSdkMock.instances[0]!;
+    act(() => device.emit('error', androidSocketDrop()));
+    expect(current!.error).toBeNull();
+    expect(current!.reconnecting).toBe(true);
+    act(() => device.emit('registered'));
+    expect(current!.registered).toBe(true);
+    expect(current!.error).toBeNull();
+  });
+
+  it('keeps a live call through an app-switch socket drop and says what happened', async () => {
+    render(<Harness onChange={(voice) => (current = voice)} />);
+    await act(async () => {
+      await current!.init('pn1');
+    });
+    const device = voiceSdkMock.instances[0]!;
+    const handlers = new Map<string, (...args: unknown[]) => void>();
+    const call = {
+      on: (event: string, handler: (...args: unknown[]) => void) => handlers.set(event, handler),
+      disconnect: vi.fn(),
+      status: () => 'open',
+    };
+    device.connect.mockResolvedValue(call);
+    await act(async () => {
+      await current!.makeCall('pn1', '+442079460018');
+    });
+    act(() => handlers.get('accept')?.());
+    act(() => handlers.get('error')?.(androidSocketDrop()));
+    expect(current!.active).toBe(true);
+    expect(call.disconnect).not.toHaveBeenCalled();
+    expect(current!.error).toContain('53000');
+  });
+
+  it('does not hang up a call the SDK keeps open after a 31000 media error', async () => {
+    render(<Harness onChange={(voice) => (current = voice)} />);
+    await act(async () => {
+      await current!.init('pn1');
+    });
+    const device = voiceSdkMock.instances[0]!;
+    const handlers = new Map<string, (...args: unknown[]) => void>();
+    let status = 'open';
+    const call = {
+      on: (event: string, handler: (...args: unknown[]) => void) => handlers.set(event, handler),
+      disconnect: vi.fn(),
+      status: () => status,
+    };
+    device.connect.mockResolvedValue(call);
+    await act(async () => {
+      await current!.makeCall('pn1', '+442079460018');
+    });
+    act(() => handlers.get('accept')?.());
+    // Call.ts builds this from the media stream's message, without originalError.
+    const mediaError = Object.assign(
+      new Error('UnknownError (31000): ICE liveliness checks failed'),
+      {
+        code: 31000,
+        explanation: 'An unknown error has occurred. See error details for more information.',
+      },
+    );
+    act(() => handlers.get('error')?.(mediaError));
+    expect(current!.active).toBe(true);
+    expect(call.disconnect).not.toHaveBeenCalled();
+    expect(current!.error).toContain('ICE liveliness checks failed');
+
+    status = 'closed';
+    act(() => handlers.get('error')?.(mediaError));
+    expect(current!.active).toBe(false);
+    expect(call.disconnect).toHaveBeenCalledTimes(1);
+  });
+
   it('rebuilds the device when the SDK destroys it unexpectedly', async () => {
     render(<Harness onChange={(voice) => (current = voice)} />);
 
@@ -479,7 +568,7 @@ describe('useVoiceDevice', () => {
       await current!.makeCall('pn1', '+442079460018');
     });
     expect(current!.registered).toBe(false);
-    expect(current!.error).toContain('31005');
+    expect(current!.callNotice).toContain('reconnecting');
     expect(device.connect).not.toHaveBeenCalled();
     expect(api.voice.prepareOutbound).not.toHaveBeenCalled();
   });

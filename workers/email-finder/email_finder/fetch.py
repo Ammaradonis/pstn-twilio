@@ -58,6 +58,9 @@ class Page:
     html: str
     final_url: str
     blocked: bool = False
+    # How the page was fetched: "" plain HTTP, "browser" rendered, "iphone"
+    # logged-in iPhone emulation, "desktop" logged-in desktop browser.
+    via: str = ""
 
 class Fetcher:
     def __init__(self, cache: Cache, per_host_delay: float = 1.5, use_browser: bool = True,
@@ -192,7 +195,7 @@ class Fetcher:
             return None
         cached = self.cache.get("render-v2", url)
         if cached is not None:
-            return Page(**cached)
+            return Page(**{**cached, "via": "browser"})
         context = None
         async with self._browser_lock:
             try:
@@ -205,7 +208,8 @@ class Fetcher:
                 await page.wait_for_timeout(1500)
                 html = (await page.content())[:MAX_BYTES]
                 result = Page(url, response.status if response else 200, html, page.url,
-                              bool(CHALLENGE.search(html)) or bool(response and response.status in (403, 429)))
+                              bool(CHALLENGE.search(html)) or bool(response and response.status in (403, 429)),
+                              via="browser")
                 if not result.blocked:
                     self.cache.set("render-v2", url, result.__dict__, PAGE_TTL)
                 return result
@@ -328,7 +332,7 @@ class Fetcher:
         cache_key = "mobile:" + url
         cached = self.cache.get("social-v2", cache_key)
         if cached is not None:
-            return Page(**cached)
+            return Page(**{**cached, "via": "iphone"})
         page = None
         async with self._social_context_lock:
             try:
@@ -364,7 +368,7 @@ class Fetcher:
                     or bool(CHALLENGE.search(html))
                     or bool(re.search(r"/(login|accounts/login|checkpoint)", page.url))
                 )
-                result = Page(url, 200, html, page.url, blocked)
+                result = Page(url, 200, html, page.url, blocked, via="iphone")
                 if not blocked and ("mailto:" in html or re.search(r"[\w.+-]+@[\w.-]+\.[a-z]{2,}", html)):
                     self.cache.set("social-v2", cache_key, result.__dict__, 24 * 3600)
                 return result
@@ -381,7 +385,7 @@ class Fetcher:
             return None
         cached = self.cache.get("social-v2", url)
         if cached is not None:
-            return Page(**cached)
+            return Page(**{**cached, "via": "desktop"})
         page = None
         async with self._social_context_lock:
             try:
@@ -398,7 +402,7 @@ class Fetcher:
                         await page.wait_for_timeout(500)
                 html = (await page.content())[:MAX_BYTES]
                 blocked = bool(await page.locator("input[type=password]").count()) or bool(CHALLENGE.search(html)) or bool(re.search(r"/(login|accounts/login|checkpoint)", page.url))
-                result = Page(url, 200, html, page.url, blocked)
+                result = Page(url, 200, html, page.url, blocked, via="desktop")
                 if not blocked and ("mailto:" in html or re.search(r"[\w.+-]+@[\w.-]+\.[a-z]{2,}", html)):
                     self.cache.set("social-v2", url, result.__dict__, 24 * 3600)
                 return result

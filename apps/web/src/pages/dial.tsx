@@ -11,7 +11,7 @@ import { AiAgentPanel } from '../components/ai-agent-panel';
 import { CallQualityPanel } from '../components/call-quality';
 import { EmailFinderStatus } from '../components/email-finder-status';
 import { MicrophonePicker } from '../components/microphone-picker';
-import { PostCallStatusPanel } from '../components/post-call-status-panel';
+import { postCallDraftKey, PostCallStatusPanel } from '../components/post-call-status-panel';
 import { readPersistedSpreadsheet, SpreadsheetPicker } from '../components/spreadsheet-picker';
 import { VoiceRecovery } from '../components/voice-recovery';
 import { useVoiceDevice } from '../hooks/use-voice-device';
@@ -37,6 +37,47 @@ function writeRecordCallsPreference(value: boolean): void {
     window.localStorage.setItem(RECORD_CALLS_STORAGE_KEY, String(value));
   } catch {
     // Not persisted; the toggle still applies to this page.
+  }
+}
+
+// One status panel per outbound call, from the moment it starts until its
+// statuses are pushed or it is dismissed. Kept in the browser so a reload (Chrome
+// on Android discards background tabs) does not lose them.
+const CALL_PANELS_STORAGE_KEY = 'pstn-twilio.post-call.panels';
+
+interface CallPanel {
+  id: string;
+  destinationE164: string;
+  callerE164: string;
+  /** null while the call is up. */
+  endedAt: string | null;
+}
+
+function readPersistedCallPanels(): CallPanel[] {
+  try {
+    const panels = JSON.parse(
+      window.localStorage.getItem(CALL_PANELS_STORAGE_KEY) ?? '[]',
+    ) as CallPanel[];
+    // A reload ends any call that was up, so it has ended by now.
+    const now = new Date().toISOString();
+    return panels.map((p) => ({ ...p, endedAt: p.endedAt ?? now }));
+  } catch {
+    return [];
+  }
+}
+
+function writePersistedCallPanels(panels: CallPanel[]): void {
+  try {
+    window.localStorage.setItem(CALL_PANELS_STORAGE_KEY, JSON.stringify(panels));
+    const live = new Set(panels.map((p) => postCallDraftKey(p.id)));
+    const stale: string[] = [];
+    for (let i = 0; i < window.localStorage.length; i++) {
+      const key = window.localStorage.key(i);
+      if (key && key.startsWith(postCallDraftKey('')) && !live.has(key)) stale.push(key);
+    }
+    for (const key of stale) window.localStorage.removeItem(key);
+  } catch {
+    // Not persisted; the panels still work on this page.
   }
 }
 
@@ -95,13 +136,15 @@ export function DialPage() {
   const [sheetTitle, setSheetTitle] = useState<string | null>(
     () => readPersistedSpreadsheet().sheetTitle,
   );
-  // The outbound call in progress, and the last one that ended (for the panel).
-  const outboundCallRef = useRef<{ destinationE164: string; callerE164: string } | null>(null);
-  const [endedCall, setEndedCall] = useState<{
-    destinationE164: string;
-    callerE164: string;
-    endedAt: string;
-  } | null>(null);
+  // The outbound call in progress, and the status panels (see CallPanel).
+  const outboundCallRef = useRef<Omit<CallPanel, 'endedAt'> | null>(null);
+  const [callPanels, setCallPanels] = useState<CallPanel[]>(readPersistedCallPanels);
+  const unsavedPanels = useRef(new Set<string>());
+  const trackUnsaved = useCallback((id: string, unsaved: boolean) => {
+    if (unsaved) unsavedPanels.current.add(id);
+    else unsavedPanels.current.delete(id);
+  }, []);
+  useEffect(() => writePersistedCallPanels(callPanels), [callPanels]);
 
   const voice = useVoiceDevice();
   const outboundAnalytics = useQuery({
@@ -171,19 +214,31 @@ export function DialPage() {
     setActiveCallRecorded(false);
   }, [inCallMode]);
 
-  // When an outbound call ends, open the post-call status panel for it. The
-  // hangup time is taken here so the sheet shows when the call really ended.
+  // An outbound call opens its status panel as soon as it starts, so notes can
+  // be taken during the call; the same panel gets the hangup time when it ends.
+  // Earlier panels stay only while they hold work that has not been pushed.
   const wasInCallRef = useRef(false);
   useEffect(() => {
     if (inCallMode) {
       wasInCallRef.current = true;
+      const call = outboundCallRef.current;
+      if (call) {
+        setCallPanels((prev) =>
+          prev.some((p) => p.id === call.id)
+            ? prev
+            : [...prev.filter((p) => unsavedPanels.current.has(p.id)), { ...call, endedAt: null }],
+        );
+      }
       return;
     }
     if (!wasInCallRef.current) return;
     wasInCallRef.current = false;
     const call = outboundCallRef.current;
     outboundCallRef.current = null;
-    if (call) setEndedCall({ ...call, endedAt: new Date().toISOString() });
+    if (call) {
+      const endedAt = new Date().toISOString();
+      setCallPanels((prev) => prev.map((p) => (p.id === call.id ? { ...p, endedAt } : p)));
+    }
   }, [inCallMode]);
 
   function toggleRecordCall() {
@@ -264,6 +319,7 @@ export function DialPage() {
       }
       const prepared: { current: OutboundCallPreparationDto | null } = { current: null };
       outboundCallRef.current = {
+        id: `call-${Date.now().toString(36)}`,
         destinationE164: destinationNumber,
         callerE164: selectedNumber.data.phoneNumberE164,
       };
@@ -679,17 +735,22 @@ export function DialPage() {
         )}
       </div>
 
-      {endedCall && (
+      {[...callPanels].reverse().map((panel) => (
         <PostCallStatusPanel
-          key={endedCall.endedAt}
-          destinationE164={endedCall.destinationE164}
-          callerE164={endedCall.callerE164}
-          callEndedAt={endedCall.endedAt}
+          key={panel.id}
+          callId={panel.id}
+          destinationE164={panel.destinationE164}
+          callerE164={panel.callerE164}
+          callEndedAt={panel.endedAt}
           spreadsheetId={spreadsheetId}
           sheetTitle={sheetTitle}
-          onDismiss={() => setEndedCall(null)}
+          onUnsavedChange={trackUnsaved}
+          onDismiss={() => {
+            unsavedPanels.current.delete(panel.id);
+            setCallPanels((prev) => prev.filter((p) => p.id !== panel.id));
+          }}
         />
-      )}
+      ))}
 
       <div className="space-y-2 rounded border border-slate-200 bg-white p-4">
         <h2 className="text-sm font-semibold text-slate-700">Sheet target</h2>

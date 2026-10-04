@@ -2,6 +2,7 @@
 from __future__ import annotations
 import os
 import logging
+import re
 from dataclasses import dataclass
 from pathlib import Path
 from dotenv import dotenv_values
@@ -23,6 +24,18 @@ for _env_path in (REPO_ROOT / ".env", REPO_ROOT / "env.txt"):
 _gcp_json = REPO_ROOT / "gcp-creds.json"
 if _gcp_json.exists() and not os.environ.get("GOOGLE_APPLICATION_CREDENTIALS"):
     os.environ["GOOGLE_APPLICATION_CREDENTIALS"] = str(_gcp_json)
+
+def _numbered_keys(*prefixes: str) -> tuple[str, ...]:
+    """Values of NAME, NAME2, NAME3, ... for each prefix, in that order, without
+    duplicates. env.txt holds BEAVE_API_KEY through BEAVE_API_KEY6, each with its
+    own Brave credit."""
+    found: list[tuple[int, int, str]] = []
+    for name, value in os.environ.items():
+        for rank, prefix in enumerate(prefixes):
+            m = re.fullmatch(re.escape(prefix) + r"(\d*)", name)
+            if m and value.strip():
+                found.append((rank, int(m.group(1) or 1), value.strip()))
+    return tuple(dict.fromkeys(v for _, _, v in sorted(found)))
 
 def _int(name: str, default: int) -> int:
     try:
@@ -46,6 +59,8 @@ class Settings:
     google_api_key: str | None = None
     google_cx: str | None = None
     google_daily_limit: int = 100
+    # Every Brave key found (BEAVE_API_KEY, BEAVE_API_KEY2, ... then BRAVE_API_KEY...).
+    brave_keys: tuple[str, ...] = ()
     browser_cdp_url: str | None = None
     row_timeout: int = 900
     # Vertex AI Search — unlimited fallback (GCP billing applies)
@@ -102,6 +117,7 @@ def load_settings() -> Settings:
         google_api_key=google_api_key,
         google_cx=google_cx,
         google_daily_limit=_int("EMAIL_FINDER_GOOGLE_DAILY_LIMIT", 100),
+        brave_keys=_numbered_keys("BEAVE_API_KEY", "BRAVE_API_KEY"),
         browser_cdp_url=os.environ.get("EMAIL_FINDER_BROWSER_CDP_URL") or None,
         row_timeout=min(1000, max(60, _int("EMAIL_FINDER_ROW_TIMEOUT", 900))),
         vertex_project=vertex_project,

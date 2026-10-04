@@ -25,7 +25,7 @@ async def main() -> None:
     s = load_settings()
     cache = Cache()
     fetcher = Fetcher(cache, s.per_host_delay, s.use_browser)
-    search = BraveSearch(s.brave_api_key, cache, s.brave_daily_limit)
+    search = BraveSearch.from_settings(s, cache)
     engine = Engine(fetcher, search, DomainChecker(cache), s.max_site_pages)
     for row in [r for r in load_rows(path) if needle in r.title.lower()][:3]:
         job = _Job(engine, row)

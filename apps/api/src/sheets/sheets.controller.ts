@@ -280,7 +280,14 @@ export class EmailFinderWorkerController {
   @HttpCode(200)
   results(@Body() body: unknown) {
     const parsed = finderResultsSchema.safeParse(body);
-    if (!parsed.success) throw new BadRequestException('Invalid email finder results.');
+    if (!parsed.success) {
+      // Name the fields so a worker/API version mismatch shows up in the worker log.
+      const issues = parsed.error.issues
+        .slice(0, 3)
+        .map((i) => `${i.path.join('.')}: ${i.message}`)
+        .join('; ');
+      throw new BadRequestException(`Invalid email finder results (${issues}).`);
+    }
     return this.finder.submit(parsed.data.results);
   }
 

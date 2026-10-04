@@ -32,6 +32,7 @@ from .validate import DomainChecker
 log = logging.getLogger("email_finder.worker")
 IDLE_POLL_SECONDS = 20
 HEARTBEAT_SECONDS = 45
+CACHE_MAINTENANCE_SECONDS = 3600
 PACKAGE_DIR = Path(__file__).resolve().parent
 # A restart waits until the code has been unchanged this long (an edit or
 # git pull in progress shouldn't restart the worker halfway through).
@@ -113,6 +114,7 @@ def to_result(row_id: str, f: Finding, lease_token: str) -> dict:
         "decisionMaker": f.decision_maker[:200] if f.decision_maker else None,
         "contactFormUrl": f.contact_form_url if f.contact_form_url and len(f.contact_form_url) <= 1000 else None,
         "notes": "; ".join(f.notes)[:1000] or None,
+        "method": f.method[:200] if f.method and f.email else None,
     }
 
 
@@ -162,6 +164,7 @@ async def run() -> bool:
         return False
 
     cache = Cache()
+    await asyncio.to_thread(cache.maintain, True)
     fetcher = Fetcher(
         cache,
         settings.per_host_delay,
@@ -221,6 +224,14 @@ async def run() -> bool:
                 break
 
     async def research(item: dict) -> None:
+        try:
+            await research_row(item)
+        except Exception:  # noqa: BLE001
+            # The row's lease expires and it is researched again; the worker,
+            # and the other rows in the batch, carry on.
+            log.exception("research failed for row %s", item.get("id"))
+
+    async def research_row(item: dict) -> None:
         if not item.get("leaseToken"):
             log.error("API is outdated: deploy the email finder recovery migration and API build.")
             return
@@ -229,7 +240,8 @@ async def run() -> bool:
             finding = await asyncio.wait_for(engine.find(row), timeout=settings.row_timeout)
         except asyncio.TimeoutError:
             finding = Finding(notes=["Research time limit reached; will resume using cached pages"], retry_after=1800, research_complete=False)
-        log.info("Research finished: %s (%s)", finding.status, finding.email_type or "unresolved")
+        log.info("Research finished: %s (%s)%s", finding.status, finding.email_type or "unresolved",
+                 f" — {finding.method}" if finding.method else "")
         result = to_result(item["id"], finding, item["leaseToken"])
         cache.set("outbox-v2", item["id"], {"kind": "research", "result": result}, 365 * 86400)
         await flush_outbox()
@@ -251,10 +263,14 @@ async def run() -> bool:
     backoff = IDLE_POLL_SECONDS
     started_code, rejected_code = code_stamp(), set()
     restart = False
+    maintained_at = time.monotonic()
     log.info("Email finder worker started: %d concurrent rows; search providers: %s",
              settings.concurrency, providers)
     try:
         while not stop.is_set():
+            if time.monotonic() - maintained_at > CACHE_MAINTENANCE_SECONDS:
+                await asyncio.to_thread(cache.maintain)
+                maintained_at = time.monotonic()
             # Between batches, so nothing claimed is abandoned.
             if await asyncio.to_thread(new_code_ready, started_code, rejected_code):
                 log.info("Worker code changed on disk; restarting to load it.")
@@ -272,6 +288,9 @@ async def run() -> bool:
                 batch, backoff = [], min(backoff * 2, 300)
             except httpx.HTTPError as err:
                 log.warning("API unreachable: %s", err)
+                batch, backoff = [], min(backoff * 2, 300)
+            except Exception:  # noqa: BLE001
+                log.exception("worker loop error; retrying shortly")
                 batch, backoff = [], min(backoff * 2, 300)
             if not batch:
                 await _sleep(stop, backoff)
@@ -307,7 +326,7 @@ def main() -> None:
             lockfile.seek(0)
             msvcrt.locking(lockfile.fileno(), msvcrt.LK_NBLCK, 1)
         except OSError:
-            log.info("Another email finder is already running.")
+            # Normal: the scheduled task re-launches every 10 minutes as a watchdog.
             return
         kernel = ctypes.windll.kernel32
         kernel.GetCurrentProcess.restype = wintypes.HANDLE
@@ -318,6 +337,9 @@ def main() -> None:
         restart = asyncio.run(run())
     except KeyboardInterrupt:
         restart = False
+    except Exception:
+        log.exception("email finder worker crashed; the scheduled task restarts it")
+        raise
     if restart:
         lockfile.close()  # releases the single-instance lock for the new process
         args = [sys.executable, "-m", "email_finder.worker"]

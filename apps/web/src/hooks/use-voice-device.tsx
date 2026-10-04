@@ -172,15 +172,17 @@ const INITIAL_RUNTIME_STATE: VoiceRuntimeState = {
 const NO_CALL_QUALITY = { callQuality: null, qualityWarnings: [] as string[] };
 
 const RECONNECTABLE_ERROR_CODES = new Set([
-  20101, 20104, 31005, 31009, 31203, 31204, 31205, 31207, 53001,
+  20101, 20104, 31005, 31009, 31203, 31204, 31205, 31207, 53000, 53001,
 ]);
 // Codes meaning Twilio rejected the current access token, so recovery needs a
 // fresh one. Transport errors (31005/31009) do not: the SDK re-sends its stored
 // token when the signaling socket reopens.
 const TOKEN_ERROR_CODES = new Set([20101, 20104, 31202, 31204, 31205]);
 // Signaling drops the SDK can recover from on its own. Preserve active-call
-// controls until the SDK confirms closure or the user hangs up.
-const TRANSIENT_SIGNALING_CODES = new Set([31005, 31009, 53001]);
+// controls until the SDK confirms closure or the user hangs up. 53000 is the
+// WebSocket closing abnormally (1006), which Android does to Chrome's socket
+// whenever the user switches to another app.
+const TRANSIENT_SIGNALING_CODES = new Set([31005, 31009, 53000, 53001]);
 const TOKEN_REFRESH_WINDOW_MS = 2 * 60_000;
 // An idle device can safely fail over sooner than an established call. Rotate
 // the edge order when replacing it, instead of repeatedly retrying edge one.
@@ -439,10 +441,18 @@ function formatVoiceError(err: unknown): string {
     return 'Twilio transport is unavailable (31009). The device is reconnecting through its configured signaling edges.';
   }
   if (code === 31000) {
-    return `Twilio reported a call error (31000). ${explanation || 'No further details were supplied.'}`;
+    // UnknownError's explanation is a generic "see error details"; the details
+    // are in the original error or the message the SDK built the error from.
+    const detail = [voiceError.originalError?.message, voiceError.message]
+      .map((m) => m?.replace(/^\w+ \(31000\): /, ''))
+      .find((m) => m && !/unknown error has occurred/i.test(m));
+    return `Twilio reported a call error (31000). ${detail || explanation || 'No further details were supplied.'}`;
   }
   if (code === 13224) {
-    return 'Twilio could not route this destination number (13224). Check the number before trying again.';
+    return 'The destination carrier rejected this number as not valid (13224). It is most likely disconnected or mistyped; check it in the sheet or move on to the next lead.';
+  }
+  if (code === 53000) {
+    return 'Twilio signaling connection dropped (53000). The device is reconnecting automatically.';
   }
   if (code === 31401 || isMicDeniedError(err)) {
     return 'Microphone permission was denied (31401). The browser or user blocked microphone access. Please allow microphone permissions in your browser settings (click the lock or tune icon next to the address bar) and try again.';
@@ -1077,7 +1087,10 @@ function attachCallListeners(conn: VoiceCall, prepared?: OutboundCallPreparation
     if (runtime.call !== conn) return;
     const code = getVoiceErrorCode(err) ?? 0;
     const isDenied = isMicDeniedError(err);
-    if (TRANSIENT_SIGNALING_CODES.has(code) && !isCallHangupError(err)) {
+    // The SDK reports media hiccups as 31000 without ending the call; only hang
+    // up when it says the call is no longer up.
+    const sdkKeepsCall = code === 31000 && ['open', 'reconnecting'].includes(conn.status?.() ?? '');
+    if ((TRANSIENT_SIGNALING_CODES.has(code) && !isCallHangupError(err)) || sdkKeepsCall) {
       // Keep the call usable (hangup, mute, DTMF) while the SDK restores
       // signaling; the 'disconnect' handler cleans up if recovery fails.
       setRuntimeState({ error: formatVoiceError(err) });
@@ -1180,10 +1193,20 @@ function attachDeviceListeners(device: VoiceDevice, numberId: string | undefined
       return;
     const code = getVoiceErrorCode(err);
     const isDenied = isMicDeniedError(err);
-    setRuntimeState({
-      ...callErrorState(err),
-      ...(isDenied ? { micPermission: 'denied' as const } : {}),
-    });
+    // With no call up, a signaling drop (Android closes Chrome's socket on every
+    // app switch) is shown by the Reconnecting state; a red error would only
+    // linger after the SDK recovers. A recovery that fails still reports one.
+    const idleSignalingDrop =
+      !runtime.state.active &&
+      !runtime.state.incoming &&
+      TRANSIENT_SIGNALING_CODES.has(code ?? 0) &&
+      !isCallHangupError(err);
+    if (!idleSignalingDrop) {
+      setRuntimeState({
+        ...callErrorState(err),
+        ...(isDenied ? { micPermission: 'denied' as const } : {}),
+      });
+    }
     if (TOKEN_ERROR_CODES.has(code ?? 0)) runtime.tokenRejected = true;
     if (RECONNECTABLE_ERROR_CODES.has(code ?? 0) && !isCallHangupError(err)) {
       runtime.signalingRecoveryPending = true;
@@ -1305,7 +1328,13 @@ async function makeVoiceCall(
   options: MakeCallOptions = {},
 ): Promise<VoiceCall | null> {
   if (runtime.call || runtime.state.active || runtime.state.incoming) return null;
-  if (runtime.signalingRecoveryPending || runtime.state.recoveryFailed) return null;
+  if (runtime.state.recoveryFailed) return null;
+  if (runtime.signalingRecoveryPending) {
+    setRuntimeState({
+      callNotice: 'Voice is reconnecting after the connection dropped. Try again in a moment.',
+    });
+    return null;
+  }
   clearTimer(runtime.outcomeTimer);
   runtime.outcomeTimer = null;
   runtime.callSequence += 1;

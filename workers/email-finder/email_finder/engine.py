@@ -37,10 +37,12 @@ from rapidfuzz import fuzz
 
 from . import nlp
 from .nlp import context_score_delta
-from .extract import Candidate, PageInfo, contact_like_links, emails_in_text, parse_page
+from .extract import Candidate, PageInfo, _is_profile, contact_like_links, emails_in_text, parse_page
 from .fetch import Fetcher
 from .search import BraveSearch, Result, SearchBudgetExhausted, SearchUnavailable
 from .sources import (
+    FEDERATION_SITES_BY_STYLE,
+    FEDERATION_SITES_GENERAL,
     FREE_MAIL_DOMAINS,
     LINK_IN_BIO_HOSTS,
     PLATFORM_HOSTS,
@@ -116,6 +118,8 @@ class Finding:
     searches: int = 0
     retry_after: int | None = None
     research_complete: bool = True
+    # How the chosen address was found, in words (shown on the Dial page).
+    method: str | None = None
 
     @property
     def status(self) -> str:
@@ -131,6 +135,7 @@ class _Scored:
     kind: str
     url: str
     person: nlp.Person | None = None
+    source: Candidate | None = None  # the strongest sighting of the address
 
 
 class Engine:
@@ -250,11 +255,11 @@ class _Job:
         self.site_is_schools = self.row.shared_domain_count < 3 and (
             self._domain_matches_name(self.site_host) or self._header_names_school(home.html)
         )
-        info = self._take(home.final_url, home.html)
+        info = self._take(home.final_url, home.html, home.via)
         if len(info.text) < 300 and self.e.fetcher.use_browser:
             rendered = await self.e.fetcher.render(home.final_url)
             if rendered and not rendered.blocked:
-                info = self._take(rendered.final_url, rendered.html)
+                info = self._take(rendered.final_url, rendered.html, rendered.via)
 
         # Math challenge: try to resolve inline before crawling sub-pages
         if info.challenge and info.math_answer is not None and self.e.fetcher.use_browser:
@@ -270,7 +275,7 @@ class _Job:
             if page and page.blocked:
                 self.finding.notes.append(f"Human verification required: {page.final_url}")
             elif page:
-                sub_info = self._take(page.final_url, page.html)
+                sub_info = self._take(page.final_url, page.html, page.via)
                 # Resolve math challenges on sub-pages too
                 if sub_info.challenge and sub_info.math_answer is not None and self.e.fetcher.use_browser:
                     await self._resolve_math_challenge(page.final_url, sub_info.math_answer)
@@ -282,7 +287,7 @@ class _Job:
             if contact:
                 rendered = await self.e.fetcher.render(contact)
                 if rendered and not rendered.blocked:
-                    self._take(rendered.final_url, rendered.html)
+                    self._take(rendered.final_url, rendered.html, rendered.via)
 
     async def _crawl_found_site(self, url: str) -> None:
         before_state = (self.site_host, self.site_domain, self.site_is_schools, set(self.own_domains), set(self.social))
@@ -300,7 +305,7 @@ class _Job:
         page = await self.e.fetcher.get(url)
         if not page:
             return
-        info = self._take(page.final_url, page.html)
+        info = self._take(page.final_url, page.html, page.via)
         for link, _ in info.links:
             h = _host(link)
             if host_matches(h, SOCIAL_HOSTS):
@@ -309,8 +314,10 @@ class _Job:
                 await self._crawl_site(link)
                 break
 
-    def _take(self, url: str, html: str) -> PageInfo:
+    def _take(self, url: str, html: str, via: str = "") -> PageInfo:
         info = parse_page(url, html)
+        for c in info.candidates:
+            c.via = via
         self.pages.append(info)
         self.candidates.extend(info.candidates)
         self.social |= info.social
@@ -327,7 +334,7 @@ class _Job:
     async def _resolve_math_challenge(self, url: str, answer: int) -> None:
         page = await self.e.fetcher.reveal_math(url)
         if page and not page.blocked:
-            self._take(page.final_url, page.html)
+            self._take(page.final_url, page.html, page.via)
 
     # ── logged-in FB/IG social scraping ───────────────────────────────────────
 
@@ -338,14 +345,14 @@ class _Job:
             if host_matches(host, {"facebook.com", "fb.com", "m.facebook.com"}):
                 page = await self.e.fetcher.fetch_fb_profile(social_url)
                 if page and not page.blocked:
-                    self._take(page.final_url, page.html)
+                    self._take(page.final_url, page.html, page.via)
                 elif page and page.blocked:
                     self.finding.notes.append(f"Social login or human verification required: {social_url}")
                     log.info("Scraped FB profile: %s", social_url)
             elif host_matches(host, {"instagram.com"}):
                 page = await self.e.fetcher.fetch_ig_profile(social_url)
                 if page and not page.blocked:
-                    self._take(page.final_url, page.html)
+                    self._take(page.final_url, page.html, page.via)
                 elif page and page.blocked:
                     self.finding.notes.append(f"Social login or human verification required: {social_url}")
                     log.info("Scraped IG profile: %s", social_url)
@@ -696,7 +703,8 @@ class _Job:
             town = (self.town or "").lower().replace(" ", "")
             score += 10 if town and town in local else -20
 
-        return _Scored(email=email, score=min(score, 99), kind=kind, url=best_src.url, person=named or nearby)
+        return _Scored(email=email, score=min(score, 99), kind=kind, url=best_src.url, person=named or nearby,
+                       source=best_src)
 
     def _only_named_lead(self, owner: nlp.Person | None) -> bool:
         if not self.site_is_schools or self.row.shared_domain_count >= 3 or not owner:
@@ -758,6 +766,8 @@ class _Job:
             f.decision_maker = f"{lead.name} ({lead.role})"
         if best:
             f.email, f.email_type, f.confidence, f.source_url = best.email, best.kind, best.score, best.url
+            if best.source:
+                f.method = describe_method(best.source, self.site_host, self.own_domains)
             # Search being down only defers rows with nothing to show; an address
             # from the school's own site is written now (research_complete stays False).
             f.retry_after = None
@@ -766,6 +776,49 @@ class _Job:
 
 
 # ── helpers ────────────────────────────────────────────────────────────────────
+
+AFFILIATION_HOSTS = set(FEDERATION_SITES_GENERAL) | {
+    domain for _, domains in FEDERATION_SITES_BY_STYLE for domain in domains
+}
+SOURCE_WORDS = {
+    "mailto": "mailto link",
+    "jsonld": "structured data (JSON-LD)",
+    "cf_decode": "Cloudflare-protected address (decoded)",
+    "spelled": "spelled-out address",
+    "text": "page text",
+}
+VIA_WORDS = {
+    "iphone": " via iPhone emulation",
+    "desktop": " via desktop browser",
+    "browser": " (rendered in a browser)",
+}
+
+
+def describe_method(c: Candidate, site_host: str | None, own_domains: set[str]) -> str:
+    """How an address was found, e.g. "Mailto link in the footer of the school's
+    homepage" or "Facebook contact info via iPhone emulation"."""
+    host = _host(c.url)
+    path = urlsplit(c.url).path.lower()
+    via = VIA_WORDS.get(c.via, "")
+    if c.source == "snippet":
+        return f"Search result snippet from {host}"
+    if host_matches(host, {"facebook.com", "fb.com", "m.facebook.com"}):
+        return f"Facebook {'contact info' if 'about' in path else 'page'}{via}"
+    if host_matches(host, {"instagram.com"}):
+        return f"Instagram bio text{via}"
+    if c.source == "directory":
+        kind = "Affiliation listing" if host_matches(host, AFFILIATION_HOSTS) else "Directory listing"
+        return f"{kind} on {host}"
+    if host_matches(host, LINK_IN_BIO_HOSTS):
+        return f"Link-in-bio page on {host}"
+    first = path.strip("/").split("/")[0]
+    page = f"/{first} page" if first else "homepage"
+    own = (site_host and host == site_host) or _registered(host) in own_domains
+    owner = "the school's" if own else f"{host}'s"
+    spot = f"in the footer of {owner} {page}" if c.where == "footer" else f"on {owner} {page}"
+    how = SOURCE_WORDS.get(c.source, c.source)
+    return f"{how[0].upper()}{how[1:]} {spot}{via}"
+
 
 def _team_page(url: str) -> bool:
     return bool(re.search(r"/(?:clubs?|teams?|academ(?:y|ies)|gyms?|schools?)/", urlsplit(url).path, re.I))

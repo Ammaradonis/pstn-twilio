@@ -128,3 +128,136 @@ def test_user_source_document_is_loaded_without_parsing_markdown_as_urls():
     assert {'ibjjf.com', 'worldtaekwondo.org', 'usadojo.com', 'usamartialartists.org'} <= set(request_sources())
     sites = directory_sites('GB', 'judo', 'Test Judo')
     assert 'britishjudo.org.uk' in sites and 'yell.com' in sites and 'kihapp.com' in sites
+
+
+def test_unparseable_links_are_skipped_not_fatal():
+    html = ('<a href="http://[simpay%20id=7651]/">pay</a><a href="http://[::1">x</a>'
+            '<iframe src="http://[bad"></iframe><a href="/contact">Contact</a>')
+    info = parse_page('https://dojo.org/', html)
+    assert [link for link, _ in info.links] == ['https://dojo.org/contact']
+
+
+def test_spaced_role_phrase_finds_its_weight():
+    from email_finder import nlp
+    found = nlp.people('Our school is run by Mark Davis, co - founder of the club since 1998.')
+    assert any(p.name == 'Mark Davis' and p.weight == 1.0 for p in found)
+
+
+def test_search_outage_explains_why(tmp_path):
+    async def run():
+        search = BraveSearch('key', Cache(tmp_path / 'c.db'), 10)
+        await search._client.aclose()
+        search._client = httpx.AsyncClient(transport=httpx.MockTransport(
+            lambda r: httpx.Response(402, json={'error': {'code': 'CREDIT_EXHAUSTED'}})))
+        with pytest.raises(SearchUnavailable, match='Brave credit exhausted'):
+            await search.search('dojo')
+        await search.close()
+    asyncio.run(run())
+
+
+def test_search_outage_still_delivers_site_email():
+    from email_finder.engine import _Job, _Scored
+    job = _Job.__new__(_Job)
+    job.finding = Finding(retry_after=7200, research_complete=False)
+    job.forms = []
+    async def no_people():
+        return []
+    job._people = no_people
+    best = _Scored.__new__(_Scored)
+    best.email, best.kind, best.score, best.url, best.person = 'info@dojo.org', 'business', 70, 'https://dojo.org', None
+    asyncio.run(job._finish(best))
+    result = to_result('r1', job.finding, '00000000-0000-4000-8000-000000000000')
+    assert result['status'] == 'FOUND' and result['researchComplete'] is False and 'retryAfter' not in result
+
+
+def test_cache_compresses_pages_and_drops_stale_entries(tmp_path):
+    import time as _time
+    cache = Cache(tmp_path / 'c.db')
+    page = {'html': '<p>dojo</p>' * 1000}
+    cache.set('page-v2', 'a', page, 3600)
+    stored = cache._db.execute("select v from kv where k='a'").fetchone()[0]
+    assert isinstance(stored, bytes) and len(stored) < 1000
+    assert cache.get('page-v2', 'a') == page
+    cache.set('search-v2', 'small', [1], 3600)
+    assert cache.get('search-v2', 'small') == [1]
+    cache._db.execute("insert into kv values ('page', 'old', '{}', ?)", (_time.time() + 3600,))
+    cache._db.execute("insert into kv values ('page-v2', 'expired', '{}', ?)", (_time.time() - 1,))
+    cache.set('outbox-v2', 'r1', {'kind': 'research'}, 3600)
+    cache.maintain(vacuum=True)
+    keys = {k for (k,) in cache._db.execute('select k from kv')}
+    assert keys == {'a', 'small', 'r1'}
+
+
+def test_every_numbered_brave_key_is_a_provider(tmp_path, monkeypatch):
+    from email_finder import config
+    for name in list(config.os.environ):
+        if name.startswith(('BEAVE_API_KEY', 'BRAVE_API_KEY')):
+            monkeypatch.delenv(name)
+    monkeypatch.setenv('BEAVE_API_KEY', 'k1')
+    monkeypatch.setenv('BEAVE_API_KEY3', 'k3')
+    monkeypatch.setenv('BEAVE_API_KEY2', 'k2')
+    monkeypatch.setenv('BRAVE_API_KEY', 'k1')
+    settings = config.load_settings()
+    assert settings.brave_keys == ('k1', 'k2', 'k3')
+    search = BraveSearch.from_settings(settings, Cache(tmp_path / 'c.db'))
+    assert [c for p, c, _ in search.providers if p == 'brave'] == ['k1', 'k2', 'k3']
+
+
+def test_exhausted_brave_key_falls_through_to_the_next(tmp_path):
+    async def run():
+        used = []
+        def handler(request):
+            used.append(request.headers['X-Subscription-Token'])
+            if request.headers['X-Subscription-Token'] == 'k1':
+                return httpx.Response(402, json={'error': {'code': 'CREDIT_EXHAUSTED'}})
+            return httpx.Response(200, json={'web': {'results': [{'url': 'https://dojo.org', 'title': 'Dojo', 'description': ''}]}})
+        search = BraveSearch('k1', Cache(tmp_path / 'c.db'), 10, extra_brave_keys=('k2',))
+        await search._client.aclose()
+        search._client = httpx.AsyncClient(transport=httpx.MockTransport(handler))
+        assert len(await search.search('dojo one')) == 1
+        assert len(await search.search('dojo two')) == 1
+        assert used == ['k1', 'k2', 'k2']  # k1 is skipped after its 402
+        await search.close()
+    asyncio.run(run())
+
+
+def test_no_website_fallback_collects_social_profiles():
+    from email_finder.engine import _Job, Row
+    from email_finder.search import Result
+    job = _Job.__new__(_Job)
+    job.row = Row(title='Nevada Shotokan Karate')
+    job.town, job.street, job.social = 'Las Vegas', '', set()
+    job.site_host = job.site_domain = None
+    job.country, job.forms, job.candidates, job.pages = 'US', [], [], []
+    async def query(q):
+        return [Result(url='https://www.facebook.com/nevadashotokan?ref=x', title='', snippet='')]
+    async def nothing(*args, **kwargs):
+        return None
+    job._query, job._use_results, job._decide = query, nothing, nothing
+    asyncio.run(job._search_no_website_fallback())
+    assert 'https://www.facebook.com/nevadashotokan' in job.social
+
+
+def test_method_describes_page_spot_and_fetch_mode():
+    from email_finder.engine import describe_method
+    from email_finder.extract import Candidate
+    own = {'dojo.com'}
+    def m(source, url, where='', via=''):
+        return describe_method(Candidate('a@dojo.com', source, url, '', where, via), 'www.dojo.com', own)
+    assert m('mailto', 'https://www.dojo.com/', 'footer') == "Mailto link in the footer of the school's homepage"
+    assert m('text', 'https://www.dojo.com/team/') == "Page text on the school's /team page"
+    assert m('text', 'https://www.facebook.com/dojo/about_contact_and_basic_info', via='iphone') == \
+        'Facebook contact info via iPhone emulation'
+    assert m('text', 'https://www.instagram.com/dojo/', via='iphone') == 'Instagram bio text via iPhone emulation'
+    assert m('directory', 'https://usmaf.org/schools/dojo') == 'Affiliation listing on usmaf.org'
+    assert m('directory', 'https://www.yelp.com/biz/dojo') == 'Directory listing on yelp.com'
+    assert m('snippet', 'https://www.yelp.com/biz/dojo') == 'Search result snippet from yelp.com'
+    assert m('jsonld', 'https://other.org/contact', via='browser') == \
+        "Structured data (JSON-LD) on other.org's /contact page (rendered in a browser)"
+
+
+def test_footer_addresses_are_marked():
+    html = ('<main><p>Write to coach@dojo.com</p></main>'
+            '<div class="site-footer"><a href="mailto:info@dojo.com">info@dojo.com</a></div>')
+    where = {c.email: c.where for c in parse_page('https://dojo.com/', html).candidates}
+    assert where == {'coach@dojo.com': '', 'info@dojo.com': 'footer'}

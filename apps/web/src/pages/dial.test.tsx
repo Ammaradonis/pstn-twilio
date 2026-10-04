@@ -144,6 +144,9 @@ describe('DialPage dialpad', () => {
   beforeEach(() => {
     resetVoiceMock();
     window.localStorage.removeItem('pstn-twilio.record-calls');
+    for (const key of Object.keys(window.localStorage)) {
+      if (key.startsWith('pstn-twilio.post-call.')) window.localStorage.removeItem(key);
+    }
     vi.mocked(watchRecordingDownload).mockClear();
     vi.mocked(api.calls.lastDial).mockClear();
     vi.mocked(api.calls.lastDial).mockResolvedValue(null);
@@ -428,23 +431,26 @@ describe('DialPage dialpad', () => {
     expect(screen.getByRole('button', { name: 'Paste' })).toBeDisabled();
   });
 
-  it('opens the post-call panel after an outbound call and pushes statuses in selection order', async () => {
+  const pushResult = {
+    spreadsheetId: 'ss1',
+    sheetTitle: 'Texas',
+    rowIndex: 7,
+    duplicateRows: [],
+    cellValue: 'Not interested, Voicemail, from: 8776524532, time: 9:45am on a Friday',
+    timeZone: 'America/Chicago',
+    timeZoneSource: 'zip' as const,
+    emailStatus: 'PENDING' as const,
+    emailTo: 'info@dojo.com',
+    emailTemplate: 'not-interested',
+    emailDueAt: '2026-10-02T14:45:00.000Z',
+    emailNote: null,
+  };
+
+  function dialHarness() {
     window.localStorage.setItem('pstn-twilio.sheets.spreadsheetId', 'ss1');
     window.localStorage.setItem('pstn-twilio.sheets.sheetTitle', 'Texas');
-    vi.mocked(api.sheets.push).mockResolvedValue({
-      spreadsheetId: 'ss1',
-      sheetTitle: 'Texas',
-      rowIndex: 7,
-      duplicateRows: [],
-      cellValue: 'Not interested, Voicemail, from: 8776524532, time: 9:45am',
-      timeZone: 'America/Chicago',
-      timeZoneSource: 'zip',
-      emailStatus: 'PENDING',
-      emailTo: 'info@dojo.com',
-      emailTemplate: 'not-interested',
-      emailDueAt: '2026-10-02T14:45:00.000Z',
-      emailNote: null,
-    });
+    vi.mocked(api.sheets.push).mockReset();
+    vi.mocked(api.sheets.push).mockResolvedValue(pushResult as never);
     voiceMock.current.makeCall = vi.fn(async () => ({ on: vi.fn() }));
     const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
     const page = () => (
@@ -453,21 +459,39 @@ describe('DialPage dialpad', () => {
       </QueryClientProvider>
     );
     const view = renderBase(page());
+    let calls = 0;
+    return {
+      view,
+      page,
+      async call(number: string) {
+        calls += 1;
+        fireEvent.change(screen.getByLabelText(/destination/i), { target: { value: number } });
+        fireEvent.click(screen.getByRole('button', { name: 'Call' }));
+        await waitFor(() => expect(voiceMock.current.makeCall).toHaveBeenCalledTimes(calls));
+        voiceMock.current = { ...voiceMock.current, active: true, connectionState: 'open' };
+        view.rerender(page());
+      },
+      hangUp() {
+        voiceMock.current = { ...voiceMock.current, active: false, connectionState: 'closed' };
+        view.rerender(page());
+      },
+    };
+  }
+
+  it('opens the status panel when a call starts and pushes statuses in selection order', async () => {
+    const dial = dialHarness();
     await screen.findByText(/Caller ID:/);
 
-    fireEvent.change(screen.getByLabelText(/destination/i), { target: { value: '+12547024877' } });
-    fireEvent.click(screen.getByRole('button', { name: 'Call' }));
-    await waitFor(() => expect(voiceMock.current.makeCall).toHaveBeenCalled());
-    voiceMock.current = { ...voiceMock.current, active: true, connectionState: 'open' };
-    view.rerender(page());
-    expect(screen.queryByRole('region', { name: /post-call status/i })).toBeNull();
-    voiceMock.current = { ...voiceMock.current, active: false, connectionState: 'closed' };
-    view.rerender(page());
-
+    await dial.call('+12547024877');
+    // Notes can be taken during the call; pushing waits for the hangup time.
     const panel = await screen.findByRole('region', { name: /post-call status/i });
     expect(panel).toHaveTextContent('2547024877');
-    // Pick Voicemail, then Not interested, then re-pick Voicemail: it moves last.
+    expect(panel).toHaveTextContent(/in progress/i);
     fireEvent.click(screen.getByRole('button', { name: 'Voicemail' }));
+    expect(screen.getByRole('button', { name: 'Push' })).toBeDisabled();
+
+    dial.hangUp();
+    // Pick Voicemail, then Not interested, then re-pick Voicemail: it moves last.
     fireEvent.click(screen.getByRole('button', { name: 'Not interested' }));
     fireEvent.click(screen.getByRole('button', { name: 'Voicemail' }));
     fireEvent.click(screen.getByRole('button', { name: 'Voicemail' }));
@@ -487,5 +511,68 @@ describe('DialPage dialpad', () => {
     );
     expect(await screen.findByText(/Row 7 of Texas updated/)).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Push again (overwrites)' })).toBeInTheDocument();
+  });
+
+  it('keeps notes typed during the next call through its hangup', async () => {
+    const dial = dialHarness();
+    await screen.findByText(/Caller ID:/);
+
+    // Call one: push its status.
+    await dial.call('+12547024877');
+    dial.hangUp();
+    fireEvent.click(await screen.findByRole('button', { name: 'Voicemail' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Push' }));
+    expect(await screen.findByText(/Row 7 of Texas updated/)).toBeInTheDocument();
+
+    // Call two: take notes while it rings, then hang up.
+    await dial.call('+12145550123');
+    const during = await screen.findByRole('region', { name: /post-call status/i });
+    expect(during).toHaveTextContent('2145550123');
+    fireEvent.change(screen.getByLabelText(/custom explanation/i), {
+      target: { value: 'owner is Coach Mike' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'Has a receptionist' }));
+    dial.hangUp();
+
+    const after = screen.getByRole('region', { name: /post-call status/i });
+    expect(after).toHaveTextContent('2145550123');
+    expect(screen.getByLabelText(/custom explanation/i)).toHaveValue('owner is Coach Mike');
+    fireEvent.click(screen.getByRole('button', { name: 'Push' }));
+    await waitFor(() =>
+      expect(api.sheets.push).toHaveBeenLastCalledWith(
+        expect.objectContaining({
+          destinationE164: '+12145550123',
+          orderedTags: ['Has a receptionist'],
+          customNote: 'owner is Coach Mike',
+        }),
+      ),
+    );
+  });
+
+  it('keeps an unpushed panel next to the next call and restores drafts after a reload', async () => {
+    const dial = dialHarness();
+    await screen.findByText(/Caller ID:/);
+
+    await dial.call('+12547024877');
+    dial.hangUp();
+    fireEvent.change(await screen.findByLabelText(/custom explanation/i), {
+      target: { value: 'call back Tuesday' },
+    });
+
+    await dial.call('+12145550123');
+    const panels = screen.getAllByRole('region', { name: /post-call status/i });
+    expect(panels).toHaveLength(2);
+    expect(panels[0]).toHaveTextContent('2145550123');
+    expect(panels[1]).toHaveTextContent('2547024877');
+    dial.hangUp();
+
+    // Chrome on Android can discard and reload the tab while the user is in Sheets.
+    dial.view.unmount();
+    resetVoiceMock();
+    dialHarness();
+    await screen.findByText(/Caller ID:/);
+    const restored = screen.getAllByRole('region', { name: /post-call status/i });
+    expect(restored).toHaveLength(2);
+    expect(screen.getAllByLabelText(/custom explanation/i)[1]).toHaveValue('call back Tuesday');
   });
 });

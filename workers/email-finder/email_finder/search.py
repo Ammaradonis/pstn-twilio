@@ -117,7 +117,7 @@ class BraveSearch:
                  google_api_key: str | None = None, google_cx: str | None = None,
                  google_daily_limit: int = 100,
                  vertex_project: str | None = None, vertex_data_store: str | None = None,
-                 vertex_location: str = "global") -> None:
+                 vertex_location: str = "global", extra_brave_keys: tuple[str, ...] = ()) -> None:
         self.cache = cache
         # Each entry: (provider_name, credential_or_None, daily_limit)
         # For vertex the "credential" field is unused (uses ADC); None is fine.
@@ -130,9 +130,12 @@ class BraveSearch:
         elif google_api_key:
             log.info("GOOGLE_SEARCH_ENGINE_ID not set; Google CSE skipped.")
 
-        # 2. Brave / BEAVE
+        # 2. Brave / BEAVE: every distinct key, each with its own credit and
+        #    daily budget; a key that runs out (402) is skipped for an hour.
         seen: set[str] = set()
-        for key, limit in ((beave_api_key, beave_daily_limit), (api_key, daily_limit)):
+        keys = ((beave_api_key, beave_daily_limit), (api_key, daily_limit),
+                *((k, beave_daily_limit) for k in extra_brave_keys))
+        for key, limit in keys:
             if key and key not in seen:
                 self.providers.append(("brave", key, limit))
                 seen.add(key)
@@ -159,6 +162,7 @@ class BraveSearch:
             vertex_project=getattr(settings, "vertex_project", None),
             vertex_data_store=getattr(settings, "vertex_data_store", None),
             vertex_location=getattr(settings, "vertex_location", "global"),
+            extra_brave_keys=getattr(settings, "brave_keys", ()),
         )
 
     @classmethod

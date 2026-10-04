@@ -89,6 +89,8 @@ class Candidate:
     source: str  # mailto | text | spelled | jsonld | snippet | cf_decode
     url: str
     context: str
+    where: str = ""  # "footer" when the address appears in the page footer
+    via: str = ""  # how the page was fetched (fetch.Page.via)
 
 
 @dataclass
@@ -204,6 +206,10 @@ def parse_page(url: str, html: str) -> PageInfo:
         tag.decompose()
 
     jsonld_blocks = [t.get_text() for t in soup.find_all("script", type="application/ld+json")]
+    footer_text = " ".join(
+        f.get_text(" ", strip=True)
+        for f in soup.select('footer, [role="contentinfo"], [id*="footer" i], [class*="footer" i]')
+    ).lower()
     for t in soup.find_all("script"):
         t.decompose()
     text = soup.get_text(" ", strip=True)
@@ -247,6 +253,11 @@ def parse_page(url: str, html: str) -> PageInfo:
         src = _absolute(url, frame["src"])
         if src and form_host(src):
             info.forms.append(src)
+
+    if footer_text:
+        for c in info.candidates:
+            if c.email.lower() in footer_text:
+                c.where = "footer"
 
     # Math challenge detection
     if CHALLENGE_RE.search(text):
