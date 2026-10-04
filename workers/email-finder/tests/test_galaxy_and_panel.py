@@ -59,7 +59,15 @@ class FakePhone(Galaxy):
     async def available(self):
         return True
 
+    async def _run(self, *args, timeout=25, tries=3):
+        return ""
+
     async def _shell(self, command, timeout=25):
+        self.commands.append(command)
+        return ""
+
+    async def _input(self, command, timeout=15):
+        # Taps, swipes and keys: recorded the same way, and never retried.
         self.commands.append(command)
         return ""
 
@@ -106,7 +114,9 @@ def test_the_real_contact_sheet_gives_address_and_phone_without_opening_an_email
     assert "input keyevent KEYCODE_BACK" in phone.commands  # the sheet is closed again
 
 
-def test_a_challenge_screen_is_never_touched_and_pauses_the_app(tmp_path, monkeypatch):
+def test_a_challenge_screen_is_never_touched_and_stops_the_phone(tmp_path, monkeypatch):
+    """A challenge pauses that app for 12 h *and* takes the phone out of the
+    worker's hands: it is the loudest signal the account ever gets."""
     _quick(monkeypatch)
     phone = FakePhone(tmp_path, [PROFILE_WITH_CONTACT],
                       foreground=f"{IG}/com.instagram.challenge.activity.ChallengeActivity")
@@ -114,8 +124,21 @@ def test_a_challenge_screen_is_never_touched_and_pauses_the_app(tmp_path, monkey
     assert found.blocked and not found.emails
     assert not any(c.startswith("input tap") for c in phone.commands)
     assert phone.paused_for("instagram") > 11 * 3600
+    assert phone.phone_paused_for() > 11 * 3600
     again = asyncio.run(phone.instagram("someone_else"))
-    assert again.blocked == "paused" and phone.paused_for("facebook") == 0
+    assert again.blocked == "the phone is paused after a security check"
+    assert phone.paused_for("facebook") == 0  # only the app that showed it is paused
+
+
+def test_the_phone_wide_stop_can_be_turned_off(tmp_path, monkeypatch):
+    _quick(monkeypatch)
+    phone = FakePhone(tmp_path, [PROFILE_WITH_CONTACT],
+                      foreground=f"{IG}/com.instagram.challenge.activity.ChallengeActivity")
+    phone.ambient.stop_lookups_on_challenge = False
+    asyncio.run(phone.instagram("calsma_official"))
+    assert phone.paused_for("instagram") > 11 * 3600
+    assert phone.phone_paused_for() == 0
+    assert asyncio.run(phone.instagram("someone_else")).blocked == "paused"
 
 
 def test_facebook_app_reads_the_page_then_its_about_tab(tmp_path, monkeypatch):

@@ -198,7 +198,8 @@ async def run() -> bool:
     galaxy = None
     adb = find_adb() if settings.galaxy else None
     if adb:
-        galaxy = Galaxy(cache, adb, settings.galaxy_serial, settings.galaxy_daily_limit)
+        galaxy = Galaxy(cache, adb, settings.galaxy_serial, settings.galaxy_daily_limit,
+                        ambient=settings.ambient)
         ready = await galaxy.available()
         log.info("Galaxy A20e backup for Facebook/Instagram: %s", "ready" if ready else
                  "not connected or locked right now (checked again before each use)")
@@ -286,6 +287,15 @@ async def run() -> bool:
 
     beat = asyncio.create_task(heartbeat_loop())
     forms = asyncio.create_task(form_loop())
+    if galaxy is not None and galaxy.start_ambient():
+        caps = ", ".join(f"{name} {getattr(settings.ambient, field)}/day"
+                         for name, field in (("likes", "likes_per_day"), ("follows", "follows_per_day"),
+                                             ("interest", "interests_per_day"))
+                         if getattr(settings.ambient, name.rstrip("s"), True))
+        log.info("Ambient Reels session on the Galaxy A20e (%s); quiet hours %s; a security check "
+                 "stops the phone for %d h.", caps or "no engagement",
+                 f"{settings.ambient.quiet_hours[0]:02d}:00-{settings.ambient.quiet_hours[1]:02d}:00"
+                 if settings.ambient.quiet_hours else "none", settings.ambient.cap_hours)
     backoff = IDLE_POLL_SECONDS
     started_code, rejected_code = code_stamp(), set()
     restart = False
@@ -328,6 +338,8 @@ async def run() -> bool:
         stop.set()
         beat.cancel()
         forms.cancel()
+        if galaxy is not None:
+            await galaxy.stop_ambient()
         await asyncio.gather(beat, forms, return_exceptions=True)
         await api.close()
         if google:

@@ -3,9 +3,11 @@ from __future__ import annotations
 import os
 import logging
 import re
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 from dotenv import dotenv_values
+
+from .ambient import AmbientSettings, ambient_settings
 
 WORKER_DIR = Path(__file__).resolve().parent.parent
 REPO_ROOT = WORKER_DIR.parent.parent
@@ -89,6 +91,9 @@ class Settings:
     galaxy: bool = True
     galaxy_serial: str | None = None
     galaxy_daily_limit: int = 150
+    # What the phone watches between lookups (ambient.py): the Reels session,
+    # its engagement actions, and the caps that bound them.
+    ambient: AmbientSettings = field(default_factory=ambient_settings)
     # Vertex AI Search — unlimited fallback (GCP billing applies)
     vertex_project: str | None = None
     vertex_data_store: str | None = None
@@ -158,6 +163,7 @@ def load_settings() -> Settings:
         galaxy=(os.environ.get("EMAIL_FINDER_GALAXY") or "on").strip().lower() not in ("off", "0", "no"),
         galaxy_serial=os.environ.get("EMAIL_FINDER_GALAXY_SERIAL") or None,
         galaxy_daily_limit=_int("EMAIL_FINDER_GALAXY_DAILY_LIMIT", 150),
+        ambient=ambient_settings(),
         vertex_project=vertex_project,
         vertex_data_store=vertex_data_store,
         vertex_location=vertex_location,

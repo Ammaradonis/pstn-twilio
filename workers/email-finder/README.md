@@ -76,14 +76,29 @@ depend on the worker.
   for the school's name and town. When it finds the school, the paid directory
   and federation searches are skipped: it covers those sites for free.
 - The user's Samsung Galaxy A20e (USB debugging, adb from
-  `%LOCALAPPDATA%Androidplatform-tools`) is the backup to the browser, not a
+  `%LOCALAPPDATA%\Android\platform-tools`) is the backup to the browser, not a
   replacement: when Facebook or Instagram block the browser, are paused, have
   used up the day's page loads, or the browser found no address, the profile is
   opened in the real app. The Instagram app has the Contact button the website
   lacks. The phone only reads the screen and taps the profile's own buttons;
-  it never types or sends, and on a security challenge or login screen it stops
-  and leaves that app alone for 12 hours. A find made there says "on the Galaxy
-  A20e" in its method and in the Dial page notification.
+  it never types or sends, and on a security challenge or login screen it stops,
+  leaves that app alone for 12 hours and — unless
+  `EMAIL_FINDER_AMBIENT_STOP_LOOKUPS=off` — takes the phone out of the worker's
+  hands entirely, because a challenge is the loudest signal the account gets.
+  A find made there says "on the Galaxy A20e" in its method and in the Dial page
+  notification.
+- Between lookups the phone watches Reels, so the account looks like what it is
+  logged in as rather than like something that only ever opens profiles. The
+  session scrolls with randomised gestures, watches each reel for a drawn
+  log-normal time, and now and then — at rates drawn from a per-session mood,
+  and bounded by per-hour and per-day caps — likes a reel with a double tap,
+  follows the author, marks "Interested"/"Not interested", or taps to pause.
+  A lookup preempts it at the next gesture, so the profile visit reads as part
+  of the same session; afterwards the phone goes back to the reels instead of
+  Home. It never comments, messages, shares, saves or unfollows, and in the
+  overflow menu — which also holds Report and Unfollow — it taps only an exact
+  label it knows and presses Back otherwise. Every action that changes something
+  is taken only after a freshly dumped screen confirms the button is there.
 - Search every configured source group: general directories, country/style
   federations, association school registers, public tournament/team pages and
   owner references. Domains in the root `email-hunt.txt` are loaded at runtime.
@@ -160,6 +175,15 @@ not logged, because Google puts its key in the query string.
 | EMAIL_FINDER_SOCIAL_DAILY_LIMIT                                 | Facebook and Instagram page loads a day, each, default 200, 12-25 seconds apart                                                                           |
 | EMAIL_FINDER_GALAXY / EMAIL_FINDER_GALAXY_SERIAL                | Galaxy A20e backup on/off (default on when adb finds it) and its adb serial                                                                               |
 | EMAIL_FINDER_GALAXY_DAILY_LIMIT                                 | Profiles looked up on the phone a day, default 150, 10-20 seconds apart                                                                                   |
+| EMAIL_FINDER_AMBIENT                                            | Reels session on the phone between lookups, default on                                                                                                    |
+| EMAIL_FINDER_AMBIENT_LIKE / \_FOLLOW / \_INTEREST / \_PAUSE     | Which engagement actions the session may take; each defaults on, set `off` to disable one                                                                 |
+| EMAIL_FINDER_AMBIENT_LIKES_PER_HOUR / \_PER_DAY                 | Likes allowed, default 30 an hour and 180 a day                                                                                                           |
+| EMAIL_FINDER_AMBIENT_FOLLOWS_PER_HOUR / \_PER_DAY               | Follows allowed, default 4 an hour and 25 a day                                                                                                           |
+| EMAIL_FINDER_AMBIENT_INTERESTS_PER_HOUR / \_PER_DAY             | "Interested" / "Not interested" marks, default 12 an hour and 60 a day                                                                                    |
+| EMAIL_FINDER_AMBIENT_GESTURES_PER_DAY / \_SLICES_PER_DAY        | Scroll gestures and phone slices a day, default 1500 and 180                                                                                              |
+| EMAIL_FINDER_AMBIENT_INTEREST_POSITIVE_ODDS                     | Share of marks that are "Interested" rather than "Not interested", default 0.6                                                                            |
+| EMAIL_FINDER_AMBIENT_QUIET_HOURS                                | Local hours to leave the phone alone, default `2-7`; `off` to allow all hours                                                                             |
+| EMAIL_FINDER_AMBIENT_STOP_LOOKUPS / \_CHALLENGE_HOURS           | A challenge silences the whole phone, not just that app (default on), for 12 hours                                                                        |
 | EMAIL_FINDER_CSE_DAILY_LIMIT                                    | Programmable Search Engine queries a day, default 200                                                                                                     |
 | EMAIL_FINDER_BEAVE_DAILY_LIMIT / EMAIL_FINDER_BRAVE_DAILY_LIMIT | Per-key Brave ceilings, default 300 each; identical keys share a ceiling                                                                                  |
 | EMAIL_FINDER_CONCURRENCY                                        | Parallel rows, default 2, maximum 4                                                                                                                       |
