@@ -63,6 +63,12 @@ class Settings:
     brave_keys: tuple[str, ...] = ()
     browser_cdp_url: str | None = None
     row_timeout: int = 900
+    # Free Google search in a browser (google_free.py): "bare" runs it before
+    # Brave for rows with no website or social profile, "all" for every row.
+    google_free: str = "bare"
+    google_free_daily_limit: int = 150
+    # cookies.txt export whose google.com cookies sign the search browser in.
+    google_cookies: Path | None = None
     # Vertex AI Search — unlimited fallback (GCP billing applies)
     vertex_project: str | None = None
     vertex_data_store: str | None = None
@@ -99,6 +105,12 @@ def load_settings() -> Settings:
         or "sotftphone_1790865491347"  # from env.txt Vertex_AI_Search_APP_ID
     )
     vertex_location = os.environ.get("VERTEX_AI_LOCATION") or "global"
+    google_free = (os.environ.get("EMAIL_FINDER_GOOGLE_FREE") or "bare").strip().lower()
+    cookies = (os.environ.get("EMAIL_FINDER_GOOGLE_COOKIES") or "").strip()
+    google_cookies = None
+    if cookies.lower() not in ("off", "none", "0"):
+        candidate = Path(cookies) if cookies else REPO_ROOT / "cookies.txt"
+        google_cookies = candidate if candidate.is_file() else None
 
     return Settings(
         api_base=(os.environ.get("EMAIL_FINDER_API_BASE") or os.environ.get("PUBLIC_BASE_URL")
@@ -120,6 +132,9 @@ def load_settings() -> Settings:
         brave_keys=_numbered_keys("BEAVE_API_KEY", "BRAVE_API_KEY"),
         browser_cdp_url=os.environ.get("EMAIL_FINDER_BROWSER_CDP_URL") or None,
         row_timeout=min(1000, max(60, _int("EMAIL_FINDER_ROW_TIMEOUT", 900))),
+        google_free=google_free if google_free in ("bare", "all", "off") else "bare",
+        google_free_daily_limit=_int("EMAIL_FINDER_GOOGLE_FREE_DAILY_LIMIT", 150),
+        google_cookies=google_cookies,
         vertex_project=vertex_project,
         vertex_data_store=vertex_data_store,
         vertex_location=vertex_location,

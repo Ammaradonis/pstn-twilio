@@ -4,7 +4,8 @@
  * Selecting a tab queues its rows that have no email yet; the worker on the
  * user's PC researches them in the background and fills the email,
  * emailType, emailSource, decisionMaker and contactForm columns. Calls are
- * never interrupted: the work happens on the PC, not in this page.
+ * never interrupted: the work happens on the PC, not in this page. Each
+ * address found also pops up bottom left (EmailFinderToasts).
  */
 
 import type { EmailFinderStatusDto } from '@pstn-twilio/shared';
@@ -13,12 +14,28 @@ import { useEffect } from 'react';
 
 import { api } from '../lib/api-client';
 
+import { EmailFinderToasts } from './email-finder-toasts';
+
 interface Props {
   spreadsheetId: string;
   sheetTitle: string;
 }
 
 export function EmailFinderStatus({ spreadsheetId, sheetTitle }: Props) {
+  const status = useEmailFinderStatus(spreadsheetId, sheetTitle);
+  return (
+    <>
+      <StatusPanel {...status} />
+      <EmailFinderToasts
+        spreadsheetId={spreadsheetId}
+        sheetTitle={sheetTitle}
+        recent={status.data?.recentFinds}
+      />
+    </>
+  );
+}
+
+function useEmailFinderStatus(spreadsheetId: string, sheetTitle: string) {
   const queryClient = useQueryClient();
   const key = ['email-finder', spreadsheetId, sheetTitle];
 
@@ -46,6 +63,10 @@ export function EmailFinderStatus({ spreadsheetId, sheetTitle }: Props) {
     onSuccess: (data) => queryClient.setQueryData(key, data),
   });
 
+  return { start, data: status.data ?? start.data, toggle };
+}
+
+function StatusPanel({ start, data, toggle }: ReturnType<typeof useEmailFinderStatus>) {
   if (start.isError) {
     return (
       <p className="text-xs text-rose-700">
@@ -53,7 +74,7 @@ export function EmailFinderStatus({ spreadsheetId, sheetTitle }: Props) {
       </p>
     );
   }
-  const s: EmailFinderStatusDto | undefined = status.data ?? start.data;
+  const s: EmailFinderStatusDto | undefined = data;
   if (!s) return <p className="text-xs text-slate-400">Email finder: preparing this tab…</p>;
 
   const pct = s.total ? Math.round((s.done / s.total) * 100) : 100;

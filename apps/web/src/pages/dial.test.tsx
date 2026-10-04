@@ -58,6 +58,10 @@ vi.mock('../lib/recording-downloads', () => ({
   watchRecordingDownload: vi.fn(),
 }));
 
+vi.mock('../lib/realtime', () => ({
+  getSocket: () => ({ on: vi.fn(), off: vi.fn() }),
+}));
+
 vi.mock('../hooks/use-voice-device', () => ({
   useVoiceDevice: () => voiceMock.current,
 }));

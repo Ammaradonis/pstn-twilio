@@ -1,4 +1,10 @@
-import type { AiCallDto, CallDto, PhoneNumberDto, SmsMessageDto } from '../dto/index';
+import type {
+  AiCallDto,
+  CallDto,
+  EmailFinderFindDto,
+  PhoneNumberDto,
+  SmsMessageDto,
+} from '../dto/index';
 
 export const WS_EVENTS = {
   // server → client
@@ -12,6 +18,7 @@ export const WS_EVENTS = {
   CALL_OUTBOUND_STARTED: 'call.outbound.started',
   CALL_STATUS_UPDATED: 'call.status.updated',
   AI_CALL_UPDATED: 'ai-call.updated',
+  EMAIL_FINDER_FOUND: 'email-finder.found',
   TWILIO_WEBHOOK_ERROR: 'twilio.webhook.error',
   SYSTEM_HEALTH_CHANGED: 'system.health.changed',
 
@@ -45,6 +52,10 @@ export interface WsTwilioWebhookErrorEvent {
 
 export interface WsAiCallEvent {
   aiCall: AiCallDto;
+}
+
+export interface WsEmailFinderFoundEvent {
+  find: EmailFinderFindDto;
 }
 
 export interface WsSystemHealthEvent {

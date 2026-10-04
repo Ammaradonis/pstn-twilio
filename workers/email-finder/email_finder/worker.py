@@ -25,6 +25,7 @@ from .config import CACHE_DIR, load_settings
 from .engine import Engine, Finding, Row
 from .fetch import Fetcher
 from .forms import FormSender
+from .google_free import GoogleFreeSearch
 from . import nlp
 from .search import BraveSearch
 from .validate import DomainChecker
@@ -177,7 +178,17 @@ async def run() -> bool:
         providers = ", ".join(p[0] for p in search.providers)
     else:
         providers = "disabled"
-    engine = Engine(fetcher, search, DomainChecker(cache), settings.max_site_pages)
+    google = None
+    if settings.google_free != "off" and settings.google_free_daily_limit > 0:
+        # Its own Playwright driver: the fetcher's browser shutdown stops the
+        # shared driver, which used to abort a search mid-query.
+        google = GoogleFreeSearch(cache, daily_limit=settings.google_free_daily_limit,
+                                  use_browser=settings.use_browser, cookies_file=settings.google_cookies)
+        rows = "rows with no website or social profile" if settings.google_free == "bare" else "every row"
+        how = f" (signed in via {settings.google_cookies.name})" if settings.google_cookies else ""
+        providers = f"free Google{how} first for {rows}, then {providers}"
+    engine = Engine(fetcher, search, DomainChecker(cache), settings.max_site_pages,
+                    google=google, google_mode=settings.google_free)
     log.info("Scoring weights loaded: decision=%s own_domain=%s free_mail_with_own=%s minimum=%s",
              engine.scoring.decision_bonus, engine.scoring.own_domain_bonus,
              engine.scoring.free_mail_with_own_bonus, engine.scoring.minimum_score)
@@ -293,6 +304,8 @@ async def run() -> bool:
                 log.exception("worker loop error; retrying shortly")
                 batch, backoff = [], min(backoff * 2, 300)
             if not batch:
+                if google:
+                    await google.close_idle()
                 await _sleep(stop, backoff)
                 continue
             await asyncio.gather(*(research(item) for item in batch))
@@ -302,6 +315,8 @@ async def run() -> bool:
         forms.cancel()
         await asyncio.gather(beat, forms, return_exceptions=True)
         await api.close()
+        if google:
+            await google.close()
         await fetcher.close()
         await search.close()
         log.info("email finder worker stopped")

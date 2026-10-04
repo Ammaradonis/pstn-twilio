@@ -8,10 +8,14 @@ Strategy, cheapest first, stopping once a decision maker's address is solid:
      - Math-challenge reveals: if a page gates the email behind "Solve 3+4",
        the engine calculates the answer, types it into the input field, and
        re-reads the page.
-  2. Search (Brave → BEAVE fallback) for the school by name + town:
-     snippets frequently quote the email from Google/Facebook/Instagram/
-     directory listings; finds the website when the sheet has none (or only
-     a Facebook page).
+  2. Search for the school by name + town: snippets frequently quote the
+     email from Google/Facebook/Instagram/directory listings; finds the
+     website when the sheet has none (or only a Facebook page).
+     When there's nothing to go on (no website, no Facebook/Instagram,
+     nothing from a listing), every search runs on free Google first
+     (google_free.py, GOOGLE-FREE-SEARCH.txt), plus Google-only queries
+     (free-mail addresses, the phone number, owner mentions, the street).
+     Brave keys are used only if that finds no address or Google is paused.
   3. Logged-in Facebook and Instagram profile scraping (uses the user's
      own Chrome profile — already signed in).  FB About/Contact Info tab,
      IG bio + Contact button dropdown.
@@ -39,6 +43,7 @@ from . import nlp
 from .nlp import context_score_delta
 from .extract import Candidate, PageInfo, _is_profile, contact_like_links, emails_in_text, parse_page
 from .fetch import Fetcher
+from .google_free import GoogleBlocked, GoogleFreeSearch, GoogleUnavailable
 from .search import BraveSearch, Result, SearchBudgetExhausted, SearchUnavailable
 from .sources import (
     FEDERATION_SITES_BY_STYLE,
@@ -79,6 +84,12 @@ DESIGNER_CONTEXT = re.compile(
     re.I,
 )
 SOURCE_BASE = {"mailto": 40, "jsonld": 38, "cf_decode": 36, "text": 34, "spelled": 34, "snippet": 26, "directory": 24}
+
+# A bare row whose free Google pass couldn't answer (the browser was slow or
+# torn down) waits this long and is researched again; Brave is not paid for it.
+RETRY_WHEN_GOOGLE_STALLS = 600
+# google_free.py's wording when free search is paused after Google refused.
+PAUSED = re.compile(r"paused|resumes in", re.I)
 
 # Google Forms host patterns
 GOOGLE_FORMS_HOSTS = ("docs.google.com", "forms.gle")
@@ -140,9 +151,13 @@ class _Scored:
 
 class Engine:
     def __init__(self, fetcher: Fetcher, search: BraveSearch, domains: DomainChecker, max_site_pages: int = 8,
-                 *, scoring: ScoreWeights | None = None, people_executor=None):
+                 *, scoring: ScoreWeights | None = None, people_executor=None,
+                 google: GoogleFreeSearch | None = None, google_mode: str = "bare"):
         self.fetcher = fetcher
         self.search = search
+        # Free Google before Brave: "bare" rows only (default), "all" rows, or "off".
+        self.google = google
+        self.google_mode = google_mode
         self.domains = domains
         self.max_site_pages = max_site_pages
         self.scoring = scoring if scoring is not None else load_weights()
@@ -183,6 +198,14 @@ class _Job:
         if row.website and not host_matches(_host(row.website), SOCIAL_HOSTS | LINK_IN_BIO_HOSTS):
             self.own_domains.add(_registered(_host(row.website)))
         self.finding = Finding()
+        # Search engine that led to a site, profile or listing (see _origin_key).
+        self.discovered_by: dict[str, str] = {}
+        self._free_only = False  # searches go to free Google only (the Google pass)
+        self._google_blocked = False
+        self._google_answered = False  # free Google replied (a result or "none")
+        self._google_stalled = False  # free Google couldn't answer this row
+        self._google_stall_logged = False
+        self._scraped: set[str] = set()
 
     # ── orchestration ─────────────────────────────────────────────────────────
 
@@ -200,21 +223,34 @@ class _Job:
             await self._crawl_site(site)
 
         best = await self._decide()
-        if self.e.search.enabled:
+        free_route = self._google_first()
+        if free_route:
+            # One free pass, then: an answer is used, and a failure of ours is
+            # deferred rather than paid for. Every query in the row has then been
+            # asked of Google before any Brave credit is considered.
+            best = await self._google_pass()
+            if not best and self.social:
+                # Profiles Google turned up are read before paying for a search.
+                await self._scrape_social_profiles()
+                best = await self._decide()
+            if not best and self._google_stalled and not self._google_answered and not self._google_blocked:
+                # Free Google never managed to answer (a slow load or a
+                # torn-down browser). These rows exist to be served by the free
+                # pass, so the row waits for it rather than spending Brave
+                # credits here; the next run retries Google first.
+                self.finding.research_complete = False
+                self.finding.retry_after = RETRY_WHEN_GOOGLE_STALLS
+                await self._finish(best)
+                return self.finding
+        # Anything the free pass answered skips Brave: one address is the goal,
+        # and these rows exist to be served before any credit is spent. A bare
+        # row whose free pass never got an answer was already deferred above, so
+        # reaching here with no answer means Google said "none" or refused.
+        if not best and self.e.search.enabled and (
+            not free_route or self._google_blocked or self._google_answered
+        ):
             try:
-                # Core search stages, cheapest first
-                stages = [
-                    self._search_general,
-                    self._search_social,
-                    self._search_directories,
-                    self._search_federations,
-                ]
-                # Add the no-website fallback when the sheet row has no real site
-                has_real_site = bool(self.row.website) and not self.social
-                if not has_real_site or not self.site_host:
-                    stages.append(self._search_no_website_fallback)
-
-                for stage in stages:
+                for stage in self._search_stages():
                     if best and best.kind == "decision-maker" and best.score >= 85:
                         break
                     await stage()
@@ -225,7 +261,7 @@ class _Job:
                 midnight = (now + timedelta(days=1)).replace(hour=0, minute=0, second=5, microsecond=0)
                 self.finding.retry_after = min(86400, max(60, int((midnight - now).total_seconds()))) if isinstance(err, SearchBudgetExhausted) else 7200
                 self.finding.notes.append(str(err))
-        elif not best or best.kind != "decision-maker":
+        elif not best and not free_route:
             self.finding.research_complete = False
             self.finding.notes.append("Search not configured; website-only research")
 
@@ -235,6 +271,43 @@ class _Job:
 
         await self._finish(best)
         return self.finding
+
+    def _search_stages(self) -> list:
+        stages = [self._search_general, self._search_social, self._search_directories, self._search_federations]
+        # The no-website fallback, when the sheet row has no real site.
+        has_real_site = bool(self.row.website) and not self.social
+        if not has_real_site or not self.site_host:
+            stages.append(self._search_no_website_fallback)
+        return stages
+
+    def _google_first(self) -> bool:
+        """Free Google before Brave: in "bare" mode (the default) only when
+        there's nothing to go on yet — no website, no Facebook/Instagram,
+        no address from a listing; in "all" mode for every row.
+
+        False whenever free Google is off, so a row is never left with no
+        search at all."""
+        google = self.e.google
+        if google is None or not google.enabled or self.e.google_mode not in ("bare", "all"):
+            return False
+        return self.e.google_mode == "all" or not (self.site_host or self.social or self.candidates)
+
+    async def _google_pass(self) -> _Scored | None:
+        """The Google-only queries, then every usual stage, all on free Google."""
+        self._free_only = True
+        self._google_answered = False
+        self._google_stalled = False
+        self._google_stall_logged = False
+        best = None
+        try:
+            for stage in (self._search_google_strategies, *self._search_stages()):
+                await stage()
+                best = await self._decide()
+                if self._google_blocked or (best and best.kind == "decision-maker" and best.score >= 85):
+                    break
+        finally:
+            self._free_only = False
+        return best
 
     # ── website crawling ──────────────────────────────────────────────────────
 
@@ -316,8 +389,10 @@ class _Job:
 
     def _take(self, url: str, html: str, via: str = "") -> PageInfo:
         info = parse_page(url, html)
+        found_by = self.discovered_by.get(_origin_key(url), "")
         for c in info.candidates:
             c.via = via
+            c.found_by = found_by
         self.pages.append(info)
         self.candidates.extend(info.candidates)
         self.social |= info.social
@@ -341,6 +416,9 @@ class _Job:
     async def _scrape_social_profiles(self) -> None:
         """Fetch FB/IG profile pages with the logged-in Chrome context."""
         for social_url in sorted(self.social)[:6]:
+            if social_url in self._scraped:
+                continue
+            self._scraped.add(social_url)
             host = _host(social_url)
             if host_matches(host, {"facebook.com", "fb.com", "m.facebook.com"}):
                 page = await self.e.fetcher.fetch_fb_profile(social_url)
@@ -489,8 +567,58 @@ class _Job:
         return queries
 
     async def _query(self, q: str) -> list[Result]:
+        if self._free_only:
+            if self._google_blocked or self._google_stalled:
+                return []  # Google already said no for this row; don't ask per query
+            try:
+                results = await self.e.google.search(q, country=self.country)
+            except GoogleBlocked as err:
+                # Google itself refused (CAPTCHA/429): every later Google query
+                # in this row would hit the same wall, so Brave takes over.
+                self._google_blocked = True
+                log.info("Free Google search unavailable (%s); Brave takes over for this row", err)
+                return []
+            except GoogleUnavailable as err:
+                # Our side failed (a slow load, a torn-down browser), or free
+                # search is paused for a while after a block. Either way Google
+                # answered nothing, so the rest of this row's queries are not
+                # sent to it one wasted call at a time. This is deliberately not
+                # _google_blocked: only Google refusing defers the row to Brave.
+                self._google_stalled = True
+                if not self._google_stall_logged:
+                    self._google_stall_logged = True
+                    if PAUSED.search(str(err)):
+                        log.info("Free Google is paused for this row (%s)", err)
+                    else:
+                        log.info("Free Google search failed on this query (%s); trying the next one", err)
+                return []
+            self._google_answered = True
+            return results
         self.finding.searches += 1
         return await self.e.search.search(q, country=self.country)
+
+    async def _search_google_strategies(self) -> None:
+        """Queries only worth running on free Google (each would cost a Brave
+        credit): free-mail addresses next to the name, the phone number on its
+        own, owner/instructor mentions and the street address."""
+        for q in self._google_queries():
+            results = await self._query(q)
+            await self._use_results(results, find_site=not self.site_host, read_pages=2)
+            best = await self._decide()
+            if self._google_blocked or (best and best.kind == "decision-maker" and best.score >= 85):
+                return
+
+    def _google_queries(self) -> list[str]:
+        title, town = self.row.title, self.town or ""
+        queries = [f'"{title}" {town} "@gmail.com" OR "@yahoo.com" OR "@hotmail.com" OR "@outlook.com" OR "@aol.com"']
+        phones = _phone_variants(self.phone_digits, self.country)
+        if phones:
+            queries.append(" OR ".join(f'"{p}"' for p in phones))
+        queries.append(f'"{title}" {town} owner OR founder OR "head instructor" OR "chief instructor" OR sensei')
+        street = re.sub(r",.*", "", self.street or "").strip()[:60]
+        if street and re.search(r"\d", street):
+            queries.append(f'"{street}" {town} email')
+        return [re.sub(r"\s+", " ", q).strip() for q in queries]
 
     async def _use_results(self, results: list[Result], find_site: bool, read_pages: int = 2) -> None:
         to_read: list[str] = []
@@ -499,9 +627,11 @@ class _Job:
             relevant = self._search_identity(r.text + " " + r.url)
             if not relevant:
                 continue
+            self.discovered_by.setdefault(_origin_key(r.url), r.provider)
             if not host_matches(host, NO_EMAIL_HOSTS) or _team_page(r.url):
                 for c in emails_in_text(r.text, r.url, source="snippet"):
                     c.source = "snippet"
+                    c.found_by = r.provider
                     self.candidates.append(c)
             self.snippet_texts.append(r.text)
             if host_matches(host, SOCIAL_HOSTS):
@@ -538,9 +668,11 @@ class _Job:
                     break
         if host_matches(_host(page.final_url), NO_EMAIL_HOSTS) and not _team_page(page.final_url):
             return
+        found_by = self.discovered_by.get(_origin_key(url), "")
         for c in info.candidates:
             if self._relevant(_around(c.context, c.email, 220)) and not _is_listing_email(c.email, page.final_url):
                 c.source = "directory"
+                c.found_by = found_by
                 self.candidates.append(c)
 
     def _relevant(self, text: str) -> bool:
@@ -792,16 +924,30 @@ VIA_WORDS = {
     "desktop": " via desktop browser",
     "browser": " (rendered in a browser)",
 }
+SEARCH_WORDS = {
+    "google-web": "free Google search",
+    "google": "Google API search",
+    "brave": "Brave search",
+    "vertex": "Vertex AI search",
+}
 
 
 def describe_method(c: Candidate, site_host: str | None, own_domains: set[str]) -> str:
     """How an address was found, e.g. "Mailto link in the footer of the school's
-    homepage" or "Facebook contact info via iPhone emulation"."""
+    homepage" or "Facebook contact info via iPhone emulation (found via free
+    Google search)"."""
+    search = SEARCH_WORDS.get(c.found_by, "")
+    if c.source == "snippet":
+        return f"{search[0].upper()}{search[1:]} snippet from {_host(c.url)}" if search \
+            else f"Search result snippet from {_host(c.url)}"
+    spot = _describe_spot(c, site_host, own_domains)
+    return f"{spot} (found via {search})" if search else spot
+
+
+def _describe_spot(c: Candidate, site_host: str | None, own_domains: set[str]) -> str:
     host = _host(c.url)
     path = urlsplit(c.url).path.lower()
     via = VIA_WORDS.get(c.via, "")
-    if c.source == "snippet":
-        return f"Search result snippet from {host}"
     if host_matches(host, {"facebook.com", "fb.com", "m.facebook.com"}):
         return f"Facebook {'contact info' if 'about' in path else 'page'}{via}"
     if host_matches(host, {"instagram.com"}):
@@ -818,6 +964,26 @@ def describe_method(c: Candidate, site_host: str | None, own_domains: set[str]) 
     spot = f"in the footer of {owner} {page}" if c.where == "footer" else f"on {owner} {page}"
     how = SOURCE_WORDS.get(c.source, c.source)
     return f"{how[0].upper()}{how[1:]} {spot}{via}"
+
+
+def _origin_key(url: str) -> str:
+    """What a search result introduced: a site (its host) or, on Facebook and
+    Instagram, one profile."""
+    host = _host(url).removeprefix("m.")
+    if host_matches(host, {"facebook.com", "fb.com", "instagram.com"}):
+        first = urlsplit(url if "//" in url else "https://" + url).path.strip("/").split("/")[0]
+        return f"{host}/{first.lower()}"
+    return host
+
+
+def _phone_variants(digits: str, country: str) -> list[str]:
+    """The ways a 10-digit number is usually written, for an exact-phrase search."""
+    if len(digits) != 10:
+        return []
+    if country == "GB":
+        return [f"0{digits}", f"0{digits[:4]} {digits[4:]}"]
+    a, b, c = digits[:3], digits[3:6], digits[6:]
+    return [f"({a}) {b}-{c}", f"{a}-{b}-{c}", f"{a}.{b}.{c}"]
 
 
 def _team_page(url: str) -> bool:

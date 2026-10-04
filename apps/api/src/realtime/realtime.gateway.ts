@@ -35,6 +35,7 @@ export class RealtimeGateway implements OnGatewayConnection, OnGatewayDisconnect
     try {
       const payload = await this.jwt.verifyAsync<{ sub: string }>(token);
       client.data.userId = payload.sub;
+      await client.join(userRoom(payload.sub));
       this.logger.debug(`Socket ${client.id} authenticated for user ${payload.sub}`);
     } catch (err) {
       const message = err instanceof Error ? err.message : 'unknown';
@@ -53,6 +54,12 @@ export class RealtimeGateway implements OnGatewayConnection, OnGatewayDisconnect
     this.server.emit(event, payload);
   }
 
+  /** Only to the given user's sockets. */
+  emitToUser(userId: string, event: string, payload: unknown): void {
+    if (!this.server) return;
+    this.server.to(userRoom(userId)).emit(event, payload);
+  }
+
   private extractToken(client: Socket): string | null {
     const auth = client.handshake.auth?.token;
     if (typeof auth === 'string' && auth.length > 0) return auth;
@@ -64,4 +71,8 @@ export class RealtimeGateway implements OnGatewayConnection, OnGatewayDisconnect
     if (typeof query === 'string' && query.length > 0) return query;
     return null;
   }
+}
+
+function userRoom(userId: string): string {
+  return `user:${userId}`;
 }

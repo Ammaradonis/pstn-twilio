@@ -91,6 +91,7 @@ class Candidate:
     context: str
     where: str = ""  # "footer" when the address appears in the page footer
     via: str = ""  # how the page was fetched (fetch.Page.via)
+    found_by: str = ""  # the search (search.Result.provider) that led to it, if any
 
 
 @dataclass

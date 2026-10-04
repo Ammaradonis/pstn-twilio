@@ -7,7 +7,8 @@
  * email, emailType, emailSource, decisionMaker and contactForm columns
  * (created next to the data if missing). Rows are matched by a fingerprint of
  * name + phone + website, so sorting or inserting rows mid-run is safe, and a
- * row that already has an email is never overwritten.
+ * row that already has an email is never overwritten. Each address found is
+ * also pushed to the user's open Dial page (and listed by status() for polling).
  */
 
 import { createHash, randomUUID } from 'crypto';
@@ -19,9 +20,14 @@ import {
   OnModuleDestroy,
   OnModuleInit,
 } from '@nestjs/common';
-import type { EmailFinderJobStatus, EmailFinderStatusDto } from '@pstn-twilio/shared';
+import type {
+  EmailFinderFindDto,
+  EmailFinderJobStatus,
+  EmailFinderStatusDto,
+} from '@pstn-twilio/shared';
 
 import { PrismaService } from '../prisma/prisma.service';
+import { RealtimeService } from '../realtime/realtime.service';
 import { RedisService } from '../redis/redis.service';
 
 import {
@@ -43,6 +49,7 @@ const CLAIM_TIMEOUT_MS = 20 * 60_000;
 const MAX_ATTEMPTS = 3;
 const FLUSH_DELAY_MS = 15_000;
 const FINAL = ['FOUND', 'CONTACT_FORM', 'NOT_FOUND', 'FAILED'];
+const RECENT_FINDS = 5;
 
 export interface FinderRowInput {
   title: string;
@@ -68,6 +75,7 @@ export interface FinderResult {
   decisionMaker?: string | null;
   contactFormUrl?: string | null;
   notes?: string | null;
+  method?: string | null;
 }
 
 @Injectable()
@@ -103,6 +111,7 @@ export class EmailFinderService implements OnModuleDestroy, OnModuleInit {
     private readonly prisma: PrismaService,
     private readonly sheets: SheetsService,
     private readonly redis: RedisService,
+    private readonly realtime: RealtimeService,
   ) {}
 
   onModuleDestroy(): void {
@@ -276,6 +285,12 @@ export class EmailFinderService implements OnModuleDestroy, OnModuleInit {
       take: 5,
       select: { input: true, notes: true },
     });
+    const finds = await this.prisma.emailFinderRow.findMany({
+      where: { jobId: job.id, status: 'FOUND', email: { not: null } },
+      orderBy: { updatedAt: 'desc' },
+      take: RECENT_FINDS,
+      select: FIND_FIELDS,
+    });
     return {
       jobId: job.id,
       status: job.status as EmailFinderJobStatus,
@@ -290,6 +305,7 @@ export class EmailFinderService implements OnModuleDestroy, OnModuleInit {
         school: (r.input as unknown as FinderRowInput).title,
         note: r.notes ?? '',
       })),
+      recentFinds: finds.map((r) => toFind(r, job)),
       workerOnline,
       workerLastSeen: lastSeen,
     };
@@ -362,7 +378,11 @@ export class EmailFinderService implements OnModuleDestroy, OnModuleInit {
           leaseToken: r.leaseToken,
           job: { status: { not: 'CANCELLED' } },
         },
-        select: { jobId: true },
+        select: {
+          jobId: true,
+          input: true,
+          job: { select: { userId: true, spreadsheetId: true, sheetTitle: true } },
+        },
       });
       if (!row) continue;
       const updated = await this.prisma.emailFinderRow.updateMany({
@@ -383,11 +403,30 @@ export class EmailFinderService implements OnModuleDestroy, OnModuleInit {
           decisionMaker: clip(r.decisionMaker, 200),
           contactFormUrl: clip(r.contactFormUrl, 1000),
           notes: clip(r.notes, 1000),
+          method: r.status === 'FOUND' ? clip(r.method, 200) : null,
         },
       });
       if (!updated.count) continue;
       jobs.add(row.jobId);
       saved++;
+      const email = clip(r.email?.toLowerCase(), 254);
+      if (r.status === 'FOUND' && email && row.job) {
+        const find = toFind(
+          {
+            id: r.id,
+            jobId: row.jobId,
+            input: row.input,
+            email,
+            emailType: clip(r.emailType, 32),
+            confidence: r.confidence ?? null,
+            method: clip(r.method, 200),
+            sourceUrl: clip(r.sourceUrl, 1000),
+            updatedAt: new Date(),
+          },
+          row.job,
+        );
+        this.realtime.emailFinderFound(row.job.userId, { find });
+      }
     }
     for (const jobId of jobs) this.scheduleFlush(jobId);
     return { saved };
@@ -558,6 +597,47 @@ function hostOf(url: string): string {
   } catch {
     return '';
   }
+}
+
+const FIND_FIELDS = {
+  id: true,
+  jobId: true,
+  input: true,
+  email: true,
+  emailType: true,
+  confidence: true,
+  method: true,
+  sourceUrl: true,
+  updatedAt: true,
+} as const;
+
+function toFind(
+  r: {
+    id: string;
+    jobId: string;
+    input: unknown;
+    email: string | null;
+    emailType: string | null;
+    confidence: number | null;
+    method: string | null;
+    sourceUrl: string | null;
+    updatedAt: Date;
+  },
+  job: { spreadsheetId: string; sheetTitle: string },
+): EmailFinderFindDto {
+  return {
+    rowId: r.id,
+    jobId: r.jobId,
+    spreadsheetId: job.spreadsheetId,
+    sheetTitle: job.sheetTitle,
+    school: (r.input as FinderRowInput | null)?.title ?? '',
+    email: r.email ?? '',
+    emailType: r.emailType,
+    confidence: r.confidence,
+    method: r.method,
+    sourceUrl: r.sourceUrl,
+    foundAt: r.updatedAt.toISOString(),
+  };
 }
 
 function clip(value: string | null | undefined, max: number): string | null {

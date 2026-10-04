@@ -30,6 +30,8 @@ class Result:
     title: str
     snippet: str
     extra: list[str] = field(default_factory=list)
+    # Which search found it: google (API), google-web (free), brave, vertex.
+    provider: str = ""
 
     @property
     def text(self) -> str:
@@ -94,7 +96,8 @@ class _VertexSearch:
                 snippets = doc.get("snippets", []) or []
                 snippet = " ".join(s.get("snippet", "") for s in snippets[:3]) if snippets else ""
                 if link:
-                    results.append(Result(url=link, title=_strip(title), snippet=_strip(snippet)))
+                    results.append(Result(url=link, title=_strip(title), snippet=_strip(snippet),
+                                          provider="vertex"))
             return results
         except Exception as exc:
             log.warning("Vertex AI Search query failed: %s", exc)
@@ -224,6 +227,7 @@ class BraveSearch:
                                 title=_strip(r.get("title", "")),
                                 snippet=_strip(r.get("snippet" if provider == "google" else "description", "")),
                                 extra=[_strip(s) for s in r.get("extra_snippets", []) or []],
+                                provider=provider,
                             ) for r in items]
                         except (ValueError, TypeError, AttributeError):
                             log.warning("%s returned an invalid search response", provider)

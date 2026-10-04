@@ -523,6 +523,8 @@ model EmailFinderRow {
   decisionMaker    String?   @map("decision_maker")
   contactFormUrl   String?   @map("contact_form_url")
   notes            String?
+  // How the address was found, e.g. "Facebook contact info via iPhone emulation"
+  method           String?
   writtenAt        DateTime? @map("written_at")
   createdAt        DateTime  @default(now()) @map("created_at")
   updatedAt        DateTime  @updatedAt @map("updated_at")

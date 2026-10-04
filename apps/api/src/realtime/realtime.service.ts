@@ -3,6 +3,7 @@ import {
   WS_EVENTS,
   WsAiCallEvent,
   WsCallEvent,
+  WsEmailFinderFoundEvent,
   WsNumberEvent,
   WsSmsEvent,
   WsTwilioWebhookErrorEvent,
@@ -48,5 +49,9 @@ export class RealtimeService {
 
   webhookError(payload: WsTwilioWebhookErrorEvent): void {
     this.gateway.emit(WS_EVENTS.TWILIO_WEBHOOK_ERROR, payload);
+  }
+
+  emailFinderFound(userId: string, payload: WsEmailFinderFoundEvent): void {
+    this.gateway.emitToUser(userId, WS_EVENTS.EMAIL_FINDER_FOUND, payload);
   }
 }

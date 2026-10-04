@@ -340,6 +340,7 @@ const finderResultsSchema = z.object({
           decisionMaker: z.string().max(200).nullish(),
           contactFormUrl: publicHttpUrl.nullish(),
           notes: z.string().max(1000).nullish(),
+          method: z.string().max(200).nullish(),
           researchComplete: z.boolean(),
           retryAfter: z.number().int().min(60).max(86400).optional(),
         })

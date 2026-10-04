@@ -87,7 +87,26 @@ class Fetcher:
         self._browser_lock = asyncio.Lock()
         self._social_context_lock = asyncio.Lock()
         self._pw_lock = asyncio.Lock()
+        # Stopping Playwright disconnects everything using the driver. Another
+        # component can lend it (hold_driver) so a shutdown here waits instead
+        # of tearing the ground out from under a running page.
+        self._pw_guard = asyncio.Lock()
+        self._pw_lease = 0
+        self._pw_free = asyncio.Event()
+        self._pw_free.set()
         self._browser_last_used = time.monotonic()
+
+    async def hold_driver(self) -> None:
+        """Lend the Playwright driver: it is not stopped until release_driver()."""
+        async with self._pw_guard:
+            self._pw_lease += 1
+            self._pw_free.clear()
+
+    async def release_driver(self) -> None:
+        async with self._pw_guard:
+            self._pw_lease = max(0, self._pw_lease - 1)
+            if not self._pw_lease:
+                self._pw_free.set()
 
     async def close(self) -> None:
         await self._client.aclose()
@@ -459,6 +478,12 @@ class Fetcher:
             await self._close_browser()
 
     async def _close_browser(self) -> None:
+        # Wait for a lent driver: a component that is mid-page keeps working.
+        # Bounded, so a lease that is never returned cannot hang a shutdown.
+        try:
+            await asyncio.wait_for(self._pw_free.wait(), timeout=60)
+        except asyncio.TimeoutError:
+            log.warning("Browser driver still lent after 60 s; shutting it down anyway")
         if self._social_context is not None and self._attached is None:
             await self._social_context.close()
         self._social_context = None

@@ -67,3 +67,7 @@ __pycache__/
 # GCP service account credentials – never commit
 gcp-creds.json
 Google-search-engine-configuration-files/
+
+# Browser session cookies (logged-in Google account); never commit
+cookies.txt
+*.cookies.txt

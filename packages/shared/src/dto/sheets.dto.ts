@@ -107,6 +107,23 @@ export interface SheetsFollowUpMessageDto {
 
 export type EmailFinderJobStatus = 'RUNNING' | 'PAUSED' | 'DONE' | 'CANCELLED';
 
+/** One address the email finder found, as shown in the Dial page notifications. */
+export interface EmailFinderFindDto {
+  /** The finder row; stable across the realtime event and the status poll. */
+  rowId: string;
+  jobId: string;
+  spreadsheetId: string;
+  sheetTitle: string;
+  school: string;
+  email: string;
+  emailType: string | null;
+  confidence: number | null;
+  /** How it was found, e.g. "Facebook contact info via iPhone emulation". */
+  method: string | null;
+  sourceUrl: string | null;
+  foundAt: string;
+}
+
 export interface EmailFinderStatusDto {
   jobId: string | null;
   status: EmailFinderJobStatus | null;
@@ -124,4 +141,6 @@ export interface EmailFinderStatusDto {
   retrying?: number;
   failed?: number;
   issues?: { school: string; note: string }[];
+  /** The tab's latest finds, newest first. */
+  recentFinds?: EmailFinderFindDto[];
 }

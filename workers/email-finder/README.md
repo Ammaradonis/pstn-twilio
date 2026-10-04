@@ -15,6 +15,33 @@ depend on the worker.
 - Search Google first when both its API key and Programmable Search Engine ID
   are configured. Otherwise use Brave. The user's `BEAVE_API_KEY` is a Brave
   key alias, sent only to Brave's documented endpoint.
+- Rows with nothing to go on (no website, no Facebook/Instagram, nothing from a
+  listing) are searched on free Google first, in headless Edge (or Chrome) with
+  its own profile in `.cache/google-profile`, following
+  `Google-search-engine-configuration-files/GOOGLE-FREE-SEARCH.txt`. That pass
+  adds Google-only queries (free-mail addresses next to the name, the phone
+  number on its own, owner mentions, the street) and reads any Facebook or
+  Instagram profile it turns up. Brave keys are used only if it finds no
+  address. Google no longer serves results without JavaScript, so the txt file's
+  plain-HTTP recipe is only re-probed weekly. If a `cookies.txt` export is
+  present, its google.com cookies (and nothing else in it) sign that browser in
+  to the user's Google account, once per new export. Delete
+  `.cache/google-profile` to sign it out.
+- Free Google failures are told apart, because treating them alike used to hand
+  the whole sheet to Brave:
+  - Google blocked (CAPTCHA, "unusual traffic", 429) is never retried or solved.
+    Free search pauses — 30 minutes, doubling to 8 hours — and Brave serves rows
+    until it lifts.
+  - A failure on this side (a slow page load, a browser shut down mid-query, an
+    unrecognised layout) is retried once on a fresh browser and never pauses
+    Google. If it still can't answer, the row is deferred and re-researched
+    rather than charged to Brave, since these are exactly the rows the free pass
+    exists for.
+  - Google answering "no results" is an answer: the row is researched on Brave
+    as normal.
+- Each free search runs on its own Playwright driver, so the research browser's
+  shutdown cannot abort a search mid-load. The driver is reference-counted, so
+  lending it to another component never risks stopping it under a live page.
 - Discover missing websites and business profiles using school name, street,
   town, phone and country. Cross-check discovered sites before trusting them.
 - Read public Facebook/Instagram business profiles and Contact/About panels
@@ -81,23 +108,26 @@ Settings load from process environment, then root `.env`, then root `env.txt`.
 Credential values are never intentionally logged. Search API error URLs are
 not logged, because Google puts its key in the query string.
 
-| Setting                                                         | Purpose                                                                       |
-| --------------------------------------------------------------- | ----------------------------------------------------------------------------- |
-| EMAIL_FINDER_WORKER_TOKEN                                       | Shared secret with the API                                                    |
-| EMAIL_FINDER_API_BASE                                           | API origin; defaults to PUBLIC_BASE_URL                                       |
-| GOOGLE_SEARCH_API_KEY / GOOGLE_CLOUD_API_KEY                    | Google search key                                                             |
-| GOOGLE_SEARCH_CX / GOOGLE_CSE_ID                                | Google search-engine ID; OAuth client ID is not this                          |
-| BEAVE_API_KEY / BRAVE_API_KEY                                   | Brave search fallback                                                         |
-| EMAIL_FINDER_GOOGLE_DAILY_LIMIT                                 | Google request ceiling, default 100                                           |
-| EMAIL_FINDER_BEAVE_DAILY_LIMIT / EMAIL_FINDER_BRAVE_DAILY_LIMIT | Per-key Brave ceilings, default 300 each; identical keys share a ceiling      |
-| EMAIL_FINDER_CONCURRENCY                                        | Parallel rows, default 2, maximum 4                                           |
-| EMAIL_FINDER_PER_HOST_DELAY                                     | Request spacing, default 1.5 seconds                                          |
-| EMAIL_FINDER_MAX_SITE_PAGES                                     | Per-school page budget, default 10                                            |
-| EMAIL_FINDER_ROW_TIMEOUT                                        | Time limit per row, default 900 seconds                                       |
-| EMAIL_FINDER_USE_BROWSER                                        | Set 0 to disable browser research and form delivery                           |
-| EMAIL_FINDER_BROWSER_CDP_URL                                    | Optional local browser debugging endpoint                                     |
-| EMAIL_FINDER_CHROME_PROFILE_PATH                                | Optional dedicated automation profile                                         |
-| EMAIL_FINDER_SENDER_NAME / EMAIL / PHONE / COMPANY / WEBSITE    | Optional truthful sender fields; use the EMAIL*FINDER_SENDER* prefix for each |
+| Setting                                                         | Purpose                                                                                         |
+| --------------------------------------------------------------- | ----------------------------------------------------------------------------------------------- |
+| EMAIL_FINDER_WORKER_TOKEN                                       | Shared secret with the API                                                                      |
+| EMAIL_FINDER_API_BASE                                           | API origin; defaults to PUBLIC_BASE_URL                                                         |
+| GOOGLE_SEARCH_API_KEY / GOOGLE_CLOUD_API_KEY                    | Google search key                                                                               |
+| GOOGLE_SEARCH_CX / GOOGLE_CSE_ID                                | Google search-engine ID; OAuth client ID is not this                                            |
+| BEAVE_API_KEY / BRAVE_API_KEY                                   | Brave search fallback                                                                           |
+| EMAIL_FINDER_GOOGLE_DAILY_LIMIT                                 | Google request ceiling, default 100                                                             |
+| EMAIL_FINDER_GOOGLE_FREE                                        | Free Google before Brave: `bare` rows only (default), `all` rows, or `off`                      |
+| EMAIL_FINDER_GOOGLE_FREE_DAILY_LIMIT                            | Free Google searches a day, default 150, 6-15 seconds apart                                     |
+| EMAIL_FINDER_GOOGLE_COOKIES                                     | cookies.txt export that signs free Google in; default repo-root `cookies.txt`, `off` to disable |
+| EMAIL_FINDER_BEAVE_DAILY_LIMIT / EMAIL_FINDER_BRAVE_DAILY_LIMIT | Per-key Brave ceilings, default 300 each; identical keys share a ceiling                        |
+| EMAIL_FINDER_CONCURRENCY                                        | Parallel rows, default 2, maximum 4                                                             |
+| EMAIL_FINDER_PER_HOST_DELAY                                     | Request spacing, default 1.5 seconds                                                            |
+| EMAIL_FINDER_MAX_SITE_PAGES                                     | Per-school page budget, default 10                                                              |
+| EMAIL_FINDER_ROW_TIMEOUT                                        | Time limit per row, default 900 seconds                                                         |
+| EMAIL_FINDER_USE_BROWSER                                        | Set 0 to disable browser research and form delivery                                             |
+| EMAIL_FINDER_BROWSER_CDP_URL                                    | Optional local browser debugging endpoint                                                       |
+| EMAIL_FINDER_CHROME_PROFILE_PATH                                | Optional dedicated automation profile                                                           |
+| EMAIL_FINDER_SENDER_NAME / EMAIL / PHONE / COMPANY / WEBSITE    | Optional truthful sender fields; use the EMAIL*FINDER_SENDER* prefix for each                   |
 
 Google's API requires both a key and an engine ID and is unavailable to new
 customers; existing access is scheduled to end on January 1, 2027.

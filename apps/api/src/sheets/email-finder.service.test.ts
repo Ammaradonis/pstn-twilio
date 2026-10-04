@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
 
 import type { PrismaService } from '../prisma/prisma.service';
+import type { RealtimeService } from '../realtime/realtime.service';
 import type { RedisService } from '../redis/redis.service';
 
 import { ContactFormService } from './contact-form.service';
@@ -60,6 +61,7 @@ describe('email finder row identity and writes', () => {
       prisma as unknown as PrismaService,
       sheets as unknown as SheetsService,
       {} as RedisService,
+      {} as RealtimeService,
     );
     await service.flush('job');
     const request = sheets.google.mock.calls[0]![3] as {
@@ -79,6 +81,7 @@ describe('email finder row identity and writes', () => {
       prisma as unknown as PrismaService,
       {} as SheetsService,
       redis as unknown as RedisService,
+      {} as RealtimeService,
     );
     expect(
       await service.submit([{ id: 'row', leaseToken: 'old-lease', status: 'NOT_FOUND' }]),
@@ -91,6 +94,55 @@ describe('email finder row identity and writes', () => {
     expect(prisma.emailFinderRow.updateMany).not.toHaveBeenCalled();
   });
 
+  it('saves how an address was found and tells only its owner right away', async () => {
+    const prisma = {
+      emailFinderRow: {
+        findFirst: vi.fn().mockResolvedValue({
+          jobId: 'job',
+          input: { title: 'Tiger Dojo' },
+          job: { userId: 'u1', spreadsheetId: 'ss', sheetTitle: 'Texas' },
+        }),
+        updateMany: vi.fn().mockResolvedValue({ count: 1 }),
+      },
+    };
+    const realtime = { emailFinderFound: vi.fn() };
+    const redis = { client: { set: vi.fn() } };
+    const service = new EmailFinderService(
+      prisma as unknown as PrismaService,
+      {} as SheetsService,
+      redis as unknown as RedisService,
+      realtime as unknown as RealtimeService,
+    );
+    vi.spyOn(service as never, 'scheduleFlush').mockImplementation(() => undefined);
+    const method = 'Facebook contact info via iPhone emulation (found via free Google search)';
+    await service.submit([
+      {
+        id: 'row',
+        leaseToken: 'lease',
+        status: 'FOUND',
+        email: 'Owner@TigerDojo.com',
+        emailType: 'decision-maker',
+        confidence: 88,
+        sourceUrl: 'https://www.facebook.com/tigerdojo/about_contact_and_basic_info',
+        method,
+        researchComplete: true,
+      },
+      { id: 'row2', leaseToken: 'lease', status: 'NOT_FOUND', method: 'ignored' },
+    ]);
+    expect(prisma.emailFinderRow.updateMany.mock.calls[0]![0].data.method).toBe(method);
+    expect(prisma.emailFinderRow.updateMany.mock.calls[1]![0].data.method).toBeNull();
+    expect(realtime.emailFinderFound).toHaveBeenCalledTimes(1);
+    expect(realtime.emailFinderFound).toHaveBeenCalledWith('u1', {
+      find: expect.objectContaining({
+        rowId: 'row',
+        school: 'Tiger Dojo',
+        sheetTitle: 'Texas',
+        email: 'owner@tigerdojo.com',
+        method,
+      }),
+    });
+  });
+
   it('recovers pending sheet writes after an API restart', async () => {
     vi.useFakeTimers();
     try {
@@ -101,6 +153,7 @@ describe('email finder row identity and writes', () => {
         prisma as unknown as PrismaService,
         {} as SheetsService,
         {} as RedisService,
+        {} as RealtimeService,
       );
       const flush = vi.spyOn(service, 'flush').mockResolvedValue();
       service.onModuleInit();
