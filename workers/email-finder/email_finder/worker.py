@@ -13,7 +13,10 @@ import logging.handlers
 import signal
 import os
 import contextlib
+import subprocess
 import sys
+import time
+from pathlib import Path
 
 import httpx
 
@@ -29,6 +32,10 @@ from .validate import DomainChecker
 log = logging.getLogger("email_finder.worker")
 IDLE_POLL_SECONDS = 20
 HEARTBEAT_SECONDS = 45
+PACKAGE_DIR = Path(__file__).resolve().parent
+# A restart waits until the code has been unchanged this long (an edit or
+# git pull in progress shouldn't restart the worker halfway through).
+CODE_SETTLE_SECONDS = 30
 
 
 def setup_logging() -> None:
@@ -109,11 +116,41 @@ def to_result(row_id: str, f: Finding, lease_token: str) -> dict:
     }
 
 
-async def run() -> None:
+def code_stamp() -> tuple[tuple[str, int], ...]:
+    """Names and modification times of the worker's code and scoring file."""
+    files = [*PACKAGE_DIR.glob("*.py"), PACKAGE_DIR / "scoring-parameters.json"]
+    return tuple(sorted((f.name, f.stat().st_mtime_ns) for f in files if f.exists()))
+
+
+def new_code_ready(started: tuple[tuple[str, int], ...], rejected: set) -> bool:
+    """True when the code on disk changed, has settled, and imports cleanly.
+
+    The worker used to keep running code from before a git pull for days, and
+    the API (deployed separately) then rejected every result it posted.
+    """
+    now = code_stamp()
+    if now == started or now in rejected:
+        return False
+    if time.time() - max(mtime for _, mtime in now) / 1e9 < CODE_SETTLE_SECONDS:
+        return False
+    check = subprocess.run(
+        [sys.executable, "-c", "import email_finder.worker"],
+        cwd=PACKAGE_DIR.parent, capture_output=True, text=True, timeout=300,
+    )
+    if check.returncode != 0:
+        log.error("Worker code changed but doesn't import; keeping the running version. %s",
+                  (check.stderr.strip().splitlines() or [""])[-1])
+        rejected.add(now)
+        return False
+    return True
+
+
+async def run() -> bool:
+    """Process rows until stopped. True means restart to load new code."""
     settings = load_settings()
     if not settings.worker_token:
         log.error("EMAIL_FINDER_WORKER_TOKEN is missing from the repo's .env; nothing to do.")
-        return
+        return False
 
     if settings.google_api_key and not settings.google_cx:
         log.info("Google search key present, but search-engine ID missing; using Brave fallback.")
@@ -122,7 +159,7 @@ async def run() -> None:
         await asyncio.to_thread(nlp.nlp)
     except Exception:
         log.error("spaCy English model unavailable. Run setup-email-finder.ps1.")
-        return
+        return False
 
     cache = Cache()
     fetcher = Fetcher(
@@ -168,6 +205,17 @@ async def run() -> None:
                 else:
                     await api.form_result(item["result"])
                 cache.delete("outbox-v2", key)
+            except httpx.HTTPStatusError as err:
+                code = err.response.status_code
+                if 400 <= code < 500 and code not in (401, 408, 429):
+                    # Resending can't fix a rejected result, and it would hold up
+                    # every result queued behind it. The row's lease expires and
+                    # the row is researched again.
+                    log.error("API rejected a result (HTTP %s): %s", code, err.response.text[:500])
+                    cache.delete("outbox-v2", key)
+                    continue
+                log.warning("Result delivery pending (HTTP %s); saved locally for retry.", code)
+                break
             except httpx.HTTPError:
                 log.warning("Result delivery pending; saved locally for retry.")
                 break
@@ -201,10 +249,17 @@ async def run() -> None:
     beat = asyncio.create_task(heartbeat_loop())
     forms = asyncio.create_task(form_loop())
     backoff = IDLE_POLL_SECONDS
+    started_code, rejected_code = code_stamp(), set()
+    restart = False
     log.info("Email finder worker started: %d concurrent rows; search providers: %s",
              settings.concurrency, providers)
     try:
         while not stop.is_set():
+            # Between batches, so nothing claimed is abandoned.
+            if await asyncio.to_thread(new_code_ready, started_code, rejected_code):
+                log.info("Worker code changed on disk; restarting to load it.")
+                restart = True
+                break
             try:
                 await flush_outbox()
                 batch = await api.claim(settings.concurrency)
@@ -231,6 +286,7 @@ async def run() -> None:
         await fetcher.close()
         await search.close()
         log.info("email finder worker stopped")
+    return restart
 
 
 async def _sleep(stop: asyncio.Event, seconds: float) -> None:
@@ -259,9 +315,20 @@ def main() -> None:
         kernel.SetPriorityClass(kernel.GetCurrentProcess(), 0x4000)
 
     try:
-        asyncio.run(run())
+        restart = asyncio.run(run())
     except KeyboardInterrupt:
-        pass
+        restart = False
+    if restart:
+        lockfile.close()  # releases the single-instance lock for the new process
+        args = [sys.executable, "-m", "email_finder.worker"]
+        if os.name == "nt":
+            subprocess.Popen(
+                args, cwd=PACKAGE_DIR.parent, close_fds=True,
+                creationflags=subprocess.DETACHED_PROCESS | subprocess.CREATE_NEW_PROCESS_GROUP,
+            )
+        else:
+            os.chdir(PACKAGE_DIR.parent)
+            os.execv(sys.executable, args)
 
 
 if __name__ == "__main__":

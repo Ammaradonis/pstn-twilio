@@ -218,7 +218,7 @@ class _Job:
                 self.finding.research_complete = False
                 now = datetime.now(timezone.utc)
                 midnight = (now + timedelta(days=1)).replace(hour=0, minute=0, second=5, microsecond=0)
-                self.finding.retry_after = min(86400, max(60, int((midnight - now).total_seconds()))) if isinstance(err, SearchBudgetExhausted) else 1800
+                self.finding.retry_after = min(86400, max(60, int((midnight - now).total_seconds()))) if isinstance(err, SearchBudgetExhausted) else 7200
                 self.finding.notes.append(str(err))
         elif not best or best.kind != "decision-maker":
             self.finding.research_complete = False
@@ -758,6 +758,9 @@ class _Job:
             f.decision_maker = f"{lead.name} ({lead.role})"
         if best:
             f.email, f.email_type, f.confidence, f.source_url = best.email, best.kind, best.score, best.url
+            # Search being down only defers rows with nothing to show; an address
+            # from the school's own site is written now (research_complete stays False).
+            f.retry_after = None
         if self.forms and not best and f.research_complete:
             f.contact_form_url = _best_form(self.forms)
 

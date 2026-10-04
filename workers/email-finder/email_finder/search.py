@@ -146,6 +146,8 @@ class BraveSearch:
         self._lock = asyncio.Lock()
         self._last = 0.0
         self._disabled: dict[str, float] = {}
+        # provider → why it last failed, shown on the Dial page via row notes.
+        self._why: dict[str, str] = {}
         self._client = httpx.AsyncClient(timeout=20.0)
 
     @classmethod
@@ -225,15 +227,21 @@ class BraveSearch:
                         self.cache.set("search-v2", cache_key, [r.__dict__ for r in results], SEARCH_TTL)
                         return results
                     log.warning("%s search HTTP %s; trying fallback", provider, res.status_code)
+                    self._why[provider] = _failure_reason(provider, res)
                     if res.status_code == 429 and attempt == 0:
                         await asyncio.sleep(3)
                         continue
-                    self._disabled[counter] = time.monotonic() + (3600 if res.status_code in (400, 401, 403) else 60)
+                    # 402 is Brave's CREDIT_EXHAUSTED: nothing changes until the account is topped up.
+                    self._disabled[counter] = time.monotonic() + (3600 if res.status_code in (400, 401, 402, 403) else 60)
                     break
             if all_exhausted:
                 raise SearchBudgetExhausted("Daily search allowance reached; work will resume later.")
             if self.enabled:
-                raise SearchUnavailable("Configured search services are temporarily unavailable.")
+                why = "; ".join(self._why.values())
+                raise SearchUnavailable(
+                    f"Web search unavailable ({why}); will retry." if why
+                    else "Configured search services are temporarily unavailable."
+                )
             return []
 
     async def _request(self, provider: str, credential: str | None, query: str, country: str, count: int):
@@ -250,3 +258,17 @@ class BraveSearch:
 
 def _strip(text: str) -> str:
     return re.sub(r"<[^>]+>", "", text or "")
+
+
+def _failure_reason(provider: str, res: httpx.Response) -> str:
+    """Short, key-free reason a provider refused a query."""
+    try:
+        err = res.json().get("error") or {}
+    except ValueError:
+        err = {}
+    if provider == "brave" and res.status_code == 402:
+        return "Brave credit exhausted, top up at api-dashboard.search.brave.com"
+    if provider == "google" and res.status_code == 403:
+        return "Google Custom Search API disabled or not permitted for this key"
+    code = err.get("code") or err.get("status") or res.status_code
+    return f"{provider.title()} HTTP {code}"

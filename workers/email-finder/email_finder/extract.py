@@ -221,8 +221,8 @@ def parse_page(url: str, html: str) -> PageInfo:
                 ctx = _block_text(a)
                 info.candidates.append(Candidate(email, "mailto", url, ctx))
             continue
-        absolute = urljoin(url, href)
-        if not absolute.startswith("http"):
+        absolute = _absolute(url, href)
+        if not absolute or not absolute.startswith("http"):
             continue
         anchor = a.get_text(" ", strip=True)[:80]
         info.links.append((absolute.split("#")[0], anchor))
@@ -244,8 +244,8 @@ def parse_page(url: str, html: str) -> PageInfo:
             info.forms.append(url)
             break
     for frame in soup.find_all("iframe", src=True):
-        src = urljoin(url, frame["src"])
-        if form_host(src):
+        src = _absolute(url, frame["src"])
+        if src and form_host(src):
             info.forms.append(src)
 
     # Math challenge detection
@@ -253,6 +253,17 @@ def parse_page(url: str, html: str) -> PageInfo:
         info.challenge = True
         info.math_answer = extract_math_challenge(text)
     return info
+
+
+def _absolute(base: str, href: str) -> str | None:
+    """href resolved against the page URL, or None when it can't be parsed
+    (e.g. "http://[simpay%20id=7651]" raises ValueError in urllib)."""
+    try:
+        absolute = urljoin(base, href)
+        urlsplit(absolute)
+    except ValueError:
+        return None
+    return absolute
 
 
 def _block_text(node) -> str:

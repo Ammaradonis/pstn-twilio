@@ -185,6 +185,13 @@ def role_matcher() -> PhraseMatcher:
     return matcher
 
 
+@functools.lru_cache(maxsize=1)
+def _role_weights() -> dict[tuple[str, ...], float]:
+    """ROLES keyed by lowercase tokens, the way role_matcher compares them, so a
+    match on "co - founder" in page text finds the "co-founder" weight."""
+    return {tuple(t.lower_ for t in nlp().make_doc(r)): w for r, w in ROLES.items()}
+
+
 ROLE_WORDS = {
     "owner", "founder", "instructor", "coach", "president", "vice", "head", "chief", "senior",
     "director", "manager", "principal", "secretary", "chairman", "treasurer", "assistant", "lead",
@@ -244,7 +251,7 @@ def people(text: str, limit_chars: int = 60_000) -> list[Person]:
     doc = nlp()(text[:limit_chars])
     matches = list(role_matcher()(doc))
     # Prefer "assistant instructor" over its nested "instructor" role.
-    roles = [(doc[s:e], ROLES[doc[s:e].text.lower()]) for _, s, e in matches
+    roles = [(doc[s:e], _role_weights()[tuple(t.lower_ for t in doc[s:e])]) for _, s, e in matches
              if not any(s2 <= s and e <= e2 and e2 - s2 > e - s for _, s2, e2 in matches)]
     entities = [e for e in doc.ents if e.label_ == "PERSON"]
     # Only a role in the same sentence and within eight tokens can qualify.
