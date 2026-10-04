@@ -60,7 +60,9 @@ from urllib.parse import parse_qs, quote_plus, urljoin, urlsplit
 import httpx
 from bs4 import BeautifulSoup
 
+from .browser import launch_persistent
 from .cache import Cache
+from .cookies import import_once, load_cookies
 from .config import CACHE_DIR
 from .search import SEARCH_TTL, Result
 
@@ -70,6 +72,7 @@ PROVIDER = "google-web"
 COUNTER = "google-web"
 STATE_NS = "search-state"
 RESULTS_NS = "search-google"
+PANEL_NS = "search-google-panel"
 # Checked against the address and the visible text only: every normal results
 # page carries "/sorry/index" in its scripts.
 BLOCKED_URL = re.compile(r"/sorry/|/recaptcha/", re.I)
@@ -88,11 +91,30 @@ LONGEST_PAUSE = 8 * 3600
 # 8 h. A transient failure is retried once before it is given up on.
 MAX_ATTEMPTS = 2
 MAX_PAUSE_STEPS = 6
-BROWSERS = ("msedge", "chrome", None)  # None: Playwright's bundled Chromium
 # The only cookie hosts loaded from a cookies.txt export.
 SEARCH_COOKIE_HOSTS = {"google.com", "www.google.com"}
 IMPORT_STAMP = ".cookies-imported"
 SIGNED_IN = 'a[aria-label^="Google Account"], a[href*="accounts.google.com/SignOutOptions"]'
+
+# Google's Business Profile panel: the business's own name, address, phone,
+# website and "Profiles" (the social pages it added to its profile).
+_PANEL_JS = r"""() => {
+  const field = attr => {
+    const el = document.querySelector(`[data-attrid="${attr}"]`);
+    return el ? el.innerText.replace(/\s+/g, ' ').trim() : '';
+  };
+  const name = field('title');
+  if (!name) return null;
+  const website = [...document.querySelectorAll('[data-attrid="kc:/local:unified_actions"] a[href]')]
+    .find(a => /website/i.test(a.innerText || a.getAttribute('aria-label') || ''));
+  const profiles = [...document.querySelectorAll('[data-attrid="kc:/common/topic:social media presence"] a[href]')]
+    .map(a => ({label: (a.innerText || a.getAttribute('aria-label') || '').trim(), href: a.getAttribute('href')}));
+  return {name, website: website ? website.getAttribute('href') : '',
+          address: field('kc:/location/location:address').replace(/^Address:\s*/i, ''),
+          phone: (field('kc:/local:alt phone') || field('kc:/collection/knowledge_panels/has_phone:phone'))
+                   .replace(/^Phone:\s*/i, ''),
+          category: field('subtitle'), profiles};
+}"""
 
 # Each organic result: the link around its <h3>, the text of the block it sits
 # in (title, displayed URL and snippet), and the displayed URL.
@@ -138,7 +160,9 @@ class GoogleFreeSearch:
         self.cache = cache
         self.profile_dir = profile_dir or CACHE_DIR / "google-profile"
         self.cookies_file = cookies_file
+        self._profile_used: Path | None = None  # each browser has its own folder
         self.signed_in: bool | None = None  # checked on each session's home page
+        self._last_panel: dict | None = None
         self.daily_limit = daily_limit
         self.gap = gap
         self.use_browser = use_browser
@@ -170,7 +194,19 @@ class GoogleFreeSearch:
         state = self.cache.get(STATE_NS, "google-pause") or {}
         return max(0.0, float(state.get("until", 0)) - time.time())
 
-    async def search(self, query: str, country: str = "US", count: int = 10) -> list[Result]:
+    async def business_profile(self, query: str, country: str = "US") -> dict | None:
+        """Google's Business Profile panel for this search, if it shows one:
+        {name, address, phone, website, category, profiles: {site: url}}.
+        Raises like search()."""
+        key = f"{country}|{query[:600]}"
+        panel = self.cache.get(PANEL_NS, key)
+        if panel is None:
+            await self.search(query, country, need_panel=True)
+            panel = self.cache.get(PANEL_NS, key)
+        return panel or None
+
+    async def search(self, query: str, country: str = "US", count: int = 10,
+                     need_panel: bool = False) -> list[Result]:
         """Organic results ([] when Google says there are none).
 
         Raises GoogleBlocked when Google itself refused, or GoogleUnavailable
@@ -183,14 +219,15 @@ class GoogleFreeSearch:
         key = f"{country}|{query}"
         async with self._lock:
             cached = self.cache.get(RESULTS_NS, key)
-            if cached is not None:
+            # Results cached before panels were read don't have one: ask again.
+            if cached is not None and not (need_panel and self.cache.get(PANEL_NS, key) is None):
                 return [Result(**r) for r in cached][:count]
             if self.paused_for():
-                raise GoogleUnavailable(f"paused, resumes in {int(self.paused_for() / 60) + 1} min")
+                raise GoogleBlocked(f"paused, resumes in {int(self.paused_for() / 60) + 1} min")
             # Reserved once per distinct query, before the network: a repeat
             # served from the cache above never spends the day's allowance.
             if not self.cache.reserve(COUNTER, self.daily_limit):
-                raise GoogleUnavailable("daily free-search limit reached")
+                raise GoogleBlocked("daily free-search limit reached")
             last: Exception | None = None
             for attempt in range(MAX_ATTEMPTS):
                 blocked = False
@@ -209,6 +246,7 @@ class GoogleFreeSearch:
                 else:
                     self.cache.set(STATE_NS, "google-pause", {"until": 0, "step": 0}, 30 * 86400)
                     self.cache.set(RESULTS_NS, key, [r.__dict__ for r in results], SEARCH_TTL)
+                    self.cache.set(PANEL_NS, key, self._last_panel or {}, SEARCH_TTL)
                     return results[:count]
                 if blocked:
                     break
@@ -227,13 +265,13 @@ class GoogleFreeSearch:
             await asyncio.sleep(wait)
         self._last = time.monotonic()
 
-    def _pause(self, why: str) -> GoogleUnavailable:
+    def _pause(self, why: str) -> GoogleBlocked:
         state = self.cache.get(STATE_NS, "google-pause") or {}
         step = min(int(state.get("step", 0)) + 1, MAX_PAUSE_STEPS)
         seconds = min(LONGEST_PAUSE, FIRST_PAUSE * 2 ** (step - 1))
         self.cache.set(STATE_NS, "google-pause", {"until": time.time() + seconds, "step": step}, 30 * 86400)
         log.warning("Google free search paused for %d min: %s", seconds // 60, why)
-        return GoogleUnavailable(f"{why}; paused for {seconds // 60} min")
+        return GoogleBlocked(f"{why}; paused for {seconds // 60} min")
 
     # ── pathway 1: plain HTTP ────────────────────────────────────────────────
 
@@ -267,6 +305,7 @@ class GoogleFreeSearch:
             # Lend the fetcher's driver for the whole page visit, so its browser
             # shutdown waits rather than tearing this query down mid-load.
             await self.fetcher.hold_driver()
+        self._last_panel = None
         try:
             page = await self._tab()
             await self._ask(page, query, country)
@@ -286,6 +325,7 @@ class GoogleFreeSearch:
                 title = _squash(item.get("title", ""))
                 snippet = _squash(item.get("text", "")).replace(title, "", 1).strip()
                 results.append(Result(url=link, title=title, snippet=snippet[:1500], provider=PROVIDER))
+            self._last_panel = await self._read_panel(page)
             return results
         except GoogleUnavailable:
             raise
@@ -325,6 +365,27 @@ class GoogleFreeSearch:
                 await page.goto(url, wait_until="domcontentloaded", timeout=30_000)
         await page.wait_for_timeout(random.randint(1200, 2400))
 
+    async def _read_panel(self, page) -> dict | None:
+        """The Business Profile panel, with its profile links resolved."""
+        try:
+            panel = await page.evaluate(_PANEL_JS)
+        except Exception:  # noqa: BLE001 - no panel is not a failed search
+            return None
+        if not panel:
+            return None
+        profiles: dict[str, str] = {}
+        for item in panel.pop("profiles", [])[:8]:
+            link = await self._resolve(page, item.get("href") or "", "")
+            host = urlsplit(link or "").netloc.lower().removeprefix("www.").removeprefix("m.")
+            site = host.split(".")[-2] if host.count(".") >= 1 else ""
+            if link and site and site not in profiles:
+                profiles[site] = link
+        website = panel.get("website") or ""
+        if website.startswith("/"):
+            website = await self._resolve(page, website, "") or ""
+        panel.update(profiles=profiles, website=website)
+        return panel
+
     async def _check_signed_in(self, page) -> None:
         signed_in = bool(await page.locator(SIGNED_IN).count())
         if signed_in != self.signed_in:
@@ -338,21 +399,8 @@ class GoogleFreeSearch:
 
     async def _import_cookies(self, ctx) -> None:
         """Load the export's google.com cookies into the profile, once per export."""
-        path = self.cookies_file
-        if not path or not path.is_file():
-            return
-        stat = path.stat()
-        stamp = f"{stat.st_mtime_ns}:{stat.st_size}"
-        marker = self.profile_dir / IMPORT_STAMP
-        if marker.is_file() and marker.read_text(encoding="utf-8").strip() == stamp:
-            return
-        cookies = load_search_cookies(path)
-        if not cookies:
-            log.warning("%s has no unexpired google.com cookies; Google free search stays signed out", path.name)
-            return
-        await ctx.add_cookies(cookies)
-        marker.write_text(stamp, encoding="utf-8")
-        log.info("Loaded %d google.com cookies from %s into the search profile", len(cookies), path.name)
+        profile = self._profile_used or self.profile_dir
+        await import_once(ctx, self.cookies_file, SEARCH_COOKIE_HOSTS, profile, IMPORT_STAMP)
 
     async def _resolve(self, page, href: str, cite: str) -> str | None:
         """The result's real address. Google wraps result links in /url?q= or in
@@ -421,53 +469,20 @@ class GoogleFreeSearch:
                 else:
                     from playwright.async_api import async_playwright
                     self._pw = await async_playwright().start()
-            last_error: Exception | None = None
             started = time.monotonic()
-            for channel in BROWSERS:
-                user_agent = None
-                ctx = None
-                try:
-                    # Headless browsers call themselves "HeadlessChrome": relaunch
-                    # once with the browser's own user agent minus that word.
-                    for _ in range(2):
-                        ctx = await self._pw.chromium.launch_persistent_context(
-                            str(self.profile_dir), channel=channel, headless=True, locale="en-US",
-                            viewport={"width": 1366, "height": 900}, user_agent=user_agent,
-                            args=["--disable-blink-features=AutomationControlled"],
-                            ignore_default_args=["--enable-automation"],
-                            timeout=60_000,  # a hung launch falls through to the next browser
-                        )
-                        page = ctx.pages[0] if ctx.pages else await ctx.new_page()
-                        agent = await page.evaluate("navigator.userAgent")
-                        if "HeadlessChrome" not in agent:
-                            break
-                        await ctx.close()
-                        ctx = None
-                        user_agent = agent.replace("HeadlessChrome", "Chrome")
-                        major = (re.search(r"Chrome/(\d+)", user_agent) or [None, "140"])[1]
-                        if channel == "msedge" and "Edg/" not in user_agent:
-                            user_agent += f" Edg/{major}.0.0.0"
-                except Exception as err:  # noqa: BLE001 - not installed, or it hung
-                    log.info("Google free search couldn't start %s: %s", channel or "Chromium",
-                             (str(err).strip().splitlines() or [""])[0][:160])
-                    last_error = err
-                    if ctx is not None:
-                        try:
-                            await ctx.close()
-                        except Exception:  # noqa: BLE001
-                            pass
-                    continue
-                self._ctx, self._channel = ctx, channel
-                self.signed_in = None
-                log.info("Google free search uses %s (started in %.0f s)", channel or "Playwright Chromium",
-                         time.monotonic() - started)
-                try:
-                    await self._import_cookies(ctx)
-                except Exception as err:  # noqa: BLE001 - search signed out rather than not at all
-                    log.warning("Couldn't load Google cookies (%s); searching signed out", type(err).__name__)
-                return
-            self._forget_driver()
-            raise GoogleUnavailable(f"no browser could be started ({type(last_error).__name__})")
+            try:
+                ctx, channel, self._profile_used = await launch_persistent(self._pw, self.profile_dir, locale="en-US")
+            except Exception as err:  # noqa: BLE001 - no browser would start
+                self._forget_driver()
+                raise GoogleUnavailable(f"no browser could be started ({type(err).__name__})") from err
+            self._ctx, self._channel = ctx, channel
+            self.signed_in = None
+            log.info("Google free search uses %s (started in %.0f s)", channel or "Playwright Chromium",
+                     time.monotonic() - started)
+            try:
+                await self._import_cookies(ctx)
+            except Exception as err:  # noqa: BLE001 - search signed out rather than not at all
+                log.warning("Couldn't load Google cookies (%s); searching signed out", type(err).__name__)
 
     async def close_idle(self, idle_seconds: float = 300) -> None:
         if self._ctx is not None and time.monotonic() - self._last_used > idle_seconds and not self._lock.locked():
@@ -523,37 +538,9 @@ def parse_basic_html(html: str) -> list[Result]:
 
 
 def load_search_cookies(path: Path) -> list[dict]:
-    """The google.com search cookies from a Netscape-format cookies.txt (what
-    browser "Get cookies.txt" extensions write), in Playwright's format.
-    Every other site's cookies are skipped, and so are expired ones."""
-    found: dict[tuple[str, str, str], dict] = {}
-    now = time.time()
-    for line in path.read_text(encoding="utf-8", errors="replace").splitlines():
-        http_only = line.startswith("#HttpOnly_")
-        if http_only:
-            line = line[len("#HttpOnly_"):]
-        elif line.startswith("#") or not line.strip():
-            continue
-        parts = line.split("\t")
-        if len(parts) < 7:
-            continue
-        domain, _, cookie_path, secure, expires, name, value = parts[:7]
-        if domain.lstrip(".").lower() not in SEARCH_COOKIE_HOSTS or not name:
-            continue
-        try:
-            expiry = float(expires or 0)
-        except ValueError:
-            continue
-        if 0 < expiry < now:
-            continue
-        secure_flag = secure.upper() == "TRUE"
-        found[(domain, name, cookie_path)] = {
-            "name": name, "value": value, "domain": domain, "path": cookie_path or "/",
-            "expires": expiry if expiry > 0 else -1, "httpOnly": http_only, "secure": secure_flag,
-            # Google's third-party-context cookies only work cross-site.
-            "sameSite": "None" if secure_flag and name.startswith("__Secure-3P") else "Lax",
-        }
-    return list(found.values())
+    """The google.com search cookies from a cookies.txt export; every other
+    site's cookies (and expired ones) are skipped."""
+    return load_cookies(path, SEARCH_COOKIE_HOSTS)
 
 
 def _visible_text(html: str) -> str:

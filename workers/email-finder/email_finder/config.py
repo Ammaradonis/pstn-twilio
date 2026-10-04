@@ -37,6 +37,15 @@ def _numbered_keys(*prefixes: str) -> tuple[str, ...]:
                 found.append((rank, int(m.group(1) or 1), value.strip()))
     return tuple(dict.fromkeys(v for _, _, v in sorted(found)))
 
+def _cookie_file(name: str, default: str) -> Path | None:
+    """A cookies.txt export: the path in this setting, else the default file in
+    the repo root if it exists; "off" turns it off."""
+    value = (os.environ.get(name) or "").strip()
+    if value.lower() in ("off", "none", "0"):
+        return None
+    path = Path(value) if value else REPO_ROOT / default
+    return path if path.is_file() else None
+
 def _int(name: str, default: int) -> int:
     try:
         return max(0, int(os.environ.get(name, "") or default))
@@ -69,6 +78,14 @@ class Settings:
     google_free_daily_limit: int = 150
     # cookies.txt export whose google.com cookies sign the search browser in.
     google_cookies: Path | None = None
+    # The user's Facebook / Instagram cookies.txt exports (social browser sign-in).
+    facebook_cookies: Path | None = None
+    instagram_cookies: Path | None = None
+    social_daily_limit: int = 200
+    # The user's Galaxy A20e over USB debugging (android.py).
+    galaxy: bool = True
+    galaxy_serial: str | None = None
+    galaxy_daily_limit: int = 150
     # Vertex AI Search — unlimited fallback (GCP billing applies)
     vertex_project: str | None = None
     vertex_data_store: str | None = None
@@ -106,11 +123,7 @@ def load_settings() -> Settings:
     )
     vertex_location = os.environ.get("VERTEX_AI_LOCATION") or "global"
     google_free = (os.environ.get("EMAIL_FINDER_GOOGLE_FREE") or "bare").strip().lower()
-    cookies = (os.environ.get("EMAIL_FINDER_GOOGLE_COOKIES") or "").strip()
-    google_cookies = None
-    if cookies.lower() not in ("off", "none", "0"):
-        candidate = Path(cookies) if cookies else REPO_ROOT / "cookies.txt"
-        google_cookies = candidate if candidate.is_file() else None
+    google_cookies = _cookie_file("EMAIL_FINDER_GOOGLE_COOKIES", "cookies.txt")
 
     return Settings(
         api_base=(os.environ.get("EMAIL_FINDER_API_BASE") or os.environ.get("PUBLIC_BASE_URL")
@@ -135,6 +148,12 @@ def load_settings() -> Settings:
         google_free=google_free if google_free in ("bare", "all", "off") else "bare",
         google_free_daily_limit=_int("EMAIL_FINDER_GOOGLE_FREE_DAILY_LIMIT", 150),
         google_cookies=google_cookies,
+        facebook_cookies=_cookie_file("EMAIL_FINDER_FACEBOOK_COOKIES", "www.facebook.com_cookies.txt"),
+        instagram_cookies=_cookie_file("EMAIL_FINDER_INSTAGRAM_COOKIES", "www.instagram.com_cookies.txt"),
+        social_daily_limit=_int("EMAIL_FINDER_SOCIAL_DAILY_LIMIT", 200),
+        galaxy=(os.environ.get("EMAIL_FINDER_GALAXY") or "on").strip().lower() not in ("off", "0", "no"),
+        galaxy_serial=os.environ.get("EMAIL_FINDER_GALAXY_SERIAL") or None,
+        galaxy_daily_limit=_int("EMAIL_FINDER_GALAXY_DAILY_LIMIT", 150),
         vertex_project=vertex_project,
         vertex_data_store=vertex_data_store,
         vertex_location=vertex_location,

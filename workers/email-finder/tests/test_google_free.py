@@ -199,6 +199,11 @@ class _Google:
             raise GoogleUnavailable("browser search failed (TimeoutError: Page.goto: Timeout 30000ms exceeded.)")
         return self.results
 
+    async def business_profile(self, q, country="US"):
+        if self.blocked:
+            raise GoogleBlocked("Google asked for a CAPTCHA; paused for 30 min")
+        return None  # these rows have no Business Profile panel
+
 
 ROW = dict(title="Tiger Dojo", address="1 Main St, Austin, TX 78701", phone="+1 512 921 4950")
 HIT = Result("https://www.martialartsguide.org/schools/tiger-dojo", "Tiger Dojo - Austin, TX",

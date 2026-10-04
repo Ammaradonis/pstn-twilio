@@ -47,6 +47,36 @@ depend on the worker.
 - Read public Facebook/Instagram business profiles and Contact/About panels
   through a dedicated browser profile or an explicitly configured local CDP
   browser. Never open or close the user's calling tabs.
+- Facebook and Instagram are read in a real Edge/Chrome (`.cache/social-profile`)
+  signed in with the user's exported cookies, each export loaded once. iPhone
+  pages are fully emulated (user agent, platform, touch screen, no desktop
+  client hints). When Meta pushes back, that platform is left alone instead of
+  retried: a login wall for 6 hours or until a new export, a security
+  checkpoint for 12 hours (complete it in your own browser), a CAPTCHA for 30
+  minutes doubling up to 8 hours. Nothing is solved automatically.
+- Instagram is the backup whenever Facebook has no address, never a dead end.
+  If no Instagram profile is known, the Facebook page's handle is tried there
+  (used only if that profile names the school). Each profile gets 3 seconds to
+  show a Contact/Email button; with none, it is refreshed once and given 3 more.
+  Instagram's website has no Contact button for business profiles (only its
+  app does), so the bio and every link the profile lists (website, link-in-bio,
+  a linked Facebook page) are read next. JavaScript-only contact pages are
+  rendered. `scripts/probe_instagram.py` runs this on real profiles.
+- Rows without Facebook/Instagram links in the sheet first get the school's
+  Google Business Profile panel (free Google search by name, then name +
+  address if the first panel isn't clearly this school). A panel is used only
+  when it matches the row's phone or address; its Profiles section gives the
+  school's own Facebook/Instagram pages, and its website is crawled when the
+  sheet has none.
+- The user's Samsung Galaxy A20e (USB debugging, adb from
+  `%LOCALAPPDATA%Androidplatform-tools`) is the backup to the browser, not a
+  replacement: when Facebook or Instagram block the browser, are paused, have
+  used up the day's page loads, or the browser found no address, the profile is
+  opened in the real app. The Instagram app has the Contact button the website
+  lacks. The phone only reads the screen and taps the profile's own buttons;
+  it never types or sends, and on a security challenge or login screen it stops
+  and leaves that app alone for 12 hours. A find made there says "on the Galaxy
+  A20e" in its method and in the Dial page notification.
 - Search every configured source group: general directories, country/style
   federations, association school registers, public tournament/team pages and
   owner references. Domains in the root `email-hunt.txt` are loaded at runtime.
@@ -108,26 +138,30 @@ Settings load from process environment, then root `.env`, then root `env.txt`.
 Credential values are never intentionally logged. Search API error URLs are
 not logged, because Google puts its key in the query string.
 
-| Setting                                                         | Purpose                                                                                         |
-| --------------------------------------------------------------- | ----------------------------------------------------------------------------------------------- |
-| EMAIL_FINDER_WORKER_TOKEN                                       | Shared secret with the API                                                                      |
-| EMAIL_FINDER_API_BASE                                           | API origin; defaults to PUBLIC_BASE_URL                                                         |
-| GOOGLE_SEARCH_API_KEY / GOOGLE_CLOUD_API_KEY                    | Google search key                                                                               |
-| GOOGLE_SEARCH_CX / GOOGLE_CSE_ID                                | Google search-engine ID; OAuth client ID is not this                                            |
-| BEAVE_API_KEY / BRAVE_API_KEY                                   | Brave search fallback                                                                           |
-| EMAIL_FINDER_GOOGLE_DAILY_LIMIT                                 | Google request ceiling, default 100                                                             |
-| EMAIL_FINDER_GOOGLE_FREE                                        | Free Google before Brave: `bare` rows only (default), `all` rows, or `off`                      |
-| EMAIL_FINDER_GOOGLE_FREE_DAILY_LIMIT                            | Free Google searches a day, default 150, 6-15 seconds apart                                     |
-| EMAIL_FINDER_GOOGLE_COOKIES                                     | cookies.txt export that signs free Google in; default repo-root `cookies.txt`, `off` to disable |
-| EMAIL_FINDER_BEAVE_DAILY_LIMIT / EMAIL_FINDER_BRAVE_DAILY_LIMIT | Per-key Brave ceilings, default 300 each; identical keys share a ceiling                        |
-| EMAIL_FINDER_CONCURRENCY                                        | Parallel rows, default 2, maximum 4                                                             |
-| EMAIL_FINDER_PER_HOST_DELAY                                     | Request spacing, default 1.5 seconds                                                            |
-| EMAIL_FINDER_MAX_SITE_PAGES                                     | Per-school page budget, default 10                                                              |
-| EMAIL_FINDER_ROW_TIMEOUT                                        | Time limit per row, default 900 seconds                                                         |
-| EMAIL_FINDER_USE_BROWSER                                        | Set 0 to disable browser research and form delivery                                             |
-| EMAIL_FINDER_BROWSER_CDP_URL                                    | Optional local browser debugging endpoint                                                       |
-| EMAIL_FINDER_CHROME_PROFILE_PATH                                | Optional dedicated automation profile                                                           |
-| EMAIL_FINDER_SENDER_NAME / EMAIL / PHONE / COMPANY / WEBSITE    | Optional truthful sender fields; use the EMAIL*FINDER_SENDER* prefix for each                   |
+| Setting                                                         | Purpose                                                                                                                                                   |
+| --------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| EMAIL_FINDER_WORKER_TOKEN                                       | Shared secret with the API                                                                                                                                |
+| EMAIL_FINDER_API_BASE                                           | API origin; defaults to PUBLIC_BASE_URL                                                                                                                   |
+| GOOGLE_SEARCH_API_KEY / GOOGLE_CLOUD_API_KEY                    | Google search key                                                                                                                                         |
+| GOOGLE_SEARCH_CX / GOOGLE_CSE_ID                                | Google search-engine ID; OAuth client ID is not this                                                                                                      |
+| BEAVE_API_KEY / BRAVE_API_KEY                                   | Brave search fallback                                                                                                                                     |
+| EMAIL_FINDER_GOOGLE_DAILY_LIMIT                                 | Google request ceiling, default 100                                                                                                                       |
+| EMAIL_FINDER_GOOGLE_FREE                                        | Free Google before Brave: `bare` rows only (default), `all` rows, or `off`                                                                                |
+| EMAIL_FINDER_GOOGLE_FREE_DAILY_LIMIT                            | Free Google searches a day, default 150, 6-15 seconds apart                                                                                               |
+| EMAIL_FINDER_GOOGLE_COOKIES                                     | cookies.txt export that signs free Google in; default repo-root `cookies.txt`, `off` to disable                                                           |
+| EMAIL_FINDER_FACEBOOK_COOKIES / EMAIL_FINDER_INSTAGRAM_COOKIES  | cookies.txt exports that sign the social browser in; default repo-root `www.facebook.com_cookies.txt` / `www.instagram.com_cookies.txt`, `off` to disable |
+| EMAIL_FINDER_SOCIAL_DAILY_LIMIT                                 | Facebook and Instagram page loads a day, each, default 200, 12-25 seconds apart                                                                           |
+| EMAIL_FINDER_GALAXY / EMAIL_FINDER_GALAXY_SERIAL                | Galaxy A20e backup on/off (default on when adb finds it) and its adb serial                                                                               |
+| EMAIL_FINDER_GALAXY_DAILY_LIMIT                                 | Profiles looked up on the phone a day, default 150, 10-20 seconds apart                                                                                   |
+| EMAIL_FINDER_BEAVE_DAILY_LIMIT / EMAIL_FINDER_BRAVE_DAILY_LIMIT | Per-key Brave ceilings, default 300 each; identical keys share a ceiling                                                                                  |
+| EMAIL_FINDER_CONCURRENCY                                        | Parallel rows, default 2, maximum 4                                                                                                                       |
+| EMAIL_FINDER_PER_HOST_DELAY                                     | Request spacing, default 1.5 seconds                                                                                                                      |
+| EMAIL_FINDER_MAX_SITE_PAGES                                     | Per-school page budget, default 10                                                                                                                        |
+| EMAIL_FINDER_ROW_TIMEOUT                                        | Time limit per row, default 900 seconds                                                                                                                   |
+| EMAIL_FINDER_USE_BROWSER                                        | Set 0 to disable browser research and form delivery                                                                                                       |
+| EMAIL_FINDER_BROWSER_CDP_URL                                    | Optional local browser debugging endpoint                                                                                                                 |
+| EMAIL_FINDER_CHROME_PROFILE_PATH                                | Optional dedicated automation profile                                                                                                                     |
+| EMAIL_FINDER_SENDER_NAME / EMAIL / PHONE / COMPANY / WEBSITE    | Optional truthful sender fields; use the EMAIL*FINDER_SENDER* prefix for each                                                                             |
 
 Google's API requires both a key and an engine ID and is unavailable to new
 customers; existing access is scheduled to end on January 1, 2027.

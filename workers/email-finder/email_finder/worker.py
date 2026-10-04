@@ -25,6 +25,7 @@ from .config import CACHE_DIR, load_settings
 from .engine import Engine, Finding, Row
 from .fetch import Fetcher
 from .forms import FormSender
+from .android import Galaxy, find_adb
 from .google_free import GoogleFreeSearch
 from . import nlp
 from .search import BraveSearch
@@ -172,7 +173,12 @@ async def run() -> bool:
         settings.use_browser,
         chrome_profile_path=settings.chrome_profile_path,
         browser_cdp_url=settings.browser_cdp_url,
+        social_cookies={"facebook": settings.facebook_cookies, "instagram": settings.instagram_cookies},
+        social_daily_limit=settings.social_daily_limit,
     )
+    signed = [n for n, f in (("Facebook", settings.facebook_cookies), ("Instagram", settings.instagram_cookies)) if f]
+    if signed:
+        log.info("Social research signs in to %s with your exported cookies", " and ".join(signed))
     search = BraveSearch.from_settings(settings, cache)
     if search.enabled:
         providers = ", ".join(p[0] for p in search.providers)
@@ -187,8 +193,15 @@ async def run() -> bool:
         rows = "rows with no website or social profile" if settings.google_free == "bare" else "every row"
         how = f" (signed in via {settings.google_cookies.name})" if settings.google_cookies else ""
         providers = f"free Google{how} first for {rows}, then {providers}"
+    galaxy = None
+    adb = find_adb() if settings.galaxy else None
+    if adb:
+        galaxy = Galaxy(cache, adb, settings.galaxy_serial, settings.galaxy_daily_limit)
+        ready = await galaxy.available()
+        log.info("Galaxy A20e backup for Facebook/Instagram: %s", "ready" if ready else
+                 "not connected or locked right now (checked again before each use)")
     engine = Engine(fetcher, search, DomainChecker(cache), settings.max_site_pages,
-                    google=google, google_mode=settings.google_free)
+                    google=google, google_mode=settings.google_free, galaxy=galaxy)
     log.info("Scoring weights loaded: decision=%s own_domain=%s free_mail_with_own=%s minimum=%s",
              engine.scoring.decision_bonus, engine.scoring.own_domain_bonus,
              engine.scoring.free_mail_with_own_bonus, engine.scoring.minimum_score)

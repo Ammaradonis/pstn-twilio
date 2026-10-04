@@ -79,21 +79,53 @@ describe('EmailFinderToasts', () => {
     expect(notice).toHaveTextContent('tab "Florida"');
   });
 
-  it('picks up finds missed by the socket from the status poll, once each', () => {
-    const view = renderToasts([find({ rowId: 'a', email: 'a@dojo.com' })]);
-    view.rerender([
-      find({ rowId: 'b', email: 'b@dojo.com' }),
-      find({ rowId: 'a', email: 'a@dojo.com' }),
-    ]);
-    view.rerender([
-      find({ rowId: 'b', email: 'b@dojo.com' }),
-      find({ rowId: 'a', email: 'a@dojo.com' }),
-    ]);
+  it('replaces the card with each newer find instead of stacking them', () => {
+    renderToasts([find({ rowId: 'a', email: 'a@dojo.com', foundAt: '2026-10-04T10:00:00Z' })]);
+    act(() => {
+      socketHandlers.get('email-finder.found')?.({
+        find: find({ rowId: 'b', email: 'b@dojo.com', foundAt: '2026-10-04T10:01:00Z' }),
+      });
+    });
     const notices = screen.getAllByRole('status');
-    expect(notices.map((n) => n.textContent?.match(/[ab]@dojo\.com/)?.[0])).toEqual([
-      'b@dojo.com',
-      'a@dojo.com',
+    expect(notices).toHaveLength(1);
+    expect(notices[0]).toHaveTextContent('b@dojo.com');
+    expect(notices[0]).not.toHaveTextContent('a@dojo.com');
+  });
+
+  it('takes a find missed by the socket from the status poll, but never an older one', () => {
+    const view = renderToasts([
+      find({ rowId: 'a', email: 'a@dojo.com', foundAt: '2026-10-04T10:00:00Z' }),
     ]);
+    view.rerender([
+      find({ rowId: 'b', email: 'b@dojo.com', foundAt: '2026-10-04T10:02:00Z' }),
+      find({ rowId: 'a', email: 'a@dojo.com', foundAt: '2026-10-04T10:00:00Z' }),
+    ]);
+    expect(screen.getByRole('status')).toHaveTextContent('b@dojo.com');
+    view.rerender([
+      find({ rowId: 'late', email: 'late@dojo.com', foundAt: '2026-10-04T10:01:00Z' }),
+    ]);
+    expect(screen.getAllByRole('status')).toHaveLength(1);
+    expect(screen.getByRole('status')).toHaveTextContent('b@dojo.com');
+  });
+
+  it('says when the Galaxy A20e found the address', () => {
+    renderToasts([
+      find({
+        rowId: 'g',
+        email: 'info@calsma.com',
+        method: 'Instagram Contact button in the app on the Galaxy A20e',
+      }),
+    ]);
+    const notice = screen.getByRole('status');
+    expect(notice).toHaveTextContent('via Galaxy A20e');
+    expect(notice).toHaveTextContent(
+      'Method: Instagram Contact button in the app on the Galaxy A20e',
+    );
+  });
+
+  it('does not tag finds made in the browser', () => {
+    renderToasts([find({ rowId: 'b' })]);
+    expect(screen.getByRole('status')).not.toHaveTextContent('via Galaxy A20e');
   });
 
   it('stays dismissed after a reload', () => {

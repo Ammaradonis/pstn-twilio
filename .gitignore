@@ -71,3 +71,4 @@ Google-search-engine-configuration-files/
 # Browser session cookies (logged-in Google account); never commit
 cookies.txt
 *.cookies.txt
+*cookies.txt

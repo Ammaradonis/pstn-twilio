@@ -1,12 +1,13 @@
 /**
- * Email finder notifications, bottom left of the Dial page.
+ * Email finder notification, bottom left of the Dial page.
  *
- * Each address the finder on the PC finds arrives over the socket the moment
- * the worker reports it, with the exact address and how it was found (e.g.
- * "Facebook contact info via iPhone emulation (found via free Google search)").
- * The tab's status poll fills in anything missed while the socket was down,
- * and on load the latest find is shown. The newest notification stays until
- * dismissed; older ones fade after a minute.
+ * One card at a time: each address the finder on the PC finds replaces the
+ * previous card, with the exact address and how it was found (e.g. "Facebook
+ * contact info via iPhone emulation (found via free Google search)"). It
+ * arrives over the socket the moment the worker reports it; the tab's status
+ * poll covers anything missed while the socket was down, and on load the
+ * latest find is shown. A card stays until a newer find replaces it, or until
+ * it is dismissed.
  */
 
 import {
@@ -19,8 +20,6 @@ import { useEffect, useRef, useState } from 'react';
 
 import { getSocket } from '../lib/realtime';
 
-const OLDER_VISIBLE_MS = 60_000;
-const MAX_VISIBLE = 3;
 const DISMISSED_KEY = 'pstn-twilio.email-finder.dismissed';
 
 interface Props {
@@ -30,32 +29,27 @@ interface Props {
   recent?: EmailFinderFindDto[];
 }
 
-interface Shown {
-  find: EmailFinderFindDto;
-  shownAt: number;
-}
-
 export function EmailFinderToasts({ spreadsheetId, sheetTitle, recent }: Props) {
   const queryClient = useQueryClient();
-  const [shown, setShown] = useState<Shown[]>([]);
+  const [current, setCurrent] = useState<EmailFinderFindDto | null>(null);
   const [dismissed, setDismissed] = useState<Set<string>>(readDismissed);
   const [now, setNow] = useState(() => Date.now());
   const known = useRef(new Set<string>());
-  const seeded = useRef(false);
 
-  function add(finds: EmailFinderFindDto[]) {
-    const fresh = finds.filter((f) => !known.current.has(f.rowId));
-    if (fresh.length === 0) return;
-    for (const f of fresh) known.current.add(f.rowId);
-    const at = Date.now();
-    setShown((prev) => [...fresh.map((find) => ({ find, shownAt: at })), ...prev].slice(0, 20));
-    setNow(at);
+  function show(find: EmailFinderFindDto) {
+    if (known.current.has(find.rowId)) return;
+    known.current.add(find.rowId);
+    // A find reported late (by the poll) never replaces a newer card.
+    setCurrent((prev) =>
+      prev && Date.parse(prev.foundAt) > Date.parse(find.foundAt) ? prev : find,
+    );
+    setNow(Date.now());
   }
 
   useEffect(() => {
     const socket = getSocket();
     function onFound(payload: WsEmailFinderFoundEvent) {
-      add([payload.find]);
+      show(payload.find);
       const { spreadsheetId: id, sheetTitle: title } = payload.find;
       void queryClient.invalidateQueries({ queryKey: ['email-finder', id, title] });
     }
@@ -66,23 +60,15 @@ export function EmailFinderToasts({ spreadsheetId, sheetTitle, recent }: Props) 
   }, [queryClient]);
 
   useEffect(() => {
-    if (!recent) return;
-    if (!seeded.current) {
-      // On load only the latest find, not the tab's whole history.
-      seeded.current = true;
-      for (const f of recent.slice(1)) known.current.add(f.rowId);
-      add(recent.slice(0, 1));
-      return;
-    }
-    add(recent);
+    if (recent?.[0]) show(recent[0]);
   }, [recent]);
 
-  // Re-render so older notifications fade and "x min ago" stays current.
+  // Keep "x min ago" current.
   useEffect(() => {
-    if (shown.length === 0) return;
+    if (!current) return;
     const timer = setInterval(() => setNow(Date.now()), 5_000);
     return () => clearInterval(timer);
-  }, [shown.length]);
+  }, [current]);
 
   function dismiss(rowId: string) {
     setDismissed((prev) => {
@@ -92,41 +78,32 @@ export function EmailFinderToasts({ spreadsheetId, sheetTitle, recent }: Props) 
     });
   }
 
-  const visible = shown
-    .filter((s) => !dismissed.has(s.find.rowId))
-    .filter((s, i) => i === 0 || now - s.shownAt < OLDER_VISIBLE_MS)
-    .slice(0, MAX_VISIBLE);
-  if (visible.length === 0) return null;
+  if (!current || dismissed.has(current.rowId)) return null;
 
   return (
     <div
       aria-label="Email finder notifications"
       aria-live="polite"
-      className="fixed inset-x-2 bottom-2 z-40 flex flex-col-reverse gap-2 sm:inset-x-auto sm:bottom-4 sm:left-4 sm:w-[22rem]"
+      className="fixed inset-x-2 bottom-2 z-40 sm:inset-x-auto sm:bottom-4 sm:left-4 sm:w-[22rem]"
     >
-      {visible.map((s, i) => (
-        <FindNotice
-          key={s.find.rowId}
-          find={s.find}
-          latest={i === 0}
-          now={now}
-          otherTab={s.find.spreadsheetId !== spreadsheetId || s.find.sheetTitle !== sheetTitle}
-          onDismiss={() => dismiss(s.find.rowId)}
-        />
-      ))}
+      <FindNotice
+        key={current.rowId}
+        find={current}
+        now={now}
+        otherTab={current.spreadsheetId !== spreadsheetId || current.sheetTitle !== sheetTitle}
+        onDismiss={() => dismiss(current.rowId)}
+      />
     </div>
   );
 }
 
 function FindNotice({
   find,
-  latest,
   now,
   otherTab,
   onDismiss,
 }: {
   find: EmailFinderFindDto;
-  latest: boolean;
   now: number;
   otherTab: boolean;
   onDismiss: () => void;
@@ -156,9 +133,9 @@ function FindNotice({
   return (
     <div
       role="status"
-      className={`border border-l-4 bg-white p-3 text-sm text-slate-900 shadow-md transition duration-300 ${
-        latest ? 'border-slate-300 border-l-emerald-500' : 'border-slate-200 border-l-slate-300'
-      } ${entered ? 'translate-x-0 opacity-100' : '-translate-x-4 opacity-0'}`}
+      className={`border border-l-4 border-slate-300 border-l-emerald-500 bg-white p-3 text-sm text-slate-900 shadow-md transition duration-300 ${
+        entered ? 'translate-x-0 opacity-100' : '-translate-x-4 opacity-0'
+      }`}
     >
       <div className="flex items-start justify-between gap-3">
         <p className="text-[11px] font-semibold uppercase tracking-wide text-emerald-700">
@@ -167,6 +144,11 @@ function FindNotice({
             {ago(find.foundAt, now)}
             {otherTab && ` · tab "${find.sheetTitle}"`}
           </span>
+          {find.method?.includes('Galaxy A20e') && (
+            <span className="ml-1.5 border border-violet-300 bg-violet-50 px-1 py-px font-medium normal-case tracking-normal text-violet-700">
+              via Galaxy A20e
+            </span>
+          )}
         </p>
         <button
           type="button"

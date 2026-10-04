@@ -34,7 +34,7 @@ import logging
 import re
 from datetime import datetime, timezone, timedelta
 from dataclasses import dataclass, field
-from urllib.parse import urlsplit
+from urllib.parse import parse_qs, urlsplit
 
 import tldextract
 from rapidfuzz import fuzz
@@ -42,7 +42,7 @@ from rapidfuzz import fuzz
 from . import nlp
 from .nlp import context_score_delta
 from .extract import Candidate, PageInfo, _is_profile, contact_like_links, emails_in_text, parse_page
-from .fetch import Fetcher
+from .fetch import Fetcher, instagram_profile_url
 from .google_free import GoogleBlocked, GoogleFreeSearch, GoogleUnavailable
 from .search import BraveSearch, Result, SearchBudgetExhausted, SearchUnavailable
 from .sources import (
@@ -83,7 +83,7 @@ DESIGNER_CONTEXT = re.compile(
     r"design(s|ed)? by|agency|web ?master",
     re.I,
 )
-SOURCE_BASE = {"mailto": 40, "jsonld": 38, "cf_decode": 36, "text": 34, "spelled": 34, "snippet": 26, "directory": 24}
+SOURCE_BASE = {"mailto": 40, "app-contact": 40, "jsonld": 38, "cf_decode": 36, "text": 34, "spelled": 34, "snippet": 26, "directory": 24}
 
 # A bare row whose free Google pass couldn't answer (the browser was slow or
 # torn down) waits this long and is researched again; Brave is not paid for it.
@@ -152,9 +152,11 @@ class _Scored:
 class Engine:
     def __init__(self, fetcher: Fetcher, search: BraveSearch, domains: DomainChecker, max_site_pages: int = 8,
                  *, scoring: ScoreWeights | None = None, people_executor=None,
-                 google: GoogleFreeSearch | None = None, google_mode: str = "bare"):
+                 google: GoogleFreeSearch | None = None, google_mode: str = "bare", galaxy=None):
         self.fetcher = fetcher
         self.search = search
+        # The user's Galaxy A20e (android.Galaxy): the real Meta apps as a backup.
+        self.galaxy = galaxy
         # Free Google before Brave: "bare" rows only (default), "all" rows, or "off".
         self.google = google
         self.google_mode = google_mode
@@ -223,6 +225,14 @@ class _Job:
             await self._crawl_site(site)
 
         best = await self._decide()
+        if not (best and best.kind == "decision-maker" and best.score >= 85) and \
+                not (self.row.facebook and self.row.instagram):
+            await self._google_business_profile()
+            best = await self._decide()
+            if not best and self.social:
+                # The school's own profiles, before any paid search.
+                await self._scrape_social_profiles()
+                best = await self._decide()
         free_route = self._google_first()
         if free_route:
             # One free pass, then: an answer is used, and a failure of ours is
@@ -272,6 +282,56 @@ class _Job:
         await self._finish(best)
         return self.finding
 
+    async def _google_business_profile(self) -> None:
+        """The school's own Facebook/Instagram pages from its Google Business
+        Profile: Google's panel lists the social pages the school added itself,
+        the most accurate source there is. Searched by name, then by name and
+        address when the first panel isn't clearly this school; a panel is only
+        used when it matches the row's phone or address."""
+        google = self.e.google
+        if google is None or not google.enabled or self.e.google_mode == "off" or self._google_blocked:
+            return
+        queries = [self.row.title] + ([f"{self.row.title} {self.row.address}"] if self.row.address else [])
+        for query in queries:
+            try:
+                panel = await google.business_profile(query, country=self.country)
+            except GoogleBlocked as err:
+                self._google_blocked = True
+                log.info("Google Business Profile lookup skipped (%s)", err)
+                return
+            except GoogleUnavailable as err:
+                log.info("Google Business Profile lookup failed (%s)", err)
+                return
+            if panel and self._panel_matches(panel):
+                await self._use_panel(panel)
+                return
+
+    def _panel_matches(self, panel: dict) -> bool:
+        name_ok = fuzz.token_set_ratio(self.row.title.lower(), (panel.get("name") or "").lower()) >= 85
+        phone = re.sub(r"\D", "", panel.get("phone") or "")[-10:]
+        phone_ok = bool(self.phone_digits) and len(phone) == 10 and phone == self.phone_digits
+        address_ok = _same_address(self.row.address, panel.get("address") or "")
+        return (name_ok and (phone_ok or address_ok)) or (phone_ok and address_ok)
+
+    async def _use_panel(self, panel: dict) -> None:
+        found = []
+        for site, url in (panel.get("profiles") or {}).items():
+            if site == "instagram":
+                url = instagram_profile_url(url)
+            elif site == "facebook" and "profile.php" not in url:
+                url = url.split("?")[0]
+            else:
+                continue
+            self.social.add(url)
+            self.discovered_by.setdefault(_origin_key(url), "google-business-profile")
+            found.append(site)
+        website = panel.get("website") or ""
+        if website.startswith("http") and not self.site_host and not self.row.website:
+            self.discovered_by.setdefault(_origin_key(website), "google-business-profile")
+            await self._crawl_site(website)
+            found.append("website")
+        log.info("Google Business Profile matched %s: %s", self.row.title, ", ".join(found) or "no links")
+
     def _search_stages(self) -> list:
         stages = [self._search_general, self._search_social, self._search_directories, self._search_federations]
         # The no-website fallback, when the sheet row has no real site.
@@ -314,11 +374,17 @@ class _Job:
     async def _crawl_site(self, url: str) -> None:
         if not url.startswith("http"):
             url = "https://" + url
+        found_before = len(self.candidates)
         home = await self.e.fetcher.get(url)
         if not home:
             home = await self.e.fetcher.render(url)
         if not home:
             return
+        if home.blocked and self.e.fetcher.use_browser:
+            # Many bot walls answer plain HTTP with 403 but let a real browser in.
+            rendered = await self.e.fetcher.render(url)
+            if rendered and not rendered.blocked:
+                home = rendered
         if home.blocked:
             self.finding.notes.append(f"Human verification required: {home.final_url}")
             return
@@ -355,12 +421,19 @@ class _Job:
             if self._has_strong_owner_email():
                 break
 
-        if not self.candidates and self.e.fetcher.use_browser:
+        # Nothing from this site's plain HTML (other sources don't count): many
+        # site builders only put the address on the page with JavaScript, so
+        # render the contact page, then the homepage.
+        if len(self.candidates) == found_before and self.e.fetcher.use_browser:
             contact = next((l for l in to_visit if re.search(r"contact", l, re.I)), None)
-            if contact:
-                rendered = await self.e.fetcher.render(contact)
+            for target in (contact, home.final_url):
+                if not target:
+                    continue
+                rendered = await self.e.fetcher.render(target)
                 if rendered and not rendered.blocked:
                     self._take(rendered.final_url, rendered.html, rendered.via)
+                if len(self.candidates) > found_before:
+                    break
 
     async def _crawl_found_site(self, url: str) -> None:
         before_state = (self.site_host, self.site_domain, self.site_is_schools, set(self.own_domains), set(self.social))
@@ -414,30 +487,117 @@ class _Job:
     # ── logged-in FB/IG social scraping ───────────────────────────────────────
 
     async def _scrape_social_profiles(self) -> None:
-        """Fetch FB/IG profile pages with the logged-in Chrome context."""
-        for social_url in sorted(self.social)[:6]:
-            if social_url in self._scraped:
-                continue
-            self._scraped.add(social_url)
-            host = _host(social_url)
-            if host_matches(host, {"facebook.com", "fb.com", "m.facebook.com"}):
-                page = await self.e.fetcher.fetch_fb_profile(social_url)
-                if page and not page.blocked:
-                    self._take(page.final_url, page.html, page.via)
-                elif page and page.blocked:
-                    self.finding.notes.append(f"Social login or human verification required: {social_url}")
-                    log.info("Scraped FB profile: %s", social_url)
-            elif host_matches(host, {"instagram.com"}):
-                page = await self.e.fetcher.fetch_ig_profile(social_url)
-                if page and not page.blocked:
-                    self._take(page.final_url, page.html, page.via)
-                elif page and page.blocked:
-                    self.finding.notes.append(f"Social login or human verification required: {social_url}")
-                    log.info("Scraped IG profile: %s", social_url)
+        """Facebook first, then Instagram in iPhone emulation.
 
-        # Also search snippets for any FB/IG profiles not in the sheet
-        if not self.social and self.e.search.enabled:
-            pass  # covered by _search_social()
+        Instagram is the backup, never a dead end: when Facebook gives no
+        address it is always tried (the profile from the sheet or search, else
+        the Facebook page's handle on Instagram, used only if that profile
+        names the school), and the website and link-in-bio pages the Instagram
+        profile lists are read too.
+        """
+        urls = sorted(self.social)
+        facebook = [u for u in urls if host_matches(_host(u), {"facebook.com", "fb.com", "m.facebook.com"})][:3]
+        instagram = list(dict.fromkeys(
+            instagram_profile_url(u) for u in urls if host_matches(_host(u), {"instagram.com"})))[:3]
+        for url in facebook:
+            if url in self._scraped:
+                continue
+            self._scraped.add(url)
+            page = await self.e.fetcher.fetch_fb_profile(url)
+            if page and not page.blocked:
+                self._take(page.final_url, page.html, page.via)
+            else:
+                if page:
+                    self.finding.notes.append(f"Social login or human verification required: {url}")
+                # Facebook resisted the browser (blocked, paused, out of page loads): the phone.
+                await self._galaxy_lookup("facebook", url)
+
+        guessed: set[str] = set()
+        if not instagram and not await self._decide():
+            for url in facebook:
+                handle = _facebook_handle(url)
+                if handle:
+                    guess = f"https://www.instagram.com/{handle}/"
+                    guessed.add(guess)
+                    instagram.append(guess)
+        links: list[str] = []
+        on_phone: list[str] = []  # Instagram profiles for the Galaxy if the browser gets nowhere
+        for url in instagram[:3]:
+            if url in self._scraped:
+                continue
+            self._scraped.add(url)
+            page = await self.e.fetcher.fetch_ig_profile(url)
+            if page and page.blocked:
+                self.finding.notes.append(f"Social login or human verification required: {url}")
+                on_phone.append(url)
+                continue
+            if not page:
+                on_phone.append(url)
+                continue
+            if url in guessed and not self._relevant(parse_page(page.final_url, page.html).text):
+                log.info("Instagram %s isn't this school; not used", url)
+                continue
+            on_phone.append(url)
+            self.social.add(url)
+            info = self._take(page.final_url, page.html, page.via)
+            links += [link for link in _profile_links(info) if link not in links]
+        if links and not await self._decide():
+            await self._follow_profile_links(links)
+        # A Facebook page the Instagram profile links to (one round, no further hops).
+        for url in sorted(self.social - set(facebook) - self._scraped)[:1]:
+            if host_matches(_host(url), {"facebook.com", "fb.com", "m.facebook.com"}) and not await self._decide():
+                self._scraped.add(url)
+                page = await self.e.fetcher.fetch_fb_profile(url)
+                if page and not page.blocked:
+                    self._take(page.final_url, page.html, page.via)
+        # Still nothing: the Instagram app on the Galaxy, which has the Contact
+        # button Instagram's website lacks.
+        for url in on_phone[:2]:
+            if await self._decide():
+                break
+            await self._galaxy_lookup("instagram", url, must_match=url in guessed)
+
+    async def _galaxy_lookup(self, app: str, url: str, must_match: bool = False) -> None:
+        """Read a profile in the real app on the user's Galaxy A20e."""
+        galaxy = self.e.galaxy
+        if galaxy is None:
+            return
+        if app == "instagram":
+            handle = urlsplit(url).path.strip("/").split("/")[0]
+            if not re.fullmatch(r"[A-Za-z0-9._]{1,30}", handle):
+                return
+            found = await galaxy.instagram(handle)
+        else:
+            found = await galaxy.facebook(url)
+        if found.blocked:
+            log.info("Galaxy A20e didn't look at %s (%s)", url, found.blocked)
+            return
+        if must_match and not self._relevant(found.context):
+            log.info("Galaxy A20e: %s isn't this school; not used", url)
+            return
+        found_by = self.discovered_by.get(_origin_key(url), "")
+        for email, where in found.emails.items():
+            self.candidates.append(Candidate(
+                email, "app-contact" if where == "contact" else "text", url,
+                _around(found.context, email, 220) if email in found.context.lower() else found.context[:600],
+                via="galaxy", found_by=found_by))
+        if found.emails:
+            log.info("Galaxy A20e found %d address(es) on %s", len(found.emails), url)
+
+    async def _follow_profile_links(self, links: list[str]) -> None:
+        """The school's website and link-in-bio pages, as its Instagram profile lists them."""
+        for link in links[:3]:
+            host = _host(link)
+            self.discovered_by.setdefault(_origin_key(link), "instagram")
+            if host_matches(host, LINK_IN_BIO_HOSTS):
+                await self._crawl_link_page(link)
+            elif host_matches(host, SOCIAL_HOSTS):
+                self.social.add(link)
+            elif not self.site_host and not host_matches(host, SNIPPET_ONLY_HOSTS | VENDOR_HOSTS):
+                # Listed by the school's own profile: no phone/town proof needed.
+                await self._crawl_site(link)
+            if await self._decide():
+                return
 
     # ── search ────────────────────────────────────────────────────────────────
 
@@ -762,12 +922,19 @@ class _Job:
         contexts = " ".join(c.context for c in seen)
         offsite = best_src.source in ("snippet", "directory")
 
-        if reg in self.own_domains:
+        # An address the school put behind its own profile's Contact button is
+        # its own, even when its website wasn't read.
+        published = any(c.source == "app-contact" for c in seen) and domain not in FREE_MAIL_DOMAINS
+        if reg in self.own_domains or published:
             affinity = "own"
             score += self.e.scoring.own_domain_bonus
         elif domain in FREE_MAIL_DOMAINS:
             affinity = "free"
             score += 12 if not has_own else self.e.scoring.free_mail_with_own_bonus
+            # thegrindbjj54@gmail.com published on thegrindbjj.com: the school's own inbox.
+            label = re.sub(r"[^a-z0-9]", "", (self.site_domain or "").split(".")[0])
+            if len(label) >= 5 and label in re.sub(r"[^a-z0-9]", "", local) and not offsite:
+                score += 10
         else:
             affinity = "foreign"
             if DESIGNER_CONTEXT.search(contexts) and not offsite:
@@ -920,11 +1087,14 @@ SOURCE_WORDS = {
     "text": "page text",
 }
 VIA_WORDS = {
+    "galaxy": " in the app on the Galaxy A20e",
     "iphone": " via iPhone emulation",
     "desktop": " via desktop browser",
     "browser": " (rendered in a browser)",
 }
 SEARCH_WORDS = {
+    "google-business-profile": "the school's Google Business Profile",
+    "instagram": "the school's Instagram profile",
     "google-web": "free Google search",
     "google": "Google API search",
     "brave": "Brave search",
@@ -951,7 +1121,7 @@ def _describe_spot(c: Candidate, site_host: str | None, own_domains: set[str]) -
     if host_matches(host, {"facebook.com", "fb.com", "m.facebook.com"}):
         return f"Facebook {'contact info' if 'about' in path else 'page'}{via}"
     if host_matches(host, {"instagram.com"}):
-        return f"Instagram bio text{via}"
+        return f"Instagram {'Contact button' if c.source == 'app-contact' else 'bio text'}{via}"
     if c.source == "directory":
         kind = "Affiliation listing" if host_matches(host, AFFILIATION_HOSTS) else "Directory listing"
         return f"{kind} on {host}"
@@ -964,6 +1134,61 @@ def _describe_spot(c: Candidate, site_host: str | None, own_domains: set[str]) -
     spot = f"in the footer of {owner} {page}" if c.where == "footer" else f"on {owner} {page}"
     how = SOURCE_WORDS.get(c.source, c.source)
     return f"{how[0].upper()}{how[1:]} {spot}{via}"
+
+
+FACEBOOK_NOT_HANDLES = {"profile.php", "pages", "p", "people", "groups", "share", "sharer.php", "watch",
+                        "events", "pg", "home.php", "story.php", "permalink.php", "photo.php", "reel"}
+# Instagram's own pages and Meta's: never a school's website.
+META_HOSTS = {"instagram.com", "facebook.com", "fb.com", "fb.me", "threads.net", "threads.com", "meta.com",
+              "meta.ai", "whatsapp.com", "apple.com", "play.google.com"}
+
+
+def _same_address(a: str, b: str) -> bool:
+    """Whether two addresses are the same place: same ZIP/postcode and the same
+    street number or street name ("2025 Gellert Blvd Ste 203, Daly City, CA
+    94015" vs "...CA 94015, United States")."""
+    if not a or not b:
+        return False
+    def code(s: str) -> str:
+        uk = UK_POSTCODE.search(s)
+        if uk:
+            return re.sub(r"\s", "", uk.group()).upper()
+        us = re.findall(r"\b(\d{5})(?:-\d{4})?\b", s)
+        return us[-1] if us else ""
+    def street(s: str) -> tuple[str, str]:
+        first = s.split(",")[0].lower()
+        number = re.match(r"\s*(\d+[a-z]?)\b", first)
+        return (number.group(1) if number else ""), re.sub(r"^\s*\d+[a-z]?\s*", "", first)
+    (num_a, name_a), (num_b, name_b) = street(a), street(b)
+    same_street = (num_a and num_a == num_b) or fuzz.token_set_ratio(name_a, name_b) >= 85
+    code_a, code_b = code(a), code(b)
+    if code_a and code_b:
+        return code_a == code_b and bool(same_street)
+    return bool(num_a and num_a == num_b and fuzz.token_set_ratio(name_a, name_b) >= 85)
+
+
+def _facebook_handle(url: str) -> str | None:
+    """The page name in facebook.com/<name>, the likeliest Instagram handle."""
+    first = urlsplit(url if "//" in url else "https://" + url).path.strip("/").split("/")[0]
+    if first.lower() in FACEBOOK_NOT_HANDLES or not re.fullmatch(r"[A-Za-z0-9._]{3,30}", first):
+        return None
+    return first.lower()
+
+
+def _profile_links(info: PageInfo) -> list[str]:
+    """Websites an Instagram profile links to. Instagram wraps them in
+    l.instagram.com/?u=<address>; its own and Meta's pages are skipped."""
+    found: list[str] = []
+    for link, _ in info.links:
+        host = _host(link)
+        if host == "l.instagram.com":
+            link = parse_qs(urlsplit(link).query).get("u", [""])[0]
+            host = _host(link)
+        if not link.startswith(("http://", "https://")) or host_matches(host, META_HOSTS):
+            continue
+        if link not in found:
+            found.append(link)
+    return found
 
 
 def _origin_key(url: str) -> str:

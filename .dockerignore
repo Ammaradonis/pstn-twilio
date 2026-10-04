@@ -24,3 +24,7 @@ recordings
 background.js
 EMAIL-HUNETR-REQUEST.txt
 email-hunt.txt
+# Browser session cookies; never upload to the builder
+cookies.txt
+*.cookies.txt
+*cookies.txt
