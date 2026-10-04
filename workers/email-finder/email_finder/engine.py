@@ -131,6 +131,9 @@ class Finding:
     research_complete: bool = True
     # How the chosen address was found, in words (shown on the Dial page).
     method: str | None = None
+    # Verified details for the sheet's empty cells: websiteUrl, phoneNumber,
+    # facebookUrl, instagramUrl, youtubeUrl, twitterUrl, linkedinUrl, tiktokUrl.
+    enrichment: dict[str, str] = field(default_factory=dict)
 
     @property
     def status(self) -> str:
@@ -204,6 +207,8 @@ class _Job:
         self.discovered_by: dict[str, str] = {}
         self._free_only = False  # searches go to free Google only (the Google pass)
         self._google_blocked = False
+        self._cse_answered = False  # the user's Programmable Search Engine found this school
+        self._panel_used = False  # a Google Business Profile matched this row
         self._google_answered = False  # free Google replied (a result or "none")
         self._google_stalled = False  # free Google couldn't answer this row
         self._google_stall_logged = False
@@ -212,6 +217,31 @@ class _Job:
     # ── orchestration ─────────────────────────────────────────────────────────
 
     async def run(self) -> Finding:
+        finding = await self._run()
+        self._finalize_enrichment()
+        return finding
+
+    def _finalize_enrichment(self) -> None:
+        """The details reported for the sheet's empty cells, once the row is done."""
+        f = self.finding
+        # Profiles the school's own website links to.
+        if self.site_is_schools and self.site_host:
+            for info in self.pages:
+                if _host(info.url) == self.site_host:
+                    for link in sorted(info.social):
+                        column = "facebookUrl" if "facebook.com" in link else "instagramUrl"
+                        f.enrichment.setdefault(column, link)
+        # Never report what the sheet already has.
+        for column, have in (("websiteUrl", self.row.website), ("phoneNumber", self.row.phone),
+                             ("facebookUrl", self.row.facebook), ("instagramUrl", self.row.instagram)):
+            if have:
+                f.enrichment.pop(column, None)
+
+    async def _run(self) -> Finding:
+        # The default first step: the school's Google Business Profile, for its
+        # own website, phone and social pages, verified against the row.
+        if not all((self.row.website, self.row.phone, self.row.facebook, self.row.instagram)):
+            await self._google_business_profile()
         site = self.row.website.strip()
         host = _host(site)
         if site and host_matches(host, SOCIAL_HOSTS):
@@ -225,14 +255,10 @@ class _Job:
             await self._crawl_site(site)
 
         best = await self._decide()
-        if not (best and best.kind == "decision-maker" and best.score >= 85) and \
-                not (self.row.facebook and self.row.instagram):
-            await self._google_business_profile()
+        if not best and self._panel_used and self.social:
+            # The profiles its Business Profile lists, before any paid search.
+            await self._scrape_social_profiles()
             best = await self._decide()
-            if not best and self.social:
-                # The school's own profiles, before any paid search.
-                await self._scrape_social_profiles()
-                best = await self._decide()
         free_route = self._google_first()
         if free_route:
             # One free pass, then: an answer is used, and a failure of ours is
@@ -314,6 +340,17 @@ class _Job:
         return (name_ok and (phone_ok or address_ok)) or (phone_ok and address_ok)
 
     async def _use_panel(self, panel: dict) -> None:
+        self._panel_used = True
+        enrich = self.finding.enrichment
+        if (panel.get("website") or "").startswith("http"):
+            enrich.setdefault("websiteUrl", panel["website"])
+        if panel.get("phone"):
+            enrich.setdefault("phoneNumber", panel["phone"])
+        for site, url in (panel.get("profiles") or {}).items():
+            column = PROFILE_COLUMNS.get(site)
+            if column:
+                enrich.setdefault(column, instagram_profile_url(url) if site == "instagram"
+                                  else url if "profile.php" in url else url.split("?")[0])
         found = []
         for site, url in (panel.get("profiles") or {}).items():
             if site == "instagram":
@@ -333,7 +370,8 @@ class _Job:
         log.info("Google Business Profile matched %s: %s", self.row.title, ", ".join(found) or "no links")
 
     def _search_stages(self) -> list:
-        stages = [self._search_general, self._search_social, self._search_directories, self._search_federations]
+        stages = [self._search_general, self._search_social, self._search_cse,
+                  self._search_directories, self._search_federations]
         # The no-website fallback, when the sheet row has no real site.
         has_real_site = bool(self.row.website) and not self.social
         if not has_real_site or not self.site_host:
@@ -572,6 +610,9 @@ class _Job:
         if found.blocked:
             log.info("Galaxy A20e didn't look at %s (%s)", url, found.blocked)
             return
+        if found.missing:
+            log.info("Instagram says %s doesn't exist (tried twice on the Galaxy A20e)", url)
+            return
         if must_match and not self._relevant(found.context):
             log.info("Galaxy A20e: %s isn't this school; not used", url)
             return
@@ -583,6 +624,9 @@ class _Job:
                 via="galaxy", found_by=found_by))
         if found.emails:
             log.info("Galaxy A20e found %d address(es) on %s", len(found.emails), url)
+            self.finding.enrichment.setdefault("instagramUrl" if app == "instagram" else "facebookUrl", url)
+        if found.phones:
+            self.finding.enrichment.setdefault("phoneNumber", found.phones[0])
 
     async def _follow_profile_links(self, links: list[str]) -> None:
         """The school's website and link-in-bio pages, as its Instagram profile lists them."""
@@ -615,7 +659,31 @@ class _Job:
         )
         await self._use_results(results, find_site=False)
 
+    async def _search_cse(self) -> None:
+        """The user's Programmable Search Engine: the curated directories,
+        federations and listings (annotations.xml) in one free query."""
+        google = self.e.google
+        if self._cse_answered or google is None or not getattr(google, "cse_id", None) or self._google_blocked:
+            return
+        where = self.town or self.street or ""
+        for query in (f'"{self.row.title}" {where}'.strip(), f"{self.row.title} {where}".strip()):
+            try:
+                results = await google.cse_search(query)
+            except GoogleBlocked as err:
+                log.info("Programmable Search Engine skipped (%s)", err)
+                return
+            except GoogleUnavailable as err:
+                log.info("Programmable Search Engine failed (%s)", err)
+                return
+            if any(self._search_identity(r.text + " " + r.url) for r in results):
+                # It covers the directory and federation sites: no paid queries for them.
+                self._cse_answered = True
+                await self._use_results(results, find_site=not self.site_host, read_pages=3)
+                return
+
     async def _search_directories(self) -> None:
+        if self._cse_answered and not self._free_only:
+            return  # the Programmable Search Engine already covered these sites for free
         # Visit every configured source group instead of permanently truncating to eight domains.
         sites = directory_sites(self.country, self.row.category, self.row.title)
         for offset in range(0, len(sites), 6):
@@ -627,6 +695,8 @@ class _Job:
                 break
 
     async def _search_federations(self) -> None:
+        if self._cse_answered and not self._free_only:
+            return
         # Directories already include style federations. Search additional owner/media/event evidence.
         where = self.town or self.street or ""
         for suffix in ('owner head instructor email', 'team contact (site:smoothcomp.com OR site:kihapp.com OR site:usamartialartists.org)'):
@@ -930,7 +1000,10 @@ class _Job:
             score += self.e.scoring.own_domain_bonus
         elif domain in FREE_MAIL_DOMAINS:
             affinity = "free"
-            score += 12 if not has_own else self.e.scoring.free_mail_with_own_bonus
+            # A free-mail inbox the school publishes behind its own Contact button is
+            # its inbox even when its website shows a domain address too.
+            from_contact = any(c.source == "app-contact" for c in seen)
+            score += 12 if not has_own or from_contact else self.e.scoring.free_mail_with_own_bonus
             # thegrindbjj54@gmail.com published on thegrindbjj.com: the school's own inbox.
             label = re.sub(r"[^a-z0-9]", "", (self.site_domain or "").split(".")[0])
             if len(label) >= 5 and label in re.sub(r"[^a-z0-9]", "", local) and not offsite:
@@ -1094,6 +1167,7 @@ VIA_WORDS = {
 }
 SEARCH_WORDS = {
     "google-business-profile": "the school's Google Business Profile",
+    "google-cse": "your Programmable Search Engine",
     "instagram": "the school's Instagram profile",
     "google-web": "free Google search",
     "google": "Google API search",
@@ -1136,6 +1210,9 @@ def _describe_spot(c: Candidate, site_host: str | None, own_domains: set[str]) -
     return f"{how[0].upper()}{how[1:]} {spot}{via}"
 
 
+# Google Business Profile "Profiles" -> the sheet's column for them.
+PROFILE_COLUMNS = {"facebook": "facebookUrl", "instagram": "instagramUrl", "youtube": "youtubeUrl",
+                   "twitter": "twitterUrl", "x": "twitterUrl", "linkedin": "linkedinUrl", "tiktok": "tiktokUrl"}
 FACEBOOK_NOT_HANDLES = {"profile.php", "pages", "p", "people", "groups", "share", "sharer.php", "watch",
                         "events", "pg", "home.php", "story.php", "permalink.php", "photo.php", "reel"}
 # Instagram's own pages and Meta's: never a school's website.

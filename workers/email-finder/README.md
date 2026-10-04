@@ -62,12 +62,19 @@ depend on the worker.
   app does), so the bio and every link the profile lists (website, link-in-bio,
   a linked Facebook page) are read next. JavaScript-only contact pages are
   rendered. `scripts/probe_instagram.py` runs this on real profiles.
-- Rows without Facebook/Instagram links in the sheet first get the school's
-  Google Business Profile panel (free Google search by name, then name +
+- Every row missing a website, phone, Facebook or Instagram link starts with
+  the school's Google Business Profile (free Google search by name, then name +
   address if the first panel isn't clearly this school). A panel is used only
-  when it matches the row's phone or address; its Profiles section gives the
-  school's own Facebook/Instagram pages, and its website is crawled when the
-  sheet has none.
+  when the name matches and the phone or address matches the row. Its Profiles
+  give the school's own Facebook/Instagram (and YouTube, X, LinkedIn, TikTok),
+  its website is crawled when the sheet has none, and everything verified is
+  written into the sheet's empty `websiteUrl`, `phoneNumber`, `facebookUrl`,
+  `instagramUrl`, `twitterUrl`, `linkedinUrl` and `youtubeUrl` cells (never over
+  a value already there).
+- The user's Programmable Search Engine (`Google-search-engine-configuration-files`,
+  ID in GOOGLE_SEARCH_ENGINE_ID) is searched through its public results page
+  for the school's name and town. When it finds the school, the paid directory
+  and federation searches are skipped: it covers those sites for free.
 - The user's Samsung Galaxy A20e (USB debugging, adb from
   `%LOCALAPPDATA%Androidplatform-tools`) is the backup to the browser, not a
   replacement: when Facebook or Instagram block the browser, are paused, have
@@ -153,6 +160,7 @@ not logged, because Google puts its key in the query string.
 | EMAIL_FINDER_SOCIAL_DAILY_LIMIT                                 | Facebook and Instagram page loads a day, each, default 200, 12-25 seconds apart                                                                           |
 | EMAIL_FINDER_GALAXY / EMAIL_FINDER_GALAXY_SERIAL                | Galaxy A20e backup on/off (default on when adb finds it) and its adb serial                                                                               |
 | EMAIL_FINDER_GALAXY_DAILY_LIMIT                                 | Profiles looked up on the phone a day, default 150, 10-20 seconds apart                                                                                   |
+| EMAIL_FINDER_CSE_DAILY_LIMIT                                    | Programmable Search Engine queries a day, default 200                                                                                                     |
 | EMAIL_FINDER_BEAVE_DAILY_LIMIT / EMAIL_FINDER_BRAVE_DAILY_LIMIT | Per-key Brave ceilings, default 300 each; identical keys share a ceiling                                                                                  |
 | EMAIL_FINDER_CONCURRENCY                                        | Parallel rows, default 2, maximum 4                                                                                                                       |
 | EMAIL_FINDER_PER_HOST_DELAY                                     | Request spacing, default 1.5 seconds                                                                                                                      |

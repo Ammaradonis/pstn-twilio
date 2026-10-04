@@ -28,6 +28,16 @@ PROFILE_NO_CONTACT = screen(IG, ("calsma_official", "", False), ("Follow", "", T
                             ("Taekwondo for kids and adults in Daly City", "", False))
 PROFILE_WITH_CONTACT = screen(IG, ("calsma_official", "", False), ("Follow", "", True), ("Contact", "", True))
 CONTACT_SHEET = screen(IG, ("Call", "", True), ("Email", "", True), ("Directions", "", True))
+# What the Instagram app really showed for thegrindbjj on 2026-10-04: the sheet
+# lists the number and the address itself (resource id contact_option_sub_text).
+REAL_SHEET = ('<?xml version="1.0"?><hierarchy rotation="0">'
+              '<node text="Contact" resource-id="com.instagram.android:id/title" package="com.instagram.android" '
+              'content-desc="" clickable="false" bounds="[0,1220][720,1280]"/>'
+              '<node text="+1 559-759-8024" resource-id="com.instagram.android:id/contact_option_sub_text" '
+              'package="com.instagram.android" content-desc="" clickable="false" bounds="[28,1330][700,1366]"/>'
+              '<node text="thegrindbjj54@gmail.com" resource-id="com.instagram.android:id/contact_option_sub_text" '
+              'package="com.instagram.android" content-desc="" clickable="false" bounds="[0,0][0,0]"/>'
+              '</hierarchy>')
 GMAIL_DRAFT = screen("com.google.android.gm", ("To", "", False), ("admin@calsma.com", "", False),
                      ("", "More options", True))
 
@@ -43,7 +53,7 @@ class FakePhone(Galaxy):
     """Galaxy with adb replaced by a script of screens."""
 
     def __init__(self, tmp_path, screens, foreground=f"{IG}/com.instagram.mainactivity.MainActivity"):
-        super().__init__(Cache(tmp_path / "c.db"), "adb")
+        super().__init__(Cache(tmp_path / "c.db"), "adb", lock_path=tmp_path / "galaxy.lock")
         self.screens, self.foreground, self.commands = list(screens), foreground, []
 
     async def available(self):
@@ -54,7 +64,10 @@ class FakePhone(Galaxy):
         return ""
 
     async def _screen(self):
-        return parse_dump(self.screens.pop(0)) if self.screens else []
+        # The last screen stays up, as a real one would.
+        if len(self.screens) > 1:
+            return parse_dump(self.screens.pop(0))
+        return parse_dump(self.screens[0]) if self.screens else []
 
     async def _foreground(self):
         return self.foreground
@@ -71,7 +84,8 @@ def _quick(monkeypatch):
 
 def test_instagram_contact_button_refreshes_once_then_reads_the_draft_and_discards_it(tmp_path, monkeypatch):
     _quick(monkeypatch)
-    phone = FakePhone(tmp_path, [PROFILE_NO_CONTACT, PROFILE_WITH_CONTACT, CONTACT_SHEET, GMAIL_DRAFT,
+    phone = FakePhone(tmp_path, [PROFILE_NO_CONTACT, PROFILE_NO_CONTACT, PROFILE_WITH_CONTACT, PROFILE_WITH_CONTACT,
+                                 CONTACT_SHEET, GMAIL_DRAFT,
                                  screen("com.google.android.gm", ("Discard", "", True)),
                                  screen("com.google.android.gm", ("Discard", "", True))])
     found = asyncio.run(phone.instagram("calsma_official"))
@@ -81,6 +95,15 @@ def test_instagram_contact_button_refreshes_once_then_reads_the_draft_and_discar
     assert any("am force-stop com.google.android.gm" == c for c in phone.commands)
     assert not any("input text" in c or "KEYCODE_ENTER" in c for c in phone.commands)  # never types or sends
     assert phone.commands[-1] == "input keyevent KEYCODE_HOME"
+
+
+def test_the_real_contact_sheet_gives_address_and_phone_without_opening_an_email_app(tmp_path, monkeypatch):
+    _quick(monkeypatch)
+    phone = FakePhone(tmp_path, [PROFILE_WITH_CONTACT, PROFILE_WITH_CONTACT, REAL_SHEET])
+    found = asyncio.run(phone.instagram("thegrindbjj"))
+    assert found.emails == {"thegrindbjj54@gmail.com": "contact"} and found.phones == ["+1 559-759-8024"]
+    assert not any("force-stop" in c for c in phone.commands)
+    assert "input keyevent KEYCODE_BACK" in phone.commands  # the sheet is closed again
 
 
 def test_a_challenge_screen_is_never_touched_and_pauses_the_app(tmp_path, monkeypatch):
@@ -262,3 +285,117 @@ def test_a_google_pause_hands_over_to_brave_instead_of_waiting(tmp_path):
         finally:
             await google.close()
     assert "paused" in asyncio.run(run())
+
+
+# ── Business Profile first, and details for the sheet ───────────────────────
+
+
+def test_business_profile_runs_first_and_reports_details_for_empty_cells():
+    google = _Google({"California School of Martial Arts": CALSMA_PANEL})
+    row = dict(CALSMA_ROW, website="", phone="+1 (650) 810-5595")
+    job = _panel_job(google, **row)
+    asyncio.run(job.run())
+    assert google.asked[0] == "California School of Martial Arts"  # before anything else
+    e = job.finding.enrichment
+    assert e["websiteUrl"] == "http://www.calsma.com/"
+    assert e["instagramUrl"] == "https://www.instagram.com/calsma_official/"
+    assert e["facebookUrl"].endswith("/100083472663859/") and "?" not in e["facebookUrl"]
+    assert e["youtubeUrl"] == "https://www.youtube.com/channel/UCjhJn245sSiigT1wafmZUeA"
+    assert "phoneNumber" not in e  # the sheet already has one
+    from email_finder.worker import to_result
+    assert to_result("id", job.finding, "lease")["enrichment"] == e
+
+
+def test_the_phones_contact_sheet_number_is_reported():
+    from email_finder.android import AppLookup
+    phone = _Phone(ig=AppLookup(emails={"thegrindbjj54@gmail.com": "contact"}, phones=["+1 559-759-8024"],
+                                context="The Grind Martial Arts Academy"))
+    job = _job(_Fetcher(), phone, title="The Grind Martial Arts Academy")
+    job.social = {"https://www.instagram.com/thegrindbjj/"}
+
+    async def run():
+        await job._scrape_social_profiles()
+        await job._finish(await job._decide())
+    asyncio.run(run())
+    assert job.finding.enrichment == {"phoneNumber": "+1 559-759-8024",
+                                      "instagramUrl": "https://www.instagram.com/thegrindbjj/"}
+
+
+def test_the_programmable_search_engine_replaces_paid_directory_searches():
+    from email_finder.search import Result
+
+    class Cse(_Google):
+        cse_id = "engine"
+
+        async def cse_search(self, query):
+            self.asked.append(query)
+            return [Result("https://www.yelp.com/biz/warrior-martial-arts-elk-grove", "Warrior Martial Arts - Elk Grove",
+                           "Warrior Martial Arts, Elk Grove, CA 95624", provider="google-cse")]
+
+    class Brave:
+        enabled = True
+
+        def __init__(self):
+            self.queries = []
+
+        async def search(self, q, country="US"):
+            self.queries.append(q)
+            return []
+
+    brave, cse = Brave(), Cse({})
+    job = _Job(Engine(_Fetcher(), brave, _Domains(), google=cse, google_mode="off"),  # type: ignore[arg-type]
+               Row(title="Warrior Martial Arts", address="9500 Elk Grove Blvd, Elk Grove, CA 95624"))
+    asyncio.run(job._search_cse())
+    assert job._cse_answered
+    asyncio.run(job._search_directories())
+    asyncio.run(job._search_federations())
+    assert brave.queries == []  # covered by the user's engine for free
+
+
+def test_a_contact_button_gmail_is_kept_even_when_the_site_shows_a_domain_address():
+    job = _job(_Fetcher(), _Phone(), title="Rōnin Martial Arts Academy SD", website="https://www.roninmartialartssd.com")
+    job.own_domains = {"roninmartialartssd.com"}
+    context = "ronin_martial_arts_sd Rōnin Martial Arts Academy SD Contact"
+    contact = job._score("kajukenbofighter22@hotmail.com",
+                         [Candidate("kajukenbofighter22@hotmail.com", "app-contact",
+                                    "https://www.instagram.com/ronin_martial_arts_sd/", context, via="galaxy")],
+                         [], True)
+    page = job._score("kajukenbofighter22@hotmail.com",
+                      [Candidate("kajukenbofighter22@hotmail.com", "text",
+                                 "https://www.instagram.com/ronin_martial_arts_sd/", context)], [], True)
+    assert contact.score >= job.e.scoring.minimum_score > page.score
+
+
+def test_one_process_at_a_time_drives_the_phone(tmp_path, monkeypatch):
+    _quick(monkeypatch)
+    lock = tmp_path / "galaxy.lock"
+    lock.write_text("4242")  # another process is in the middle of a lookup
+    phone = FakePhone(tmp_path, [PROFILE_WITH_CONTACT])
+
+    async def busy():
+        return await phone._hold_phone(wait_s=0)
+    assert asyncio.run(busy()) is False
+    import os
+    os.utime(lock, (time.time() - 600, time.time() - 600))  # that process died long ago
+    assert asyncio.run(busy()) is True
+    phone._release_phone()
+    assert not lock.exists()
+
+
+NOT_FOUND_SCREEN = screen(IG, ("User not found", "", False), ("Back", "", True))
+
+
+def test_user_not_found_is_opened_twice_then_left(tmp_path, monkeypatch):
+    _quick(monkeypatch)
+    phone = FakePhone(tmp_path, [NOT_FOUND_SCREEN, NOT_FOUND_SCREEN])
+    found = asyncio.run(phone.instagram("gone_dojo"))
+    assert found.missing and not found.emails and not found.blocked
+    assert sum("am start" in c for c in phone.commands) == 2
+
+
+def test_user_not_found_once_is_a_hiccup(tmp_path, monkeypatch):
+    _quick(monkeypatch)
+    phone = FakePhone(tmp_path, [NOT_FOUND_SCREEN, PROFILE_WITH_CONTACT, PROFILE_WITH_CONTACT, REAL_SHEET])
+    found = asyncio.run(phone.instagram("thegrindbjj"))
+    assert found.emails == {"thegrindbjj54@gmail.com": "contact"}
+    assert sum("am start" in c for c in phone.commands) == 2

@@ -73,6 +73,22 @@ COUNTER = "google-web"
 STATE_NS = "search-state"
 RESULTS_NS = "search-google"
 PANEL_NS = "search-google-panel"
+CSE_NS = "search-cse"
+CSE_PROVIDER = "google-cse"
+# The user's Programmable Search Engine (context.xml / annotations.xml in
+# Google-search-engine-configuration-files): its public results page, read in
+# the same browser, since the JSON API is closed to new customers.
+_CSE_JS = r"""() => {
+  const rows = [...document.querySelectorAll('.gsc-webResult.gsc-result')].filter(r => r.querySelector('a.gs-title'));
+  if (rows.length) return rows.map(r => {
+    const a = r.querySelector('a.gs-title');
+    return {url: a.getAttribute('data-ctorig') || a.href, title: a.innerText,
+            snippet: ((r.querySelector('.gs-snippet') || {}).innerText || '')};
+  }).filter(r => r.url);
+  // The page ships a hidden "no results" block: only a visible one is an answer.
+  const none = [...document.querySelectorAll('.gs-no-results-result')].some(e => e.offsetParent !== null);
+  return none ? [] : null;
+}"""
 # Checked against the address and the visible text only: every normal results
 # page carries "/sorry/index" in its scripts.
 BLOCKED_URL = re.compile(r"/sorry/|/recaptcha/", re.I)
@@ -156,13 +172,15 @@ class GoogleFreeSearch:
     def __init__(self, cache: Cache, fetcher=None, daily_limit: int = 150,
                  gap: tuple[float, float] = (6.0, 15.0), use_browser: bool = True,
                  profile_dir: Path | None = None, share_fetcher_driver: bool = False,
-                 cookies_file: Path | None = None) -> None:
+                 cookies_file: Path | None = None, cse_id: str | None = None,
+                 cse_daily_limit: int = 200) -> None:
         self.cache = cache
         self.profile_dir = profile_dir or CACHE_DIR / "google-profile"
         self.cookies_file = cookies_file
         self._profile_used: Path | None = None  # each browser has its own folder
         self.signed_in: bool | None = None  # checked on each session's home page
         self._last_panel: dict | None = None
+        self.cse_id, self.cse_daily_limit = cse_id, cse_daily_limit
         self.daily_limit = daily_limit
         self.gap = gap
         self.use_browser = use_browser
@@ -193,6 +211,49 @@ class GoogleFreeSearch:
     def paused_for(self) -> float:
         state = self.cache.get(STATE_NS, "google-pause") or {}
         return max(0.0, float(state.get("until", 0)) - time.time())
+
+    async def cse_search(self, query: str) -> list[Result]:
+        """Results from the user's Programmable Search Engine (only the
+        directories, federations and listings it was set up with)."""
+        if not self.cse_id:
+            return []
+        query = query[:300]
+        async with self._lock:
+            cached = self.cache.get(CSE_NS, query)
+            if cached is not None:
+                return [Result(**r) for r in cached]
+            if self.paused_for():
+                raise GoogleBlocked(f"paused, resumes in {int(self.paused_for() / 60) + 1} min")
+            if not self.cache.reserve("google-cse", self.cse_daily_limit):
+                raise GoogleBlocked("daily Programmable Search Engine limit reached")
+            await self._pace()
+            try:
+                page = await self._tab()
+                await page.goto(f"https://cse.google.com/cse?cx={self.cse_id}&hl=en#gsc.tab=0&gsc.q={quote_plus(query)}",
+                                wait_until="domcontentloaded", timeout=30_000)
+                rows = None
+                for _ in range(16):  # the page fills in its results with JavaScript
+                    await page.wait_for_timeout(500)
+                    rows = await page.evaluate(_CSE_JS)
+                    if rows is not None:
+                        break
+                visible = await page.evaluate("document.body ? document.body.innerText : ''")
+                if BLOCKED_URL.search(page.url) or BLOCKED_TEXT.search(visible):
+                    await self._close_browser()
+                    raise self._pause("the Programmable Search Engine page asked for a CAPTCHA")
+                if rows is None:
+                    raise GoogleUnavailable("the Programmable Search Engine page didn't load its results")
+            except GoogleUnavailable:
+                raise
+            except Exception as err:  # noqa: BLE001
+                await self._close_browser()
+                raise GoogleUnavailable(f"Programmable Search Engine failed ({type(err).__name__})") from err
+            finally:
+                self._last_used = time.monotonic()
+            results = [Result(url=r["url"], title=_squash(r["title"]), snippet=_squash(r["snippet"])[:1500],
+                              provider=CSE_PROVIDER) for r in rows]
+            self.cache.set(CSE_NS, query, [r.__dict__ for r in results], SEARCH_TTL)
+            return results
 
     async def business_profile(self, query: str, country: str = "US") -> dict | None:
         """Google's Business Profile panel for this search, if it shows one:

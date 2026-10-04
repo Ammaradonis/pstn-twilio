@@ -37,14 +37,16 @@ def _numbered_keys(*prefixes: str) -> tuple[str, ...]:
                 found.append((rank, int(m.group(1) or 1), value.strip()))
     return tuple(dict.fromkeys(v for _, _, v in sorted(found)))
 
-def _cookie_file(name: str, default: str) -> Path | None:
-    """A cookies.txt export: the path in this setting, else the default file in
-    the repo root if it exists; "off" turns it off."""
+def _cookie_file(name: str, *defaults: str) -> Path | None:
+    """A cookies.txt export: the path in this setting, else the first default
+    file in the repo root that exists; "off" turns it off."""
     value = (os.environ.get(name) or "").strip()
     if value.lower() in ("off", "none", "0"):
         return None
-    path = Path(value) if value else REPO_ROOT / default
-    return path if path.is_file() else None
+    for path in ([Path(value)] if value else [REPO_ROOT / d for d in defaults]):
+        if path.is_file():
+            return path
+    return None
 
 def _int(name: str, default: int) -> int:
     try:
@@ -76,6 +78,7 @@ class Settings:
     # Brave for rows with no website or social profile, "all" for every row.
     google_free: str = "bare"
     google_free_daily_limit: int = 150
+    cse_daily_limit: int = 200
     # cookies.txt export whose google.com cookies sign the search browser in.
     google_cookies: Path | None = None
     # The user's Facebook / Instagram cookies.txt exports (social browser sign-in).
@@ -123,7 +126,7 @@ def load_settings() -> Settings:
     )
     vertex_location = os.environ.get("VERTEX_AI_LOCATION") or "global"
     google_free = (os.environ.get("EMAIL_FINDER_GOOGLE_FREE") or "bare").strip().lower()
-    google_cookies = _cookie_file("EMAIL_FINDER_GOOGLE_COOKIES", "cookies.txt")
+    google_cookies = _cookie_file("EMAIL_FINDER_GOOGLE_COOKIES", "www.google.com_cookies.txt", "cookies.txt")
 
     return Settings(
         api_base=(os.environ.get("EMAIL_FINDER_API_BASE") or os.environ.get("PUBLIC_BASE_URL")
@@ -147,6 +150,7 @@ def load_settings() -> Settings:
         row_timeout=min(1000, max(60, _int("EMAIL_FINDER_ROW_TIMEOUT", 900))),
         google_free=google_free if google_free in ("bare", "all", "off") else "bare",
         google_free_daily_limit=_int("EMAIL_FINDER_GOOGLE_FREE_DAILY_LIMIT", 150),
+        cse_daily_limit=_int("EMAIL_FINDER_CSE_DAILY_LIMIT", 200),
         google_cookies=google_cookies,
         facebook_cookies=_cookie_file("EMAIL_FINDER_FACEBOOK_COOKIES", "www.facebook.com_cookies.txt"),
         instagram_cookies=_cookie_file("EMAIL_FINDER_INSTAGRAM_COOKIES", "www.instagram.com_cookies.txt"),

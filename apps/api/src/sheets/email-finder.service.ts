@@ -76,6 +76,34 @@ export interface FinderResult {
   contactFormUrl?: string | null;
   notes?: string | null;
   method?: string | null;
+  enrichment?: Record<string, string> | null;
+}
+
+/** Details the finder verified for a row's empty cells, by sheet column. */
+const ENRICHMENT_COLUMNS = [
+  ['websiteUrl', 'website'],
+  ['phoneNumber', 'phone'],
+  ['facebookUrl', 'facebook'],
+  ['instagramUrl', 'instagram'],
+  ['youtubeUrl', 'youtube'],
+  ['twitterUrl', 'twitter'],
+  ['linkedinUrl', 'linkedin'],
+  ['tiktokUrl', 'tiktok'],
+] as const;
+
+/** Known columns only; links must be http(s), phone numbers phone-shaped. */
+export function cleanEnrichment(input: unknown): Record<string, string> | null {
+  if (!input || typeof input !== 'object') return null;
+  const out: Record<string, string> = {};
+  for (const [key] of ENRICHMENT_COLUMNS) {
+    const value = (input as Record<string, unknown>)[key];
+    if (typeof value !== 'string') continue;
+    const v = value.trim();
+    if (key === 'phoneNumber' ? /^\+?[\d\s().-]{7,40}$/.test(v) : /^https?:\/\/\S+$/i.test(v)) {
+      out[key] = v.slice(0, 1000);
+    }
+  }
+  return Object.keys(out).length ? out : null;
 }
 
 @Injectable()
@@ -404,6 +432,7 @@ export class EmailFinderService implements OnModuleDestroy, OnModuleInit {
           contactFormUrl: clip(r.contactFormUrl, 1000),
           notes: clip(r.notes, 1000),
           method: r.status === 'FOUND' ? clip(r.method, 200) : null,
+          ...(cleanEnrichment(r.enrichment) ? { enrichment: cleanEnrichment(r.enrichment)! } : {}),
         },
       });
       if (!updated.count) continue;
@@ -459,7 +488,9 @@ export class EmailFinderService implements OnModuleDestroy, OnModuleInit {
     const rows = await this.prisma.emailFinderRow.findMany({
       where: { jobId, writtenAt: null, status: { in: FINAL } },
     });
-    const useful = rows.filter((r) => r.email || r.contactFormUrl || r.decisionMaker);
+    const useful = rows.filter(
+      (r) => r.email || r.contactFormUrl || r.decisionMaker || cleanEnrichment(r.enrichment),
+    );
     if (useful.length > 0) await this.writeToSheet(job, useful);
     if (rows.length > 0) {
       await this.prisma.emailFinderRow.updateMany({
@@ -473,7 +504,9 @@ export class EmailFinderService implements OnModuleDestroy, OnModuleInit {
   private async writeToSheet(
     job: { userId: string; spreadsheetId: string; sheetTitle: string },
     results: {
+      id?: string;
       fingerprint: string;
+      enrichment?: unknown;
       email: string | null;
       emailType: string | null;
       sourceUrl: string | null;
@@ -526,6 +559,7 @@ export class EmailFinderService implements OnModuleDestroy, OnModuleInit {
         rowByFingerprint.set(fp, [...(rowByFingerprint.get(fp) ?? []), i]);
       }
     });
+    const rekey: { id: string; fingerprint: string }[] = [];
     const cell = (col: number, rowIdx: number, value: string) =>
       data.push({
         range: a1(job.sheetTitle, `${columnLetter(col + 1)}${rowIdx + 1}`),
@@ -547,6 +581,21 @@ export class EmailFinderService implements OnModuleDestroy, OnModuleInit {
           cell(at.decisionMaker, i, r.decisionMaker);
         if (r.contactFormUrl && !text(row[at.contactForm]).trim())
           cell(at.contactForm, i, r.contactFormUrl);
+        // Fill the school's details into empty cells only.
+        const enrichment = cleanEnrichment(r.enrichment) ?? {};
+        const updated = [...row];
+        for (const [key, column] of ENRICHMENT_COLUMNS) {
+          const col = cols[column];
+          const value = enrichment[key];
+          if (value && col !== -1 && !text(row[col]).trim()) {
+            cell(col, i, value);
+            updated[col] = value;
+          }
+        }
+        // A filled-in phone or website changes the row's identity: follow it, so
+        // picking the tab again doesn't research the row from scratch.
+        const now = fingerprint(updated, cols);
+        if (r.id && now !== r.fingerprint) rekey.push({ id: r.id, fingerprint: now });
       }
     }
     for (let i = 0; i < data.length; i += 400) {
@@ -556,6 +605,12 @@ export class EmailFinderService implements OnModuleDestroy, OnModuleInit {
         'write email finder results',
         { method: 'POST', body: { valueInputOption: 'RAW', data: data.slice(i, i + 400) } },
       );
+    }
+    for (const r of rekey) {
+      // A duplicate row may already hold that identity; then the old one stays.
+      await this.prisma.emailFinderRow
+        .update({ where: { id: r.id }, data: { fingerprint: r.fingerprint } })
+        .catch(() => undefined);
     }
   }
 

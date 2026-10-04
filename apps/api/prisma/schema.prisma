@@ -525,6 +525,8 @@ model EmailFinderRow {
   notes            String?
   // How the address was found, e.g. "Facebook contact info via iPhone emulation"
   method           String?
+  // Verified details for the sheet's empty cells (websiteUrl, phoneNumber, facebookUrl, ...)
+  enrichment       Json?
   writtenAt        DateTime? @map("written_at")
   createdAt        DateTime  @default(now()) @map("created_at")
   updatedAt        DateTime  @updatedAt @map("updated_at")

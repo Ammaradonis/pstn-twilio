@@ -653,6 +653,10 @@ export interface Columns {
   website: number;
   facebook: number;
   instagram: number;
+  twitter: number;
+  linkedin: number;
+  youtube: number;
+  tiktok: number;
   category: number;
   emailType: number;
   emailSource: number;
@@ -698,6 +702,10 @@ export function findColumns(headers: string[]): Columns {
     website: first(exact('websiteurl', 'website', 'url', 'site', 'web')),
     facebook: first(exact('facebookurl', 'facebook', 'fb')),
     instagram: first(exact('instagramurl', 'instagram', 'ig')),
+    twitter: exact('twitterurl', 'twitter', 'xurl'),
+    linkedin: exact('linkedinurl', 'linkedin'),
+    youtube: exact('youtubeurl', 'youtube'),
+    tiktok: exact('tiktokurl', 'tiktok'),
     category: exact('category', 'type', 'style'),
     emailType: exact('emailtype'),
     emailSource: exact('emailsource'),

@@ -117,6 +117,7 @@ def to_result(row_id: str, f: Finding, lease_token: str) -> dict:
         "contactFormUrl": f.contact_form_url if f.contact_form_url and len(f.contact_form_url) <= 1000 else None,
         "notes": "; ".join(f.notes)[:1000] or None,
         "method": f.method[:200] if f.method and f.email else None,
+        **({"enrichment": f.enrichment} if f.enrichment else {}),
     }
 
 
@@ -189,7 +190,8 @@ async def run() -> bool:
         # Its own Playwright driver: the fetcher's browser shutdown stops the
         # shared driver, which used to abort a search mid-query.
         google = GoogleFreeSearch(cache, daily_limit=settings.google_free_daily_limit,
-                                  use_browser=settings.use_browser, cookies_file=settings.google_cookies)
+                                  use_browser=settings.use_browser, cookies_file=settings.google_cookies,
+                                  cse_id=settings.google_cx, cse_daily_limit=settings.cse_daily_limit)
         rows = "rows with no website or social profile" if settings.google_free == "bare" else "every row"
         how = f" (signed in via {settings.google_cookies.name})" if settings.google_cookies else ""
         providers = f"free Google{how} first for {rows}, then {providers}"

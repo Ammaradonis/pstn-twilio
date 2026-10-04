@@ -12,7 +12,10 @@ House rules
   app for 12 hours and logs it, and the user clears it on the phone.
 * Contact -> Email opens a draft in the phone's email app; the address is read
   from it and the draft is discarded.
-* Instagram profiles get 3 seconds to show Contact, then one refresh and 3 more.
+* Instagram profiles get 3 seconds, once loaded, to show Contact, then one
+  refresh and 3 more.
+* One process at a time drives the phone (a lock file shared by the worker and
+  any probe script), so nobody presses Home in the middle of someone else's wait.
 * 10-20 s between profiles, EMAIL_FINDER_GALAXY_DAILY_LIMIT lookups a day.
 """
 
@@ -30,6 +33,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 from .cache import Cache
+from .config import CACHE_DIR
 
 log = logging.getLogger(__name__)
 
@@ -37,7 +41,13 @@ DEVICE_NAME = "Galaxy A20e"
 INSTAGRAM = "com.instagram.android"
 FACEBOOK = "com.facebook.katana"
 EMAIL_APPS = ("com.google.android.gm", "com.samsung.android.email.provider")
-SETTLE_S = 3.0  # how long a profile gets to show its Contact button
+SETTLE_S = 3.0  # how long a loaded profile gets to show its Contact button
+LOAD_S = 10  # how long the app gets to put the profile on screen at all
+LOCK_STALE_S = 180  # a lock older than this was left by a process that died
+PROFILE_SHOWN = ("Follow", "Following", "Message", "Edit profile", "Requested")
+# Instagram's answer for a handle it can't show. Golden rule: open it twice
+# before moving on (it is sometimes a passing hiccup).
+NOT_FOUND = re.compile(r"user not found|page isn.t available|link you followed may be broken", re.I)
 GAP = (10.0, 20.0)
 STATE_NS = "social-state"
 APP_PAUSE = 12 * 3600
@@ -45,6 +55,7 @@ APP_PAUSE = 12 * 3600
 STOP_SCREEN = re.compile(r"challenge|checkpoint|login|signup|nux|twofac|captcha|confirm", re.I)
 EMAIL = re.compile(r"[A-Za-z0-9._%+-]+@[A-Za-z0-9-]+(?:\.[A-Za-z0-9-]+)*\.[A-Za-z]{2,}")
 BOUNDS = re.compile(r"\[(\d+),(\d+)\]\[(\d+),(\d+)\]")
+PHONE = re.compile(r"^\+?[\d\s().-]{7,20}$")
 
 
 @dataclass
@@ -65,8 +76,10 @@ class Node:
 class AppLookup:
     """What the phone showed for one profile."""
     emails: dict[str, str] = field(default_factory=dict)  # address -> "contact" | "page"
+    phones: list[str] = field(default_factory=list)  # from the Contact sheet
     context: str = ""
     blocked: str | None = None  # why the app wasn't usable
+    missing: bool = False  # Instagram said "User not found" on both tries
 
 
 def parse_dump(xml: str) -> list[Node]:
@@ -93,6 +106,10 @@ def emails_on_screen(nodes: list[Node]) -> list[str]:
     return found
 
 
+def user_not_found(nodes: list[Node]) -> bool:
+    return any(NOT_FOUND.search(n.label) for n in nodes if n.label)
+
+
 def find_button(nodes: list[Node], *names: str) -> Node | None:
     wanted = {n.lower() for n in names}
     for n in nodes:
@@ -111,8 +128,10 @@ def find_adb() -> str | None:
 
 
 class Galaxy:
-    def __init__(self, cache: Cache, adb: str, serial: str | None = None, daily_limit: int = 150) -> None:
+    def __init__(self, cache: Cache, adb: str, serial: str | None = None, daily_limit: int = 150,
+                 lock_path: Path | None = None) -> None:
         self.cache, self.adb, self.serial, self.daily_limit = cache, adb, serial, daily_limit
+        self.lock_path = lock_path or CACHE_DIR / "galaxy.lock"
         self._lock = asyncio.Lock()
         self._last = 0.0
 
@@ -165,6 +184,40 @@ class Galaxy:
         except (OSError, asyncio.TimeoutError):
             return False
 
+    # ── one driver at a time ─────────────────────────────────────────────────
+
+    async def _hold_phone(self, wait_s: float = 150) -> bool:
+        deadline = time.monotonic() + wait_s
+        while True:
+            try:
+                fd = os.open(self.lock_path, os.O_CREAT | os.O_EXCL | os.O_WRONLY)
+                os.write(fd, str(os.getpid()).encode())
+                os.close(fd)
+                return True
+            except FileExistsError:
+                try:
+                    if time.time() - self.lock_path.stat().st_mtime > LOCK_STALE_S:
+                        self.lock_path.unlink(missing_ok=True)
+                        continue
+                except FileNotFoundError:
+                    continue
+            if time.monotonic() > deadline:
+                return False
+            await asyncio.sleep(2)
+
+    def _release_phone(self) -> None:
+        self.lock_path.unlink(missing_ok=True)
+
+    async def _until_profile_shown(self) -> list[Node]:
+        """The screen once the app shows the profile (or after LOAD_S seconds)."""
+        nodes: list[Node] = []
+        for _ in range(LOAD_S):
+            nodes = await self._screen()
+            if any(n.label in PROFILE_SHOWN for n in nodes) or user_not_found(nodes):
+                return nodes
+            await asyncio.sleep(1)
+        return nodes
+
     # ── pacing and pauses ────────────────────────────────────────────────────
 
     def paused_for(self, app: str) -> float:
@@ -203,19 +256,34 @@ class Galaxy:
 
     async def instagram(self, handle: str) -> AppLookup:
         async with self._lock:
-            why = await self._turn("instagram")
-            if why:
-                return AppLookup(blocked=why)
+            if not await self._hold_phone():
+                return AppLookup(blocked="busy (another process is using the phone)")
             try:
-                return await self._instagram(handle)
+                why = await self._turn("instagram")
+                if why:
+                    return AppLookup(blocked=why)
+                try:
+                    return await self._instagram(handle)
+                finally:
+                    await self._shell("input keyevent KEYCODE_HOME")
             finally:
-                await self._shell("input keyevent KEYCODE_HOME")
+                self._release_phone()
 
     async def _instagram(self, handle: str) -> AppLookup:
         result = AppLookup()
-        await self._shell(f"am start -a android.intent.action.VIEW -d https://www.instagram.com/{handle}/ -p {INSTAGRAM}")
+        for visit in range(2):
+            await self._shell(f"am start -a android.intent.action.VIEW -d https://www.instagram.com/{handle}/ -p {INSTAGRAM}")
+            if not user_not_found(await self._until_profile_shown()):
+                break
+            log.info("Instagram says %s isn't there (try %d of 2)", handle, visit + 1)
+            await asyncio.sleep(2)
+        else:
+            result.missing = True
+            return result
         contact = None
         for attempt in range(2):
+            if attempt:
+                await self._until_profile_shown()  # after the refresh
             await asyncio.sleep(SETTLE_S)
             stop = await self._stopped("instagram")
             if stop:
@@ -230,28 +298,33 @@ class Galaxy:
                 break
             await self._refresh()
         if contact:
-            for email in await self._open_contact(contact):
+            emails, result.phones = await self._open_contact(contact)
+            for email in emails:
                 result.emails[email] = "contact"
         return result
 
-    async def _open_contact(self, button: Node) -> list[str]:
-        """Contact (or Email) button -> the address it holds."""
+    async def _open_contact(self, button: Node) -> tuple[list[str], list[str]]:
+        """Contact (or Email) button -> the addresses (and phone numbers) it holds.
+        The Instagram app lists them on its Contact sheet ("Call ...", "Email ...")."""
         await self._tap(button)
         await asyncio.sleep(1.5)
         sheet = await self._screen()
         found = emails_on_screen(sheet)
+        phones = [n.label for n in sheet if n.rid.endswith("contact_option_sub_text") and PHONE.match(n.label)]
         if found:
-            return found
+            await self._shell("input keyevent KEYCODE_BACK")  # close the sheet
+            return found, phones
         email_option = find_button(sheet, "Email", "Send email", "Email address")
         if email_option is None and button.label.lower() != "email":
-            return []
+            await self._shell("input keyevent KEYCODE_BACK")
+            return [], phones
         if email_option is not None:
             await self._tap(email_option)
         await asyncio.sleep(2.5)
         draft = await self._screen()
         found = emails_on_screen([n for n in draft if n.package in EMAIL_APPS])
         await self._discard_draft(draft)
-        return found
+        return found, phones
 
     async def _discard_draft(self, nodes: list[Node]) -> None:
         """Leave the email app without sending: overflow menu -> Discard, then close it."""
@@ -276,13 +349,18 @@ class Galaxy:
 
     async def facebook(self, url: str) -> AppLookup:
         async with self._lock:
-            why = await self._turn("facebook")
-            if why:
-                return AppLookup(blocked=why)
+            if not await self._hold_phone():
+                return AppLookup(blocked="busy (another process is using the phone)")
             try:
-                return await self._facebook(url)
+                why = await self._turn("facebook")
+                if why:
+                    return AppLookup(blocked=why)
+                try:
+                    return await self._facebook(url)
+                finally:
+                    await self._shell("input keyevent KEYCODE_HOME")
             finally:
-                await self._shell("input keyevent KEYCODE_HOME")
+                self._release_phone()
 
     async def _facebook(self, url: str) -> AppLookup:
         result = AppLookup()

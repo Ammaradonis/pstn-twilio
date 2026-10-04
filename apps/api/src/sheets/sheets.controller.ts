@@ -341,6 +341,8 @@ const finderResultsSchema = z.object({
           contactFormUrl: publicHttpUrl.nullish(),
           notes: z.string().max(1000).nullish(),
           method: z.string().max(200).nullish(),
+          // Cleaned field by field in the service: one odd link mustn't reject a result.
+          enrichment: z.record(z.string().max(1000)).nullish(),
           researchComplete: z.boolean(),
           retryAfter: z.number().int().min(60).max(86400).optional(),
         })

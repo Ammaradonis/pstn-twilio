@@ -173,12 +173,22 @@ class _Locator:
         self.page.clicked.append(self.name)
 
 
+class _Text:
+    def __init__(self, page, pattern):
+        self.page, self.pattern = page, pattern
+
+    async def count(self):
+        shown = self.page.not_found_until is not None and self.page.reloads < self.page.not_found_until
+        return 1 if shown and self.pattern.search("Sorry, this page isn't available.") else 0
+
+
 class _IgPage:
     """Instagram profile stand-in: the Contact button shows up only after
     `button_after_reload` reloads (None: never)."""
 
-    def __init__(self, button_after_reload):
+    def __init__(self, button_after_reload, not_found_until=None):
         self.button_after_reload, self.reloads, self.waits, self.clicked = button_after_reload, 0, [], []
+        self.not_found_until = not_found_until  # "page isn't available" until this many reloads
 
     def buttons(self):
         shown = {"Follow", "Message", "Contact Uploading & Non-Users"}
@@ -188,6 +198,9 @@ class _IgPage:
 
     def get_by_role(self, role, name, exact=False):
         return _Locator(self, name)
+
+    def get_by_text(self, pattern):
+        return _Text(self, pattern)
 
     async def wait_for_timeout(self, ms):
         self.waits.append(ms)
@@ -246,3 +259,11 @@ def test_a_robots_txt_bot_wall_is_not_a_crawl_ban(tmp_path, monkeypatch):
         await f.close()
         return result
     assert asyncio.run(run()) == {"walled.example": True, "down.example": False, "busy.example": False}
+
+
+def test_a_missing_instagram_page_gets_two_tries_in_the_browser(tmp_path):
+    gone = _IgPage(button_after_reload=None, not_found_until=99)
+    assert asyncio.run(Fetcher(Cache(tmp_path / "a.db"))._instagram_contact(gone)) is False
+    assert gone.reloads == 1  # tried twice, then moved on
+    hiccup = _IgPage(button_after_reload=1, not_found_until=1)
+    assert asyncio.run(Fetcher(Cache(tmp_path / "b.db"))._instagram_contact(hiccup)) is True

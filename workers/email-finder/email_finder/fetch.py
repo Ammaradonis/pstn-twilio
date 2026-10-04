@@ -61,6 +61,7 @@ IG_SETTLE_MS = 3000
 # The profile's own Contact/Email button. Exact names only: the page footer has
 # a "Contact Uploading & Non-Users" link that must never be clicked.
 IG_CONTACT_NAMES = ("Contact", "Email", "Contact options")
+IG_NOT_FOUND = re.compile(r"page isn.t available|user not found|link you followed may be broken", re.I)
 SOCIAL_NS = "social-state"
 # Pushback that retrying doesn't fix is left alone for a fixed time.
 SOCIAL_PAUSE = {"login": 6 * 3600, "checkpoint": 12 * 3600}
@@ -458,10 +459,17 @@ class Fetcher:
         return await self._social(url, ("Contact", "Contact options", "Email"))
 
     async def _instagram_contact(self, page) -> bool:
-        """Steps 1-4 of fetch_ig_profile; True when a Contact button was opened."""
+        """Steps 1-4 of fetch_ig_profile; True when a Contact button was opened.
+        "Sorry, this page isn't available" also gets the one refresh (golden
+        rule: two tries), then the profile is left."""
         for attempt in range(2):
             await page.wait_for_timeout(IG_SETTLE_MS)
             await _dismiss_prompts(page)
+            if await _ig_not_found(page):
+                if attempt == 0:
+                    await page.reload(wait_until="domcontentloaded", timeout=30_000)
+                    continue
+                return False
             for name in IG_CONTACT_NAMES:
                 for button in (page.get_by_role("button", name=name, exact=True),
                                page.get_by_role("link", name=name, exact=True)):
@@ -487,6 +495,9 @@ class Fetcher:
         page = None
         async with self._social_context_lock:
             try:
+                platform = social_platform(url)
+                if platform and self.social_paused(platform) and not self._export_changed(platform):
+                    return None  # no need to start the browser
                 ctx = await self._ensure_social_context()
                 if not await self._social_turn(url):
                     return None
@@ -539,6 +550,9 @@ class Fetcher:
         page = None
         async with self._social_context_lock:
             try:
+                platform = social_platform(url)
+                if platform and self.social_paused(platform) and not self._export_changed(platform):
+                    return None  # no need to start the browser
                 ctx = await self._ensure_social_context()
                 if not await self._social_turn(url):
                     return None
@@ -636,6 +650,13 @@ def instagram_profile_url(url: str) -> str:
     parts = urlsplit(url if "//" in url else "https://" + url)
     handle = parts.path.strip("/").split("/")[0]
     return f"https://www.instagram.com/{handle}/" if handle else url
+
+
+async def _ig_not_found(page) -> bool:
+    try:
+        return bool(await page.get_by_text(IG_NOT_FOUND).count())
+    except Exception:  # noqa: BLE001
+        return False
 
 
 async def _dismiss_prompts(page) -> None:

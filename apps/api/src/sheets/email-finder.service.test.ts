@@ -5,8 +5,9 @@ import type { RealtimeService } from '../realtime/realtime.service';
 import type { RedisService } from '../redis/redis.service';
 
 import { ContactFormService } from './contact-form.service';
-import { EmailFinderService, fingerprint } from './email-finder.service';
+import { EmailFinderService, cleanEnrichment, fingerprint } from './email-finder.service';
 import { findColumns, type SheetsService } from './sheets.service';
+import { normalizeHeader } from './sheets.util';
 
 describe('email finder row identity and writes', () => {
   it('distinguishes same-name schools with no phone or website by address', () => {
@@ -70,6 +71,111 @@ describe('email finder row identity and writes', () => {
     expect(request.body.valueInputOption).toBe('RAW');
     const emails = request.body.data.filter((d) => d.values[0]?.[0] === 'owner@dojo.org');
     expect(emails.map((d) => d.range)).toEqual(["'Schools'!C2", "'Schools'!C3"]);
+  });
+
+  it('fills only empty cells with what the finder verified and follows the row identity', async () => {
+    const header = [
+      'title',
+      'address',
+      'phoneNumber',
+      'websiteUrl',
+      'facebookUrl',
+      'instagramUrl',
+      'youtubeUrl',
+      'email',
+    ];
+    const sheetRows = [
+      header,
+      [
+        'California School of Martial Arts',
+        '2025 Gellert Blvd, Daly City, CA 94015',
+        '',
+        'http://www.calsma.com',
+        '',
+        'https://www.instagram.com/typed_by_hand/',
+      ],
+    ];
+    const cols = findColumns(header.map(normalizeHeader));
+    const result = {
+      id: 'row-1',
+      fingerprint: fingerprint(sheetRows[1]!, cols),
+      email: null,
+      emailType: null,
+      sourceUrl: null,
+      decisionMaker: null,
+      contactFormUrl: null,
+      enrichment: {
+        phoneNumber: '+1 650-810-5595',
+        websiteUrl: 'https://calsma.com/other',
+        facebookUrl: 'https://www.facebook.com/people/Calsma/100083472663859/',
+        instagramUrl: 'https://www.instagram.com/calsma_official/',
+        youtubeUrl: 'javascript:alert(1)',
+      },
+    };
+    const update = vi.fn().mockResolvedValue({});
+    const prisma = {
+      emailFinderJob: {
+        findUnique: vi.fn().mockResolvedValue({
+          id: 'job',
+          userId: 'u',
+          spreadsheetId: 's',
+          sheetTitle: 'California',
+          status: 'RUNNING',
+        }),
+        updateMany: vi.fn(),
+      },
+      emailFinderRow: {
+        findMany: vi.fn().mockResolvedValue([result]),
+        updateMany: vi.fn(),
+        update,
+        count: vi.fn().mockResolvedValue(0),
+      },
+    };
+    const sheets = {
+      getAccessToken: vi.fn().mockResolvedValue('t'),
+      fetchTabs: vi.fn().mockResolvedValue([{ title: 'California', sheetId: 1, columnCount: 30 }]),
+      fetchRows: vi.fn().mockResolvedValue(sheetRows),
+      google: vi.fn().mockResolvedValue({}),
+    };
+    const service = new EmailFinderService(
+      prisma as unknown as PrismaService,
+      sheets as unknown as SheetsService,
+      {} as RedisService,
+      {} as RealtimeService,
+    );
+    await service.flush('job');
+    const written = Object.fromEntries(
+      (
+        sheets.google.mock.calls[0]![3] as {
+          body: { data: { range: string; values: string[][] }[] };
+        }
+      ).body.data
+        .filter((d) => !d.range.endsWith('1'))
+        .map((d) => [d.range, d.values[0]![0]]),
+    );
+    expect(written).toEqual({
+      "'California'!C2": '+1 650-810-5595',
+      "'California'!E2": 'https://www.facebook.com/people/Calsma/100083472663859/',
+    });
+    const updated = [...sheetRows[1]!];
+    updated[2] = '+1 650-810-5595';
+    updated[4] = 'https://www.facebook.com/people/Calsma/100083472663859/';
+    expect(update).toHaveBeenCalledWith({
+      where: { id: 'row-1' },
+      data: { fingerprint: fingerprint(updated, cols) },
+    });
+  });
+
+  it('keeps only known, well-formed details', () => {
+    expect(
+      cleanEnrichment({
+        facebookUrl: 'https://facebook.com/x',
+        youtubeUrl: 'ftp://x',
+        phoneNumber: 'call me',
+        other: 'https://x.y',
+      }),
+    ).toEqual({ facebookUrl: 'https://facebook.com/x' });
+    expect(cleanEnrichment(null)).toBeNull();
   });
 
   it('discards stale results instead of overwriting a newly leased row', async () => {
