@@ -1,4 +1,3 @@
-import { useEffect } from 'react';
 import { useParams } from 'react-router-dom';
 
 import { CallQualityPanel } from '../components/call-quality';
@@ -26,22 +25,17 @@ function StatusPill({ label, ok, pending }: { label: string; ok: boolean; pendin
 
 export function AnswerPage() {
   const { numberId } = useParams<{ numberId: string }>();
+  // The app shell registers the voice device; calls ring on every page.
   const voice = useVoiceDevice();
-
-  useEffect(() => {
-    void voice.init(numberId);
-    // intentionally only re-run when numberId changes
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [numberId]);
 
   return (
     <section className="space-y-4">
       <header>
         <h1 className="text-2xl font-semibold">Answer incoming call · {numberId}</h1>
         <p className="mt-1 text-sm text-slate-600">
-          Inbound PSTN calls to this number ring this Chrome tab. Keep it visible and active to
-          receive calls; Android may suspend a background tab. Missed and rejected calls end without
-          voicemail.
+          Incoming calls to all of your numbers ring on any page of the app, with an Answer / Hang
+          up popup. Keep the app on screen to receive calls; Android may suspend it in the
+          background. Missed and rejected calls end without voicemail.
         </p>
       </header>
 
@@ -208,7 +202,7 @@ export function AnswerPage() {
         </div>
       ) : (
         <div className="rounded border border-dashed border-slate-300 bg-white p-4 text-sm text-slate-500">
-          No incoming calls right now. This page must stay open to receive PSTN calls.
+          No incoming calls right now. Keep the app open to receive PSTN calls.
         </div>
       )}
     </section>

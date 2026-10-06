@@ -14,6 +14,8 @@ export interface UserDto {
   id: string;
   email: string;
   role: UserRole;
+  // Which web app this user gets; absent means the console.
+  experience?: 'console' | 'voice';
   createdAt: string;
   lastLoginAt: string | null;
 }
@@ -191,9 +193,10 @@ export interface AiCallDto {
   createdAt: string;
 }
 
-// Incoming calls to the AI caller line: answered by the agent, or blocked
-// with a busy signal. "other" means Twilio points somewhere else.
-export type AiInboundMode = 'browser' | 'blocked';
+// Incoming calls to the AI caller line: ring the browser, ring the browser and
+// hand unanswered calls to the agent, or block them with a busy signal. "agent"
+// means Vapi answers every call; "other" means Twilio points somewhere else.
+export type AiInboundMode = 'browser' | 'browser-then-agent' | 'blocked';
 
 export interface AiInboundStatusDto {
   phoneNumber: string;
@@ -302,3 +305,4 @@ export interface DiagnosticReportDto {
   overallStatus: 'ok' | 'down' | 'degraded';
 }
 export * from './sheets.dto';
+export * from './voice-app.dto';

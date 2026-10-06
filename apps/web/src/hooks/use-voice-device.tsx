@@ -11,6 +11,8 @@ type VoiceEventHandler<TArgs extends unknown[] = unknown[]> = (
 
 type VoiceCall = {
   parameters?: Record<string, string | undefined>;
+  // <Parameter> values from the inbound TwiML's <Client>.
+  customParameters?: Map<string, string>;
   status?: () => string;
   on?: (event: string, handler: VoiceEventHandler) => void;
   isMuted?: () => boolean;
@@ -42,6 +44,8 @@ type VoiceDevice = {
     setInputDevice?: (deviceId: string) => Promise<void>;
     unsetInputDevice?: () => Promise<void>;
     on?: (event: string, handler: (...args: unknown[]) => void) => void;
+    // Whether the SDK plays its own ringtone for incoming calls.
+    incoming?: (enabled?: boolean) => boolean;
   };
   connect: (options: {
     params: { selectedNumberId: string; destinationNumber: string; outboundIntentId: string };
@@ -69,6 +73,8 @@ type VoiceSdkError = Error & {
 type IncomingCall = {
   connection: VoiceCall;
   from?: string;
+  // Which of the user's numbers was dialed (E.164).
+  calledNumber?: string;
 };
 
 type MicPermission = 'unknown' | 'granted' | 'denied' | 'prompt';
@@ -125,12 +131,12 @@ type VoiceRuntimeState = {
 };
 
 interface UseVoiceDevice extends VoiceRuntimeState {
-  init: (numberId?: string) => Promise<{ identity: string; expiresAt: string } | null>;
+  init: () => Promise<{ identity: string; expiresAt: string } | null>;
   destroy: () => void;
   retryConnection: () => void;
   micPermission: MicPermission;
   browserSupported: boolean;
-  accept: () => void;
+  accept: () => Promise<void>;
   reject: () => void;
   hangup: () => void;
   toggleMute: () => void;
@@ -140,6 +146,7 @@ interface UseVoiceDevice extends VoiceRuntimeState {
     destinationNumber: string,
     options?: MakeCallOptions,
   ) => Promise<VoiceCall | null>;
+  routeCallAudio: (deviceId: string | null) => Promise<boolean>;
   requestMicPermission: () => Promise<boolean>;
   refreshMicrophones: () => Promise<void>;
   selectMicrophone: (deviceId: string) => Promise<void>;
@@ -221,12 +228,13 @@ type WakeLockApiLike = {
 
 const subscribers = new Set<() => void>();
 let voiceSdkPromise: Promise<unknown> | null = null;
+// The voice app plays its own ringtone; the console keeps the SDK's.
+let sdkIncomingSound = true;
 
 const runtime: {
   state: VoiceRuntimeState;
   device: VoiceDevice | null;
   call: VoiceCall | null;
-  lastNumberId: string | undefined;
   expiresAt: string | null;
   tokenRefreshTimer: ReturnType<typeof setTimeout> | null;
   reconnectTimer: ReturnType<typeof setTimeout> | null;
@@ -239,10 +247,9 @@ const runtime: {
   callSequence: number;
   outcomeTimer: ReturnType<typeof setTimeout> | null;
   // Set while a failed Device creation is waiting to be retried.
-  initRetry: { numberId: string | undefined } | null;
+  initRetryPending: boolean;
   hasRegistered: boolean;
   currentInit: Promise<{ identity: string; expiresAt: string } | null> | null;
-  currentInitNumberId: string | undefined;
   intentionallyDestroyed: boolean;
   registering: boolean;
   reconnectAttempt: number;
@@ -255,7 +262,6 @@ const runtime: {
   state: INITIAL_RUNTIME_STATE,
   device: null,
   call: null,
-  lastNumberId: undefined,
   expiresAt: null,
   tokenRefreshTimer: null,
   reconnectTimer: null,
@@ -267,10 +273,9 @@ const runtime: {
   generation: 0,
   callSequence: 0,
   outcomeTimer: null,
-  initRetry: null,
+  initRetryPending: false,
   hasRegistered: false,
   currentInit: null,
-  currentInitNumberId: undefined,
   intentionallyDestroyed: false,
   registering: false,
   reconnectAttempt: 0,
@@ -567,7 +572,7 @@ function disposeCurrentDevice(resetState: boolean): void {
   runtime.resumeTimer = null;
   runtime.recoveryTimer = null;
   runtime.outcomeTimer = null;
-  runtime.initRetry = null;
+  runtime.initRetryPending = false;
   runtime.registering = false;
   runtime.reconnectAttempt = 0;
   runtime.signalingRecoveryPending = false;
@@ -585,10 +590,8 @@ function disposeCurrentDevice(resetState: boolean): void {
     /* noop */
   }
 
-  runtime.lastNumberId = undefined;
   runtime.expiresAt = null;
   runtime.currentInit = null;
-  runtime.currentInitNumberId = undefined;
 
   if (resetState) {
     runtime.recoveryStartedAt = null;
@@ -696,6 +699,32 @@ async function selectMicrophone(deviceId: string): Promise<void> {
   }
 }
 
+/** Turn the Twilio SDK's own incoming-call ringtone on or off. */
+export function setSdkIncomingSound(enabled: boolean): void {
+  sdkIncomingSound = enabled;
+  try {
+    runtime.device?.audio?.incoming?.(enabled);
+  } catch {
+    /* older SDK without the toggle */
+  }
+}
+
+/**
+ * Route the live call through another audio input, e.g. Android's synthetic
+ * "Speakerphone" or "Headset earpiece" devices. Not saved as the default.
+ */
+async function routeCallAudio(deviceId: string | null): Promise<boolean> {
+  const audio = runtime.device?.audio;
+  if (!runtime.state.active || !audio?.setInputDevice) return false;
+  try {
+    await audio.setInputDevice(deviceId ?? 'default');
+    return true;
+  } catch (err) {
+    setRuntimeState({ microphoneError: err instanceof Error ? err.message : String(err) });
+    return false;
+  }
+}
+
 function releaseMicrophone(): void {
   void runtime.device?.audio?.unsetInputDevice?.().catch(() => undefined);
 }
@@ -719,17 +748,17 @@ async function prepareCallAudio(device: VoiceDevice): Promise<MediaTrackConstrai
   return DEFAULT_AUDIO_CONSTRAINTS;
 }
 
-async function refreshVoiceToken(numberId: string | undefined): Promise<void> {
+async function refreshVoiceToken(): Promise<void> {
   const device = runtime.device;
   if (!device) return;
 
-  const next = await api.voice.token(numberId);
+  const next = await api.voice.token();
   if (runtime.device !== device || runtime.intentionallyDestroyed) return;
   device.updateToken?.(next.token);
   runtime.expiresAt = next.expiresAt;
   runtime.tokenRejected = false;
   setRuntimeState({ identity: next.identity });
-  scheduleTokenRefresh(next.expiresAt, numberId);
+  scheduleTokenRefresh(next.expiresAt);
 }
 
 function tokenNeedsRefresh(): boolean {
@@ -737,7 +766,7 @@ function tokenNeedsRefresh(): boolean {
   return new Date(runtime.expiresAt).getTime() - Date.now() < TOKEN_REFRESH_WINDOW_MS;
 }
 
-function scheduleTokenRefresh(expiresAt: string, numberId: string | undefined): void {
+function scheduleTokenRefresh(expiresAt: string): void {
   clearTimer(runtime.tokenRefreshTimer);
   const expiresMs = new Date(expiresAt).getTime() - Date.now();
   const delay = Math.max(5_000, Math.min(expiresMs - 60_000, 50 * 60_000));
@@ -745,24 +774,24 @@ function scheduleTokenRefresh(expiresAt: string, numberId: string | undefined): 
   runtime.tokenRefreshTimer = setTimeout(async () => {
     const device = runtime.device;
     try {
-      await refreshVoiceToken(numberId);
+      await refreshVoiceToken();
     } catch (err) {
       if (runtime.device !== device) return;
       setRuntimeState({ error: formatVoiceError(err) });
-      scheduleReconnect(numberId);
+      scheduleReconnect();
     }
   }, delay);
 }
 
-function replaceForRecovery(numberId: string | undefined): void {
+function replaceForRecovery(): void {
   // Never destroy a live or waiting incoming call just to refresh registration.
   if (runtime.state.active || runtime.state.incoming) return;
   runtime.edgeOffset += 1;
   disposeCurrentDevice(false);
-  void initVoiceDevice(numberId, isBrowserSupported());
+  void initVoiceDevice(isBrowserSupported());
 }
 
-function watchRecovery(numberId: string | undefined): void {
+function watchRecovery(): void {
   if (runtime.recoveryTimer || runtime.state.recoveryFailed) return;
   if (runtime.recoveryStartedAt === null) {
     runtime.recoveryStartedAt = Date.now();
@@ -776,10 +805,7 @@ function watchRecovery(numberId: string | undefined): void {
       clearTimer(runtime.resumeTimer);
       runtime.reconnectTimer = null;
       runtime.resumeTimer = null;
-      if (!runtime.state.active && !runtime.state.incoming) {
-        disposeCurrentDevice(false);
-        runtime.lastNumberId = numberId;
-      }
+      if (!runtime.state.active && !runtime.state.incoming) disposeCurrentDevice(false);
       setRuntimeState({
         ready: false,
         registered: false,
@@ -796,25 +822,23 @@ function watchRecovery(numberId: string | undefined): void {
       !runtime.state.active &&
       !runtime.state.incoming
     ) {
-      replaceForRecovery(numberId);
+      replaceForRecovery();
       return;
     }
-    watchRecovery(numberId);
+    watchRecovery();
   }, 1_000);
 }
 
 function retryVoiceConnection(): void {
   if (runtime.state.active || runtime.state.incoming) return;
-  const numberId =
-    runtime.lastNumberId ?? runtime.currentInitNumberId ?? runtime.initRetry?.numberId;
   runtime.recoveryStartedAt = null;
   setRuntimeState({ recoveryFailed: false, error: null });
-  replaceForRecovery(numberId);
+  replaceForRecovery();
 }
 
-function scheduleReconnect(numberId: string | undefined): void {
+function scheduleReconnect(): void {
   if (runtime.intentionallyDestroyed || runtime.state.recoveryFailed || !runtime.device) return;
-  watchRecovery(numberId);
+  watchRecovery();
   if (runtime.reconnectTimer) return;
 
   const delay = Math.min(15_000, 1_000 * 2 ** Math.min(runtime.reconnectAttempt, 4));
@@ -831,11 +855,11 @@ function scheduleReconnect(numberId: string | undefined): void {
     // is down the SDK emits 31009, which would re-trigger this reconnect loop.
     if (tokenNeedsRefresh()) {
       try {
-        await refreshVoiceToken(numberId);
+        await refreshVoiceToken();
       } catch (err) {
         if (runtime.device !== device) return;
         setRuntimeState({ error: formatVoiceError(err) });
-        scheduleReconnect(numberId);
+        scheduleReconnect();
         return;
       }
     }
@@ -847,17 +871,17 @@ function scheduleReconnect(numberId: string | undefined): void {
       return;
     }
     if (refreshedState === 'registering' || runtime.signalingRecoveryPending) {
-      scheduleReconnect(numberId);
+      scheduleReconnect();
       return;
     }
 
-    await registerCurrentDevice(numberId);
+    await registerCurrentDevice();
   }, delay);
 }
 
 // scheduleReconnect() needs a Device to recover. When creating one failed
 // (e.g. the token request ran before the network was back), retry creation.
-function scheduleInitRetry(numberId: string | undefined): void {
+function scheduleInitRetry(): void {
   if (
     runtime.intentionallyDestroyed ||
     runtime.state.recoveryFailed ||
@@ -865,21 +889,21 @@ function scheduleInitRetry(numberId: string | undefined): void {
     runtime.reconnectTimer
   )
     return;
-  watchRecovery(numberId);
+  watchRecovery();
 
   const delay = Math.min(15_000, 1_000 * 2 ** Math.min(runtime.reconnectAttempt, 4));
   runtime.reconnectAttempt += 1;
-  runtime.initRetry = { numberId };
+  runtime.initRetryPending = true;
 
   runtime.reconnectTimer = setTimeout(() => {
     runtime.reconnectTimer = null;
-    runtime.initRetry = null;
+    runtime.initRetryPending = false;
     if (runtime.intentionallyDestroyed || runtime.device) return;
-    void initVoiceDevice(numberId, isBrowserSupported());
+    void initVoiceDevice(isBrowserSupported());
   }, delay);
 }
 
-async function registerCurrentDevice(numberId: string | undefined): Promise<void> {
+async function registerCurrentDevice(): Promise<void> {
   const device = runtime.device;
   if (!device || runtime.intentionallyDestroyed || runtime.registering) return;
 
@@ -896,7 +920,7 @@ async function registerCurrentDevice(numberId: string | undefined): Promise<void
 
   runtime.registering = true;
   setRuntimeState({ ready: false });
-  watchRecovery(numberId);
+  watchRecovery();
   try {
     await device.register?.();
   } catch (err) {
@@ -909,11 +933,11 @@ async function registerCurrentDevice(numberId: string | undefined): Promise<void
       }
       if (nextState === 'registering') {
         markDeviceRegistering();
-        scheduleReconnect(numberId);
+        scheduleReconnect();
         return;
       }
       markDeviceRegistering();
-      scheduleReconnect(numberId);
+      scheduleReconnect();
       return;
     }
     setRuntimeState({
@@ -921,28 +945,19 @@ async function registerCurrentDevice(numberId: string | undefined): Promise<void
       registered: false,
       error: formatVoiceError(err),
     });
-    scheduleReconnect(numberId);
+    scheduleReconnect();
   } finally {
     if (runtime.device === device) runtime.registering = false;
   }
 }
 
-async function ensureDeviceForOutbound(
-  numberId: string,
-  expectedIdentity: string,
-): Promise<VoiceDevice | null> {
-  if (
-    runtime.device &&
-    runtime.lastNumberId === numberId &&
-    runtime.state.identity &&
-    runtime.state.identity !== expectedIdentity
-  ) {
+async function ensureDeviceForOutbound(expectedIdentity: string): Promise<VoiceDevice | null> {
+  // A Device holding an older identity cannot place this call; replace it.
+  if (runtime.device && runtime.state.identity && runtime.state.identity !== expectedIdentity) {
     disposeCurrentDevice(true);
   }
 
-  if (!runtime.device || runtime.lastNumberId !== numberId) {
-    await initVoiceDevice(numberId, isBrowserSupported());
-  }
+  if (!runtime.device) await initVoiceDevice(isBrowserSupported());
   if (runtime.state.identity !== expectedIdentity) {
     setRuntimeState({
       error:
@@ -1115,12 +1130,12 @@ function attachCallListeners(conn: VoiceCall, prepared?: OutboundCallPreparation
     if (TOKEN_ERROR_CODES.has(code)) runtime.tokenRejected = true;
     if (RECONNECTABLE_ERROR_CODES.has(code) && !isCallHangupError(err)) {
       runtime.signalingRecoveryPending = true;
-      scheduleReconnect(runtime.lastNumberId);
+      scheduleReconnect();
     }
   });
 }
 
-function attachDeviceListeners(device: VoiceDevice, numberId: string | undefined): void {
+function attachDeviceListeners(device: VoiceDevice): void {
   device.on('registered', () => {
     if (runtime.device !== device) return;
     markDeviceRegistered();
@@ -1130,7 +1145,7 @@ function attachDeviceListeners(device: VoiceDevice, numberId: string | undefined
     if (runtime.device !== device) return;
     runtime.signalingRecoveryPending = true;
     setRuntimeState({ ready: false, registered: false });
-    scheduleReconnect(numberId);
+    scheduleReconnect();
   });
 
   // Device emits registering/registered. reconnecting/reconnected belong to
@@ -1138,7 +1153,7 @@ function attachDeviceListeners(device: VoiceDevice, numberId: string | undefined
   device.on('registering', () => {
     if (runtime.device !== device) return;
     markDeviceRegistering();
-    watchRecovery(numberId);
+    watchRecovery();
   });
 
   // The SDK can destroy itself (e.g. on page lifecycle events). Only an
@@ -1146,7 +1161,7 @@ function attachDeviceListeners(device: VoiceDevice, numberId: string | undefined
   device.on('destroyed', () => {
     if (runtime.device !== device || runtime.intentionallyDestroyed) return;
     disposeCurrentDevice(false);
-    void initVoiceDevice(numberId, isBrowserSupported());
+    void initVoiceDevice(isBrowserSupported());
   });
 
   // Twilio's AudioHelper observes Android route changes (for example a
@@ -1156,11 +1171,11 @@ function attachDeviceListeners(device: VoiceDevice, numberId: string | undefined
   device.on('tokenWillExpire', async () => {
     if (runtime.device !== device) return;
     try {
-      await refreshVoiceToken(numberId);
+      await refreshVoiceToken();
     } catch (err) {
       if (runtime.device !== device) return;
       setRuntimeState({ error: formatVoiceError(err) });
-      scheduleReconnect(numberId);
+      scheduleReconnect();
     }
   });
 
@@ -1170,6 +1185,7 @@ function attachDeviceListeners(device: VoiceDevice, numberId: string | undefined
       incoming: {
         connection: conn,
         from: conn.parameters?.From,
+        calledNumber: conn.customParameters?.get('calledNumber'),
       },
     });
     const clearIncoming = () => {
@@ -1210,16 +1226,18 @@ function attachDeviceListeners(device: VoiceDevice, numberId: string | undefined
     if (TOKEN_ERROR_CODES.has(code ?? 0)) runtime.tokenRejected = true;
     if (RECONNECTABLE_ERROR_CODES.has(code ?? 0) && !isCallHangupError(err)) {
       runtime.signalingRecoveryPending = true;
-      scheduleReconnect(numberId);
+      scheduleReconnect();
     }
   });
 }
 
+// One Device per signed-in user, shared by every page: its identity rings for
+// inbound calls to all of the user's numbers and places their outbound calls.
 async function initVoiceDevice(
-  numberId: string | undefined,
   browserSupported: boolean,
 ): Promise<{ identity: string; expiresAt: string } | null> {
-  if (runtime.state.recoveryFailed && runtime.lastNumberId === numberId) return null;
+  // After a failed recovery, only Reconnect voice builds a new Device.
+  if (runtime.state.recoveryFailed) return null;
   if (!browserSupported) {
     setRuntimeState({
       error: 'This browser does not support WebRTC. Use the latest Chrome, Edge, or Firefox.',
@@ -1227,31 +1245,26 @@ async function initVoiceDevice(
     return null;
   }
 
-  if (runtime.device && runtime.lastNumberId === numberId) {
+  if (runtime.device) {
     const state = getDeviceRegistrationState(runtime.device);
     if (state === 'registered' && !runtime.signalingRecoveryPending) {
       markDeviceRegistered();
     } else if (state !== 'registering' && !runtime.signalingRecoveryPending) {
-      void registerCurrentDevice(numberId);
+      void registerCurrentDevice();
     }
     return runtime.state.identity && runtime.expiresAt
       ? { identity: runtime.state.identity, expiresAt: runtime.expiresAt }
       : null;
   }
 
-  if (runtime.currentInit && runtime.currentInitNumberId === numberId) {
-    return runtime.currentInit;
-  }
+  if (runtime.currentInit) return runtime.currentInit;
 
-  if (runtime.device || runtime.currentInit || runtime.state.recoveryFailed)
-    disposeCurrentDevice(true);
-  runtime.currentInitNumberId = numberId;
   const generation = ++runtime.generation;
   runtime.currentInit = (async () => {
-    if (runtime.initRetry) {
+    if (runtime.initRetryPending) {
       clearTimer(runtime.reconnectTimer);
       runtime.reconnectTimer = null;
-      runtime.initRetry = null;
+      runtime.initRetryPending = false;
     }
     runtime.intentionallyDestroyed = false;
     runtime.deviceStartedAt = Date.now();
@@ -1263,10 +1276,10 @@ async function initVoiceDevice(
       connectionState: 'idle',
       error: null,
     });
-    watchRecovery(numberId);
+    watchRecovery();
 
     try {
-      const tokenPromise = api.voice.token(numberId);
+      const tokenPromise = api.voice.token();
       const sdkPromise = (voiceSdkPromise ??= import('@twilio/voice-sdk').catch((err: unknown) => {
         voiceSdkPromise = null;
         throw err;
@@ -1289,6 +1302,13 @@ async function initVoiceDevice(
       }
       const device = new Device(tokenResp.token, options);
       runtime.device = device;
+      if (!sdkIncomingSound) {
+        try {
+          device.audio?.incoming?.(false);
+        } catch {
+          /* older SDK without the toggle */
+        }
+      }
       if (device.audio && typeof device.audio.setAudioConstraints === 'function') {
         try {
           await device.audio.setAudioConstraints(DEFAULT_AUDIO_CONSTRAINTS);
@@ -1297,25 +1317,21 @@ async function initVoiceDevice(
         }
       }
       if (runtime.generation !== generation) return null;
-      runtime.lastNumberId = numberId;
       runtime.expiresAt = tokenResp.expiresAt;
       runtime.intentionallyDestroyed = false;
-      attachDeviceListeners(device, numberId);
+      attachDeviceListeners(device);
       setRuntimeState({ identity: tokenResp.identity });
-      scheduleTokenRefresh(tokenResp.expiresAt, numberId);
-      void registerCurrentDevice(numberId);
+      scheduleTokenRefresh(tokenResp.expiresAt);
+      void registerCurrentDevice();
       return { identity: tokenResp.identity, expiresAt: tokenResp.expiresAt };
     } catch (err) {
       if (runtime.generation !== generation) return null;
       setRuntimeState({ error: formatVoiceError(err) });
-      if (runtime.device) scheduleReconnect(numberId);
-      else scheduleInitRetry(numberId);
+      if (runtime.device) scheduleReconnect();
+      else scheduleInitRetry();
       return null;
     } finally {
-      if (runtime.generation === generation) {
-        runtime.currentInit = null;
-        runtime.currentInitNumberId = undefined;
-      }
+      if (runtime.generation === generation) runtime.currentInit = null;
     }
   })();
 
@@ -1347,14 +1363,14 @@ async function makeVoiceCall(
     return null;
   }
 
-  const initialized = await initVoiceDevice(selectedNumberId, isBrowserSupported());
+  const initialized = await initVoiceDevice(isBrowserSupported());
   if (!initialized) {
     setRuntimeState({
       error:
         runtime.state.error ??
         'Voice device could not initialize with Twilio. Check the connection status and retry.',
     });
-    scheduleReconnect(selectedNumberId);
+    scheduleReconnect();
     return null;
   }
   if (!runtime.state.registered || runtime.signalingRecoveryPending) {
@@ -1380,13 +1396,13 @@ async function makeVoiceCall(
   if (runtime.generation !== generation || runtime.signalingRecoveryPending) return null;
   options.onPrepared?.(prepared);
 
-  const device = await ensureDeviceForOutbound(prepared.selectedNumberId, prepared.identity);
+  const device = await ensureDeviceForOutbound(prepared.identity);
   if (!device) {
     setRuntimeState({
       error:
         'Voice device could not initialize with Twilio. Check the connection status and retry.',
     });
-    scheduleReconnect(prepared.selectedNumberId);
+    scheduleReconnect();
     return null;
   }
 
@@ -1423,7 +1439,7 @@ async function makeVoiceCall(
     });
     if (RECONNECTABLE_ERROR_CODES.has(getVoiceErrorCode(err) ?? 0) && !isCallHangupError(err)) {
       runtime.signalingRecoveryPending = true;
-      scheduleReconnect(prepared.selectedNumberId);
+      scheduleReconnect();
     }
     return null;
   }
@@ -1579,7 +1595,7 @@ function replaceStalledDevice(): void {
   if (runtime.intentionallyDestroyed || !runtime.device || runtime.state.registered) return;
   if (runtime.state.active || runtime.currentInit) return;
   if (typeof document !== 'undefined' && document.visibilityState === 'hidden') return;
-  replaceForRecovery(runtime.lastNumberId);
+  replaceForRecovery();
 }
 
 function recoverNow(): void {
@@ -1596,20 +1612,19 @@ function recoverNow(): void {
   }
   if (runtime.state.registered) return;
   // Back online or visible again: retry now instead of waiting out the backoff.
-  if (runtime.initRetry) {
-    const { numberId } = runtime.initRetry;
+  if (runtime.initRetryPending) {
     clearTimer(runtime.reconnectTimer);
     runtime.reconnectTimer = null;
-    runtime.initRetry = null;
+    runtime.initRetryPending = false;
     runtime.reconnectAttempt = 0;
-    void initVoiceDevice(numberId, isBrowserSupported());
+    void initVoiceDevice(isBrowserSupported());
     return;
   }
   if (!runtime.device) return;
   clearTimer(runtime.reconnectTimer);
   runtime.reconnectTimer = null;
   runtime.reconnectAttempt = 0;
-  scheduleReconnect(runtime.lastNumberId);
+  scheduleReconnect();
 }
 
 function installRecoveryListeners(): void {
@@ -1633,7 +1648,7 @@ function installRecoveryListeners(): void {
       return;
     event.preventDefault();
     runtime.signalingRecoveryPending = true;
-    scheduleReconnect(runtime.lastNumberId);
+    scheduleReconnect();
   });
 }
 
@@ -1692,10 +1707,7 @@ export function useVoiceDevice(): UseVoiceDevice {
     };
   }, []);
 
-  const init = useCallback(
-    (numberId?: string) => initVoiceDevice(numberId, browserSupported),
-    [browserSupported],
-  );
+  const init = useCallback(() => initVoiceDevice(browserSupported), [browserSupported]);
 
   const destroy = useCallback(() => disposeCurrentDevice(true), []);
 
@@ -1711,6 +1723,7 @@ export function useVoiceDevice(): UseVoiceDevice {
     toggleMute,
     sendDigits: sendDtmfDigits,
     makeCall: makeVoiceCall,
+    routeCallAudio,
     requestMicPermission: requestMicrophonePermission,
     refreshMicrophones,
     selectMicrophone,

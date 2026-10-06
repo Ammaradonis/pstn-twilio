@@ -6,7 +6,7 @@ import { useAuthStore } from '../lib/auth-store';
 
 export function RequireAuth() {
   const location = useLocation();
-  const { token, setUser, logout, setStatus } = useAuthStore();
+  const { token, user, setUser, logout, setStatus } = useAuthStore();
   const [validatedToken, setValidatedToken] = useState<string | null>(null);
 
   useEffect(() => {
@@ -46,6 +46,14 @@ export function RequireAuth() {
         Checking session...
       </div>
     );
+  }
+  // Voice app accounts only see the voice app; everyone else only the console.
+  const inVoiceApp = location.pathname === '/voice' || location.pathname.startsWith('/voice/');
+  if (user?.experience === 'voice' && !inVoiceApp) {
+    return <Navigate to="/voice" replace />;
+  }
+  if (user?.experience !== 'voice' && inVoiceApp) {
+    return <Navigate to="/dashboard" replace />;
   }
   return <Outlet />;
 }

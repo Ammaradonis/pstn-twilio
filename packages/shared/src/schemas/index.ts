@@ -87,7 +87,7 @@ export const aiCallKeypadSchema = z.object({
 });
 
 export const aiInboundModeSchema = z.object({
-  mode: z.enum(['browser', 'blocked']),
+  mode: z.enum(['browser', 'browser-then-agent', 'blocked']),
 });
 
 export const voiceTokenRequestSchema = z.object({
@@ -131,3 +131,5 @@ export const pushCallResultSchema = z.object({
     .datetime({ offset: true })
     .refine((v) => Date.parse(v) <= Date.now() + 5 * 60_000, 'Call end time is in the future.'),
 });
+
+export * from './voice-app';

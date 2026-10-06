@@ -1,3 +1,4 @@
+import { lazy, Suspense } from 'react';
 import { Navigate, Route, Routes } from 'react-router-dom';
 
 import { AppLayout } from './components/app-layout';
@@ -18,12 +19,23 @@ import { SettingsSecurity } from './pages/settings-security';
 import { SettingsSheets } from './pages/settings-sheets';
 import { SettingsTwilio } from './pages/settings-twilio';
 
+// Only voice app accounts download the voice app.
+const VoiceApp = lazy(() => import('./voice/voice-app').then((m) => ({ default: m.VoiceApp })));
+
 export function App() {
   return (
     <Routes>
       <Route path="/login" element={<Login />} />
 
       <Route element={<RequireAuth />}>
+        <Route
+          path="/voice/*"
+          element={
+            <Suspense fallback={<div className="min-h-screen bg-white" />}>
+              <VoiceApp />
+            </Suspense>
+          }
+        />
         <Route element={<AppLayout />}>
           <Route path="/" element={<Navigate to="/dashboard" replace />} />
           <Route path="/dashboard" element={<Dashboard />} />

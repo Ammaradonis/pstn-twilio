@@ -4,6 +4,7 @@ import { NavLink, Outlet } from 'react-router-dom';
 import { useAuthStore } from '../lib/auth-store';
 
 import { ConnectionStatusBar } from './connection-status';
+import { IncomingCallPopup } from './incoming-call-popup';
 import { NumberSwitcher } from './number-switcher';
 import { RecordingDownloadTray } from './recording-downloads';
 
@@ -107,6 +108,7 @@ export function AppLayout() {
         </main>
       </div>
       <RecordingDownloadTray />
+      <IncomingCallPopup />
     </div>
   );
 }

@@ -19,6 +19,7 @@ import { RedisModule } from './redis/redis.module';
 import { SheetsModule } from './sheets/sheets.module';
 import { TwilioModule } from './twilio/twilio.module';
 import { VoiceModule } from './voice/voice.module';
+import { VoiceAppModule } from './voice-app/voice-app.module';
 import { WebhooksModule } from './webhooks/webhooks.module';
 
 @Module({
@@ -44,6 +45,7 @@ import { WebhooksModule } from './webhooks/webhooks.module';
     AuditLogsModule,
     AiCallsModule,
     SheetsModule,
+    VoiceAppModule,
   ],
 })
 export class AppModule implements NestModule {

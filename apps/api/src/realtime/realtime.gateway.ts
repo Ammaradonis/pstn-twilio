@@ -8,6 +8,8 @@ import {
 } from '@nestjs/websockets';
 import type { Server, Socket } from 'socket.io';
 
+import { PrismaService } from '../prisma/prisma.service';
+
 interface AuthedSocket extends Socket {
   data: { userId?: string };
 }
@@ -22,7 +24,10 @@ export class RealtimeGateway implements OnGatewayConnection, OnGatewayDisconnect
   @WebSocketServer()
   server!: Server;
 
-  constructor(private readonly jwt: JwtService) {}
+  constructor(
+    private readonly jwt: JwtService,
+    private readonly prisma: PrismaService,
+  ) {}
 
   async handleConnection(client: AuthedSocket): Promise<void> {
     const token = this.extractToken(client);
@@ -33,9 +38,11 @@ export class RealtimeGateway implements OnGatewayConnection, OnGatewayDisconnect
       return;
     }
     try {
-      const payload = await this.jwt.verifyAsync<{ sub: string }>(token);
+      const payload = await this.jwt.verifyAsync<{ sub: string; role?: string }>(token);
       client.data.userId = payload.sub;
       await client.join(userRoom(payload.sub));
+      // Owners see every number, so they get every number's events.
+      if (await this.isOwner(payload)) await client.join(OWNERS_ROOM);
       this.logger.debug(`Socket ${client.id} authenticated for user ${payload.sub}`);
     } catch (err) {
       const message = err instanceof Error ? err.message : 'unknown';
@@ -60,6 +67,25 @@ export class RealtimeGateway implements OnGatewayConnection, OnGatewayDisconnect
     this.server.to(userRoom(userId)).emit(event, payload);
   }
 
+  /** To owners and, when given, the user a number belongs to. */
+  emitToOwnersAnd(userId: string | null, event: string, payload: unknown): void {
+    if (!this.server) return;
+    this.server.to(userId ? [OWNERS_ROOM, userRoom(userId)] : OWNERS_ROOM).emit(event, payload);
+  }
+
+  private async isOwner(payload: { sub: string; role?: string }): Promise<boolean> {
+    try {
+      const user = await this.prisma.user.findUnique({
+        where: { id: payload.sub },
+        select: { role: true },
+      });
+      if (user) return user.role === 'OWNER';
+    } catch {
+      // Database unavailable: trust the signed token's role.
+    }
+    return payload.role === 'OWNER';
+  }
+
   private extractToken(client: Socket): string | null {
     const auth = client.handshake.auth?.token;
     if (typeof auth === 'string' && auth.length > 0) return auth;
@@ -72,6 +98,8 @@ export class RealtimeGateway implements OnGatewayConnection, OnGatewayDisconnect
     return null;
   }
 }
+
+const OWNERS_ROOM = 'owners';
 
 function userRoom(userId: string): string {
   return `user:${userId}`;

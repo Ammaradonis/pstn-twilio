@@ -90,7 +90,7 @@ function buildQuery(query: RequestOptions['query']): string {
   return qs ? `?${qs}` : '';
 }
 
-async function request<T>(path: string, opts: RequestOptions = {}): Promise<T> {
+export async function request<T>(path: string, opts: RequestOptions = {}): Promise<T> {
   const headers: Record<string, string> = { Accept: 'application/json' };
   const token = getToken();
   if (token) headers.Authorization = `Bearer ${token}`;
@@ -125,7 +125,7 @@ async function request<T>(path: string, opts: RequestOptions = {}): Promise<T> {
   return (text ? JSON.parse(text) : null) as T;
 }
 
-async function requestBlob(path: string): Promise<Blob> {
+export async function requestBlob(path: string): Promise<Blob> {
   const headers: Record<string, string> = { Accept: 'audio/mpeg' };
   const token = getToken();
   if (token) headers.Authorization = `Bearer ${token}`;

@@ -19,6 +19,8 @@ export const WS_EVENTS = {
   CALL_STATUS_UPDATED: 'call.status.updated',
   AI_CALL_UPDATED: 'ai-call.updated',
   EMAIL_FINDER_FOUND: 'email-finder.found',
+  VOICE_APP_SYNC: 'voice-app.sync',
+  VOICE_APP_CALL_ANSWERED: 'voice-app.call-answered',
   TWILIO_WEBHOOK_ERROR: 'twilio.webhook.error',
   SYSTEM_HEALTH_CHANGED: 'system.health.changed',
 

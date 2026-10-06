@@ -96,6 +96,9 @@ model User {
   updatedAt    DateTime  @updatedAt @map("updated_at")
   lastLoginAt  DateTime? @map("last_login_at")
   disabledAt   DateTime? @map("disabled_at")
+  // Which web app the user signs in to: "console" (the softphone console) or
+  // "voice" (the phone-style app with calls, messages, voicemail and contacts).
+  experience   String    @default("console")
 
   sessions            Session[]
   phoneNumbers        PhoneNumber[]
@@ -108,6 +111,13 @@ model User {
   googleCalendar      GoogleCalendarConnection?
   googleSheets        GoogleSheetsConnection?
   emailFinderJobs     EmailFinderJob[]
+  voiceSettings       VoiceSettings?
+  voicemailGreeting   VoicemailGreeting?
+  contacts            Contact[]
+  blockedNumbers      BlockedNumber[]
+  forwardingNumbers   ForwardingNumber[]
+  devices             UserDevice[]
+  readMarkers         ReadMarker[]
 
   @@map("users")
 }
@@ -244,6 +254,9 @@ model Call {
   startedAt        DateTime?     @map("started_at")
   answeredAt       DateTime?     @map("answered_at")
   endedAt          DateTime?     @map("ended_at")
+  // Voice app calls: where an incoming call was picked up ("app", "app:<deviceId>",
+  // "phone:<e164>") or "blocked" when the caller was turned away.
+  handledBy        String?       @map("handled_by")
   createdAt        DateTime      @default(now()) @map("created_at")
   updatedAt        DateTime      @updatedAt @map("updated_at")
 
@@ -268,6 +281,10 @@ model CallRecording {
   track              String?
   rawPayload         Json?           @map("raw_payload")
   startedAt          DateTime?       @map("started_at")
+  // Voicemail only: Twilio's transcription and when the user first played it.
+  transcript         String?
+  transcriptStatus   String?         @map("transcript_status")
+  heardAt            DateTime?       @map("heard_at")
   createdAt          DateTime        @default(now()) @map("created_at")
   updatedAt          DateTime        @updatedAt @map("updated_at")
 
@@ -463,7 +480,13 @@ model SheetsPushLog {
   // NONE | PENDING | SENDING | SENT | FAILED | CANCELLED | MANUAL (contact form, sent by hand)
   emailStatus     String    @default("NONE") @map("email_status")
   emailTo         String?   @map("email_to")
+  // Status key of the follow-up sequence (templates/sequences/<key>.txt).
   emailTemplate   String?   @map("email_template")
+  // Which of the sequence's 6 emails goes out next (1-based).
+  sequenceStep    Int       @default(1) @map("sequence_step")
+  // The lead's sheet row when the call was pushed, by normalized header; the
+  // sequence variables come from it.
+  rowData         Json?     @map("row_data")
   emailDueAt      DateTime? @map("email_due_at")
   emailAttempts   Int       @default(0) @map("email_attempts")
   emailError      String?   @map("email_error")
@@ -538,4 +561,157 @@ model EmailFinderRow {
   @@index([status, claimedAt])
   @@index([status, nextAttemptAt])
   @@map("email_finder_rows")
+}
+
+// ---------------------------------------------------------------------------
+// Voice app (User.experience = "voice"): a phone-style app for one person's
+// number, with linked phones, voicemail, contacts and blocking.
+// ---------------------------------------------------------------------------
+
+model VoiceSettings {
+  userId              String    @id @map("user_id")
+  // Calls, texts and voicemail before this belong to the number's earlier owner
+  // and are not shown in the app.
+  historyStartsAt     DateTime  @default(now()) @map("history_starts_at")
+  // Ring the app on every signed-in device.
+  ringDevices         Boolean   @default(true) @map("ring_devices")
+  // Linked phones hear who is calling and press 1 to take the call, so their
+  // own voicemail can't pick it up.
+  screenCalls         Boolean   @default(true) @map("screen_calls")
+  ringSeconds         Int       @default(25) @map("ring_seconds")
+  doNotDisturb        Boolean   @default(false) @map("do_not_disturb")
+  // Do not disturb switches itself off at this time; null keeps it on.
+  doNotDisturbUntil   DateTime? @map("do_not_disturb_until")
+  voicemailEnabled    Boolean   @default(true) @map("voicemail_enabled")
+  voicemailTranscribe Boolean   @default(true) @map("voicemail_transcribe")
+  // default | text | recorded
+  greetingMode        String    @default("default") @map("greeting_mode")
+  greetingText        String?   @map("greeting_text")
+  createdAt           DateTime  @default(now()) @map("created_at")
+  updatedAt           DateTime  @updatedAt @map("updated_at")
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("voice_settings")
+}
+
+// A voicemail greeting recorded in the browser, served to Twilio <Play> at an
+// unguessable URL.
+model VoicemailGreeting {
+  userId      String   @id @map("user_id")
+  audio       Bytes
+  contentType String   @map("content_type")
+  durationMs  Int      @map("duration_ms")
+  token       String   @unique
+  createdAt   DateTime @default(now()) @map("created_at")
+  updatedAt   DateTime @updatedAt @map("updated_at")
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("voicemail_greetings")
+}
+
+model Contact {
+  id        String   @id @default(uuid())
+  userId    String   @map("user_id")
+  name      String
+  company   String?
+  email     String?
+  notes     String?
+  starred   Boolean  @default(false)
+  // manual | device | vcard
+  source    String   @default("manual")
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  user   User           @relation(fields: [userId], references: [id], onDelete: Cascade)
+  phones ContactPhone[]
+
+  @@index([userId, name])
+  @@map("contacts")
+}
+
+model ContactPhone {
+  id        String  @id @default(uuid())
+  contactId String  @map("contact_id")
+  userId    String  @map("user_id")
+  e164      String
+  // mobile | home | work | other
+  label     String?
+
+  contact Contact @relation(fields: [contactId], references: [id], onDelete: Cascade)
+
+  @@unique([contactId, e164])
+  @@index([userId, e164])
+  @@map("contact_phones")
+}
+
+// Calls from these numbers are rejected unanswered and their texts are hidden.
+model BlockedNumber {
+  id        String   @id @default(uuid())
+  userId    String   @map("user_id")
+  e164      String
+  createdAt DateTime @default(now()) @map("created_at")
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, e164])
+  @@map("blocked_numbers")
+}
+
+// Personal or desk phones that ring together with the app (at most six).
+model ForwardingNumber {
+  id              String    @id @default(uuid())
+  userId          String    @map("user_id")
+  e164            String
+  label           String
+  enabled         Boolean   @default(true)
+  verifiedAt      DateTime? @map("verified_at")
+  // Verification: a call asks for the code shown on screen.
+  verifyCodeHash  String?   @map("verify_code_hash")
+  verifyExpiresAt DateTime? @map("verify_expires_at")
+  verifyCallSid   String?   @map("verify_call_sid")
+  // calling | failed | wrong-code
+  verifyStatus    String?   @map("verify_status")
+  createdAt       DateTime  @default(now()) @map("created_at")
+  updatedAt       DateTime  @updatedAt @map("updated_at")
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, e164])
+  @@map("forwarding_numbers")
+}
+
+// A browser or installed app the user signs in on. The id is generated by the
+// device. Holds its Web Push subscription.
+model UserDevice {
+  id            String    @id
+  userId        String    @map("user_id")
+  name          String
+  platform      String?
+  userAgent     String?   @map("user_agent")
+  lastSeenAt    DateTime  @default(now()) @map("last_seen_at")
+  pushEndpoint  String?   @unique @map("push_endpoint")
+  pushP256dh    String?   @map("push_p256dh")
+  pushAuth      String?   @map("push_auth")
+  pushUpdatedAt DateTime? @map("push_updated_at")
+  createdAt     DateTime  @default(now()) @map("created_at")
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@map("user_devices")
+}
+
+// What the user has seen, shared by all of their devices. Keys: "calls"
+// (missed calls) and "sms:<e164>" (a conversation).
+model ReadMarker {
+  userId String   @map("user_id")
+  key    String
+  readAt DateTime @map("read_at")
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@id([userId, key])
+  @@map("read_markers")
 }

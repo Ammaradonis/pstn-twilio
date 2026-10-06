@@ -1,0 +1,43 @@
+{
+  "id": "/voice/",
+  "name": "Voice",
+  "short_name": "Voice",
+  "description": "Calls, texts and voicemail for your Voice number, on all your devices.",
+  "start_url": "/voice/calls",
+  "scope": "/",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#ffffff",
+  "theme_color": "#ffffff",
+  "categories": ["communication", "social"],
+  "icons": [
+    { "src": "/voice-icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any" },
+    { "src": "/voice-icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any" },
+    {
+      "src": "/voice-icon-maskable-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "maskable"
+    },
+    { "src": "/voice-icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any" }
+  ],
+  "shortcuts": [
+    {
+      "name": "Make a call",
+      "short_name": "Call",
+      "url": "/voice/calls?dial=",
+      "icons": [{ "src": "/voice-icon-192.png", "sizes": "192x192", "type": "image/png" }]
+    },
+    {
+      "name": "Send a message",
+      "short_name": "Message",
+      "url": "/voice/messages/new",
+      "icons": [{ "src": "/voice-icon-192.png", "sizes": "192x192", "type": "image/png" }]
+    },
+    {
+      "name": "Voicemail",
+      "url": "/voice/voicemail",
+      "icons": [{ "src": "/voice-icon-192.png", "sizes": "192x192", "type": "image/png" }]
+    }
+  ]
+}

@@ -103,6 +103,16 @@ export default [
     },
   },
 
+  // The voice app's service worker runs in the ServiceWorkerGlobalScope.
+  {
+    files: ['apps/web/public/*sw.js', 'apps/web/public/voice-sw.js'],
+    languageOptions: {
+      ecmaVersion: 2022,
+      sourceType: 'script',
+      globals: { ...globals.serviceworker, ...globals.browser },
+    },
+  },
+
   // Ad-hoc Node.js helper scripts (CommonJS or plain Node ESM)
   {
     files: ['scripts/**/*.{js,cjs}'],

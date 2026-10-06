@@ -123,7 +123,7 @@ describe('useVoiceDevice', () => {
     });
     vi.mocked(api.voice.token).mockResolvedValue({
       token: 'voice.jwt',
-      identity: 'user_u1_number_pn1',
+      identity: 'user_u1',
       expiresAt: new Date(Date.now() + 60 * 60 * 1000).toISOString(),
     });
     vi.mocked(api.voice.deviceConfig).mockResolvedValue({});
@@ -132,7 +132,7 @@ describe('useVoiceDevice', () => {
       selectedNumberId: 'pn1',
       selectedCallerId: '+15552222222',
       destinationNumber: '+15551111111',
-      identity: 'user_u1_number_pn1',
+      identity: 'user_u1',
       expiresAt: new Date(Date.now() + 120_000).toISOString(),
       recordCall: true,
     });
@@ -149,7 +149,7 @@ describe('useVoiceDevice', () => {
     expect(current).not.toBeNull();
 
     await act(async () => {
-      await current!.init('pn1');
+      await current!.init();
       await Promise.resolve();
     });
 
@@ -200,7 +200,7 @@ describe('useVoiceDevice', () => {
     render(<Harness onChange={(voice) => (current = voice)} />);
 
     await act(async () => {
-      await current!.init('pn1');
+      await current!.init();
       await Promise.resolve();
     });
 
@@ -222,7 +222,7 @@ describe('useVoiceDevice', () => {
     render(<Harness onChange={(voice) => (current = voice)} />);
 
     await act(async () => {
-      await current!.init('pn1');
+      await current!.init();
       await Promise.resolve();
     });
 
@@ -256,7 +256,7 @@ describe('useVoiceDevice', () => {
     render(<Harness onChange={(voice) => (current = voice)} />);
 
     await act(async () => {
-      await current!.init('pn1');
+      await current!.init();
       await Promise.resolve();
     });
 
@@ -282,7 +282,7 @@ describe('useVoiceDevice', () => {
     render(<Harness onChange={(voice) => (current = voice)} />);
 
     await act(async () => {
-      await current!.init('pn1');
+      await current!.init();
       await Promise.resolve();
     });
 
@@ -319,7 +319,7 @@ describe('useVoiceDevice', () => {
     render(<Harness onChange={(voice) => (current = voice)} />);
 
     await act(async () => {
-      await current!.init('pn1');
+      await current!.init();
       await Promise.resolve();
     });
 
@@ -350,7 +350,7 @@ describe('useVoiceDevice', () => {
     render(<Harness onChange={(voice) => (current = voice)} />);
 
     await act(async () => {
-      await current!.init('pn1');
+      await current!.init();
       await Promise.resolve();
     });
 
@@ -401,7 +401,7 @@ describe('useVoiceDevice', () => {
   it('treats an app-switch socket drop while idle as reconnecting, not an error', async () => {
     render(<Harness onChange={(voice) => (current = voice)} />);
     await act(async () => {
-      await current!.init('pn1');
+      await current!.init();
     });
     const device = voiceSdkMock.instances[0]!;
     act(() => device.emit('error', androidSocketDrop()));
@@ -415,7 +415,7 @@ describe('useVoiceDevice', () => {
   it('keeps a live call through an app-switch socket drop and says what happened', async () => {
     render(<Harness onChange={(voice) => (current = voice)} />);
     await act(async () => {
-      await current!.init('pn1');
+      await current!.init();
     });
     const device = voiceSdkMock.instances[0]!;
     const handlers = new Map<string, (...args: unknown[]) => void>();
@@ -438,7 +438,7 @@ describe('useVoiceDevice', () => {
   it('does not hang up a call the SDK keeps open after a 31000 media error', async () => {
     render(<Harness onChange={(voice) => (current = voice)} />);
     await act(async () => {
-      await current!.init('pn1');
+      await current!.init();
     });
     const device = voiceSdkMock.instances[0]!;
     const handlers = new Map<string, (...args: unknown[]) => void>();
@@ -476,7 +476,7 @@ describe('useVoiceDevice', () => {
     render(<Harness onChange={(voice) => (current = voice)} />);
 
     await act(async () => {
-      await current!.init('pn1');
+      await current!.init();
       await Promise.resolve();
     });
 
@@ -498,7 +498,7 @@ describe('useVoiceDevice', () => {
     render(<Harness onChange={(voice) => (current = voice)} />);
 
     await act(async () => {
-      await current!.init('pn1');
+      await current!.init();
       await Promise.resolve();
     });
 
@@ -514,7 +514,7 @@ describe('useVoiceDevice', () => {
   it('stops a continuous outage after thirty seconds and supports a manual retry', async () => {
     render(<Harness onChange={(voice) => (current = voice)} />);
     await act(async () => {
-      await current!.init('pn1');
+      await current!.init();
     });
     const original = voiceSdkMock.instances[0]!;
     voiceSdkMock.autoRegister = false;
@@ -527,7 +527,7 @@ describe('useVoiceDevice', () => {
     expect(current!.error).toContain('within 30 seconds');
     const attempts = voiceSdkMock.instances.length;
     await act(async () => {
-      await current!.init('pn1');
+      await current!.init();
       await vi.advanceTimersByTimeAsync(120_000);
     });
     expect(voiceSdkMock.instances).toHaveLength(attempts);
@@ -545,7 +545,7 @@ describe('useVoiceDevice', () => {
     voiceSdkMock.autoRegister = false;
     render(<Harness onChange={(voice) => (current = voice)} />);
     await act(async () => {
-      await current!.init('pn1');
+      await current!.init();
     });
     expect(current!.registered).toBe(false);
     voiceSdkMock.autoRegister = true;
@@ -559,12 +559,12 @@ describe('useVoiceDevice', () => {
   it('does not mistake stale registered state for recovery when trying to call', async () => {
     render(<Harness onChange={(voice) => (current = voice)} />);
     await act(async () => {
-      await current!.init('pn1');
+      await current!.init();
     });
     const device = voiceSdkMock.instances[0]!;
     act(() => device.emit('error', { code: 31005, message: 'Connection lost' }));
     await act(async () => {
-      await current!.init('pn1');
+      await current!.init();
       await current!.makeCall('pn1', '+442079460018');
     });
     expect(current!.registered).toBe(false);
@@ -576,7 +576,7 @@ describe('useVoiceDevice', () => {
   it('keeps a live call and its controls even when registration recovery times out', async () => {
     render(<Harness onChange={(voice) => (current = voice)} />);
     await act(async () => {
-      await current!.init('pn1');
+      await current!.init();
     });
     const device = voiceSdkMock.instances[0]!;
     const disconnect = vi.fn();
@@ -606,7 +606,7 @@ describe('useVoiceDevice', () => {
   it('classifies a 31005 HANGUP wrapper as a terminal call error and confirms no answer', async () => {
     render(<Harness onChange={(voice) => (current = voice)} />);
     await act(async () => {
-      await current!.init('pn1');
+      await current!.init();
     });
     const device = voiceSdkMock.instances[0]!;
     const handlers = new Map<string, (...args: unknown[]) => void>();
@@ -641,7 +641,7 @@ describe('useVoiceDevice', () => {
   it('shows the original destination error without blaming TwiML configuration', async () => {
     render(<Harness onChange={(voice) => (current = voice)} />);
     await act(async () => {
-      await current!.init('pn1');
+      await current!.init();
     });
     const device = voiceSdkMock.instances[0]!;
     act(() =>
@@ -661,7 +661,7 @@ describe('useVoiceDevice', () => {
   it('closes a pending call when transportClose changes SDK status without disconnect', async () => {
     render(<Harness onChange={(voice) => (current = voice)} />);
     await act(async () => {
-      await current!.init('pn1');
+      await current!.init();
     });
     const device = voiceSdkMock.instances[0]!;
     const handlers = new Map<string, (...args: unknown[]) => void>();
@@ -687,7 +687,7 @@ describe('useVoiceDevice', () => {
   it('ignores a late previous-call outcome after starting another call', async () => {
     render(<Harness onChange={(voice) => (current = voice)} />);
     await act(async () => {
-      await current!.init('pn1');
+      await current!.init();
     });
     const device = voiceSdkMock.instances[0]!;
     const handlers = new Map<string, (...args: unknown[]) => void>();
@@ -714,7 +714,8 @@ describe('useVoiceDevice', () => {
     expect(current!.callNotice).toBeNull();
   });
 
-  it('ignores a late initial token response after switching numbers', async () => {
+  it('shares one Device and one token request between concurrent inits', async () => {
+    // The app shell and a page both ask for the voice device on load.
     let resolveToken!: (value: Awaited<ReturnType<typeof api.voice.token>>) => void;
     vi.mocked(api.voice.token).mockReturnValueOnce(
       new Promise((resolve) => {
@@ -722,25 +723,24 @@ describe('useVoiceDevice', () => {
       }),
     );
     render(<Harness onChange={(voice) => (current = voice)} />);
-    let firstInit: Promise<unknown>;
+    let shellInit!: Promise<unknown>;
+    let pageInit!: Promise<unknown>;
     act(() => {
-      firstInit = current!.init('old-number');
+      shellInit = current!.init();
+      pageInit = current!.init();
     });
-    let initialized: unknown;
-    await act(async () => {
-      initialized = await current!.init('pn1');
-    });
-    expect(initialized, current!.error ?? undefined).not.toBeNull();
     await act(async () => {
       resolveToken({
-        token: 'old.jwt',
-        identity: 'old_identity',
+        token: 'voice.jwt',
+        identity: 'user_u1',
         expiresAt: new Date(Date.now() + 3600000).toISOString(),
       });
-      await firstInit;
+      await Promise.all([shellInit, pageInit]);
     });
+    expect(api.voice.token).toHaveBeenCalledTimes(1);
+    expect(api.voice.token).toHaveBeenCalledWith();
     expect(voiceSdkMock.instances).toHaveLength(1);
-    expect(current!.identity).toBe('user_u1_number_pn1');
+    expect(current!.identity).toBe('user_u1');
     expect(current!.registered).toBe(true);
   });
 
@@ -748,7 +748,7 @@ describe('useVoiceDevice', () => {
     render(<Harness onChange={(voice) => (current = voice)} />);
 
     await act(async () => {
-      await current!.init('pn1');
+      await current!.init();
       await Promise.resolve();
     });
 
@@ -793,7 +793,7 @@ describe('useVoiceDevice', () => {
   it('cleans up 31603, stays registered, and ignores the declined call after a new call starts', async () => {
     render(<Harness onChange={(voice) => (current = voice)} />);
     await act(async () => {
-      await current!.init('pn1');
+      await current!.init();
     });
     const device = voiceSdkMock.instances[0]!;
     const handlers = new Map<string, (...args: unknown[]) => void>();
@@ -834,7 +834,7 @@ describe('useVoiceDevice', () => {
   it('releases selected audio when connect rejects with a nested 31603 error', async () => {
     render(<Harness onChange={(voice) => (current = voice)} />);
     await act(async () => {
-      await current!.init('pn1');
+      await current!.init();
     });
     const device = voiceSdkMock.instances[0]!;
     device.connect.mockRejectedValue({ code: 31005, twilioError: { code: 31603 } });
@@ -851,7 +851,7 @@ describe('useVoiceDevice', () => {
     render(<Harness onChange={(voice) => (current = voice)} />);
 
     await act(async () => {
-      await current!.init('pn1');
+      await current!.init();
       await Promise.resolve();
     });
 
@@ -895,7 +895,7 @@ describe('useVoiceDevice', () => {
     render(<Harness onChange={(voice) => (current = voice)} />);
 
     await act(async () => {
-      await current!.init('pn1');
+      await current!.init();
       await Promise.resolve();
     });
 
@@ -907,11 +907,13 @@ describe('useVoiceDevice', () => {
       isMuted: vi.fn().mockReturnValue(false),
       accept: vi.fn(),
       parameters: { From: '+15552223333' },
+      customParameters: new Map([['calledNumber', '+16672206726']]),
     };
 
     act(() => {
       device.emit('incoming', call);
     });
+    expect(current!.incoming).toMatchObject({ from: '+15552223333', calledNumber: '+16672206726' });
 
     await act(async () => {
       await current!.accept();
@@ -954,7 +956,7 @@ describe('useVoiceDevice', () => {
     async function initDevice() {
       render(<Harness onChange={(voice) => (current = voice)} />);
       await act(async () => {
-        await current!.init('pn1');
+        await current!.init();
         await Promise.resolve();
       });
       const device = voiceSdkMock.instances[0];
@@ -1152,7 +1154,7 @@ describe('useVoiceDevice', () => {
     render(<Harness onChange={(voice) => (current = voice)} />);
 
     await act(async () => {
-      await current!.init('pn1');
+      await current!.init();
       await Promise.resolve();
     });
 
@@ -1184,7 +1186,7 @@ describe('useVoiceDevice', () => {
     render(<Harness onChange={(voice) => (current = voice)} />);
 
     await act(async () => {
-      await current!.init('pn1');
+      await current!.init();
       await Promise.resolve();
     });
 
@@ -1237,7 +1239,7 @@ describe('useVoiceDevice', () => {
     render(<Harness onChange={(voice) => (current = voice)} />);
 
     await act(async () => {
-      await current!.init('pn1');
+      await current!.init();
       await Promise.resolve();
     });
 
@@ -1301,7 +1303,7 @@ describe('useVoiceDevice', () => {
     render(<Harness onChange={(voice) => (current = voice)} />);
 
     await act(async () => {
-      await current!.init('pn1');
+      await current!.init();
       await Promise.resolve();
     });
 
@@ -1337,7 +1339,7 @@ describe('useVoiceDevice', () => {
     render(<Harness onChange={(voice) => (current = voice)} />);
 
     await act(async () => {
-      await current!.init('pn1');
+      await current!.init();
       await Promise.resolve();
     });
 
@@ -1362,7 +1364,7 @@ describe('useVoiceDevice', () => {
     render(<Harness onChange={(voice) => (current = voice)} />);
 
     await act(async () => {
-      await current!.init('pn1');
+      await current!.init();
     });
     expect(voiceSdkMock.instances).toHaveLength(0);
     expect(current!.error).toContain('Failed to fetch');

@@ -204,11 +204,6 @@ export function DialPage() {
   }
 
   useEffect(() => {
-    void voice.init(numberId);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [numberId]);
-
-  useEffect(() => {
     if (inCallMode) return;
     setSentTones('');
     setActiveCallRecorded(false);
