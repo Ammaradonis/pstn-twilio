@@ -49,7 +49,9 @@ export function Login() {
       >
         <div>
           <h1 className="text-xl font-semibold text-slate-900">Sign in</h1>
-          <p className="mt-1 text-sm text-slate-500">pstn-twilio · owner console</p>
+          {/* Voice accounts land in the phone-style app, not the owner console,
+              so the page can't assume which experience is signing in. */}
+          <p className="mt-1 text-sm text-slate-500">pstn-twilio</p>
         </div>
 
         <label className="block text-sm">
