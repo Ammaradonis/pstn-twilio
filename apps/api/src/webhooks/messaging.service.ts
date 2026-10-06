@@ -1,9 +1,10 @@
-import { Injectable, Logger } from '@nestjs/common';
+import { Injectable, Logger, Optional } from '@nestjs/common';
 import { MessageDirection, MessageStatus, WebhookProvider } from '@prisma/client';
 
 import { mapMessage } from '../messages/messages.mapper';
 import { PrismaService } from '../prisma/prisma.service';
 import { RealtimeService } from '../realtime/realtime.service';
+import { VoiceAppCallsService } from '../voice-app/voice-app-calls.service';
 
 import {
   describeTwilioMessagingError,
@@ -42,6 +43,7 @@ export class MessagingWebhookService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly realtime: RealtimeService,
+    @Optional() private readonly voiceApp?: VoiceAppCallsService,
   ) {}
 
   async handleInbound(params: InboundParams): Promise<{ deduped: boolean }> {
@@ -113,6 +115,13 @@ export class MessagingWebhookService {
         createdAt: message.createdAt.toISOString(),
         updatedAt: message.updatedAt.toISOString(),
       },
+    });
+
+    // Voice app users get a notification on their devices.
+    void this.voiceApp?.onInboundSms(phoneNumber, message).catch((err: unknown) => {
+      this.logger.warn(
+        `Voice app SMS notification failed: ${err instanceof Error ? err.message : 'unknown'}`,
+      );
     });
 
     return { deduped: false };

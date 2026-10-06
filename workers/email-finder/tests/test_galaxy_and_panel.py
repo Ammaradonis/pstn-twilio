@@ -5,9 +5,12 @@ import asyncio
 import sys
 import time
 from pathlib import Path
+from unittest.mock import AsyncMock
+
+import pytest
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
-from email_finder.android import Galaxy, emails_on_screen, find_button, parse_dump
+from email_finder.android import Galaxy, PhoneUnavailable, emails_on_screen, find_button, parse_dump, instagram_profile_shown
 from email_finder.cache import Cache
 from email_finder.engine import Engine, Row, _Job, _same_address, describe_method
 from email_finder.extract import Candidate
@@ -27,6 +30,9 @@ IG = "com.instagram.android"
 PROFILE_NO_CONTACT = screen(IG, ("calsma_official", "", False), ("Follow", "", True), ("Message", "", True),
                             ("Taekwondo for kids and adults in Daly City", "", False))
 PROFILE_WITH_CONTACT = screen(IG, ("calsma_official", "", False), ("Follow", "", True), ("Contact", "", True))
+# Match the actual A20e profile header, distinct from Reel/feed controls.
+PROFILE_NO_CONTACT = PROFILE_NO_CONTACT.replace(":id/n1", ":id/action_bar_title").replace(":id/n2", ":id/profile_header_follow_button")
+PROFILE_WITH_CONTACT = PROFILE_WITH_CONTACT.replace(":id/n1", ":id/action_bar_title").replace(":id/n2", ":id/profile_header_follow_button")
 CONTACT_SHEET = screen(IG, ("Call", "", True), ("Email", "", True), ("Directions", "", True))
 # What the Instagram app really showed for thegrindbjj on 2026-10-04: the sheet
 # lists the number and the address itself (resource id contact_option_sub_text).
@@ -90,7 +96,37 @@ def _quick(monkeypatch):
     monkeypatch.setattr(android, "GAP", (0, 0))
 
 
-def test_instagram_contact_button_refreshes_once_then_reads_the_draft_and_discards_it(tmp_path, monkeypatch):
+@pytest.mark.parametrize("app", ["instagram", "facebook"])
+@pytest.mark.parametrize("failed_command", ["get-state", "shell"])
+def test_availability_timeout_skips_lookup_and_releases_phone(tmp_path, app, failed_command):
+    phone = Galaxy(Cache(tmp_path / "c.db"), "adb", lock_path=tmp_path / "galaxy.lock")
+
+    async def adb(*args, **kwargs):
+        if args[0] == failed_command:
+            raise PhoneUnavailable("the phone command timed out")
+        return "device"
+
+    phone._run = adb
+    phone._instagram = AsyncMock()
+    phone._facebook = AsyncMock()
+    target = "dojo" if app == "instagram" else "https://facebook.com/dojo"
+    found = asyncio.run(getattr(phone, app)(target))
+    assert found.blocked == "unavailable"
+    assert not phone.lock_path.exists() and not phone._lock.locked()
+    assert phone._wanted == 0
+    assert phone.cache._db.execute("select count(*) from counters where name='galaxy'").fetchone()[0] == 0
+    phone._instagram.assert_not_called()
+    phone._facebook.assert_not_called()
+
+
+def test_availability_does_not_swallow_cancellation(tmp_path):
+    phone = Galaxy(Cache(tmp_path / "c.db"), "adb", lock_path=tmp_path / "galaxy.lock")
+    phone._run = AsyncMock(side_effect=asyncio.CancelledError)
+    with pytest.raises(asyncio.CancelledError):
+        asyncio.run(phone.available())
+
+
+def test_instagram_waits_without_refreshing_then_reads_and_discards_the_draft(tmp_path, monkeypatch):
     _quick(monkeypatch)
     phone = FakePhone(tmp_path, [PROFILE_NO_CONTACT, PROFILE_NO_CONTACT, PROFILE_WITH_CONTACT, PROFILE_WITH_CONTACT,
                                  CONTACT_SHEET, GMAIL_DRAFT,
@@ -99,15 +135,26 @@ def test_instagram_contact_button_refreshes_once_then_reads_the_draft_and_discar
     found = asyncio.run(phone.instagram("calsma_official"))
     assert found.emails == {"admin@calsma.com": "contact"}
     swipes = [c for c in phone.commands if c.startswith("input swipe")]
-    assert len(swipes) == 1  # one refresh when Contact wasn't there within 3 s
+    assert swipes == []  # wait for Contact without pulling down to refresh
     assert any("am force-stop com.google.android.gm" == c for c in phone.commands)
     assert not any("input text" in c or "KEYCODE_ENTER" in c for c in phone.commands)  # never types or sends
     assert phone.commands[-1] == "input keyevent KEYCODE_HOME"
 
 
+def test_facebook_without_about_waits_without_pulling_to_refresh(tmp_path, monkeypatch):
+    _quick(monkeypatch)
+    fb = "com.facebook.katana"
+    page = screen(fb, ("School", "", False))
+    phone = FakePhone(tmp_path, [page], foreground=f"{fb}/.MainActivity")
+    result = asyncio.run(phone.facebook("https://www.facebook.com/school"))
+    assert not result.emails
+    assert not any(c.startswith("input swipe") for c in phone.commands)
+
+
 def test_the_real_contact_sheet_gives_address_and_phone_without_opening_an_email_app(tmp_path, monkeypatch):
     _quick(monkeypatch)
-    phone = FakePhone(tmp_path, [PROFILE_WITH_CONTACT, PROFILE_WITH_CONTACT, REAL_SHEET])
+    profile = PROFILE_WITH_CONTACT.replace("calsma_official", "thegrindbjj")
+    phone = FakePhone(tmp_path, [profile, profile, REAL_SHEET])
     found = asyncio.run(phone.instagram("thegrindbjj"))
     assert found.emails == {"thegrindbjj54@gmail.com": "contact"} and found.phones == ["+1 559-759-8024"]
     assert not any("force-stop" in c for c in phone.commands)
@@ -227,6 +274,36 @@ def test_facebook_blocking_the_browser_sends_the_page_to_the_phone():
     job.social = {"https://www.facebook.com/calsma"}
     asyncio.run(job._scrape_social_profiles())
     assert ("facebook", "https://www.facebook.com/calsma") in phone.asked
+
+
+@pytest.mark.parametrize("blocked", ["unavailable", "daily limit", "the phone stopped answering"])
+def test_unread_known_profile_is_deferred(blocked):
+    from email_finder.android import AppLookup
+    from email_finder.worker import to_result
+
+    job = _job(_Fetcher(), _Phone(ig=AppLookup(blocked=blocked)), title="Dojo")
+    asyncio.run(job._galaxy_lookup("instagram", "https://instagram.com/dojo/"))
+    result = to_result("row", job.finding, "lease")
+    assert result["status"] == "RETRY" and result["researchComplete"] is False
+    assert 60 <= result["retryAfter"] <= 86405
+    assert blocked in result["notes"]
+
+
+def test_blocked_handle_guess_does_not_defer_completed_research():
+    from email_finder.android import AppLookup
+    job = _job(_Fetcher(), _Phone(ig=AppLookup(blocked="unavailable")), title="Dojo")
+    asyncio.run(job._galaxy_lookup("instagram", "https://instagram.com/guess/", must_match=True))
+    assert job.finding.research_complete and job.finding.retry_after is None
+
+
+def test_facebook_policy_link_is_never_sent_to_browser_or_phone():
+    fetcher, phone = _Fetcher(), _Phone()
+    fetcher.fetch_fb_profile = AsyncMock()
+    job = _job(fetcher, phone, title="Dojo")
+    job.social = {"https://www.facebook.com/policy.php/"}
+    asyncio.run(job._scrape_social_profiles())
+    fetcher.fetch_fb_profile.assert_not_called()
+    assert not phone.asked
 
 
 def test_galaxy_method_wording():
@@ -418,7 +495,74 @@ def test_user_not_found_is_opened_twice_then_left(tmp_path, monkeypatch):
 
 def test_user_not_found_once_is_a_hiccup(tmp_path, monkeypatch):
     _quick(monkeypatch)
-    phone = FakePhone(tmp_path, [NOT_FOUND_SCREEN, PROFILE_WITH_CONTACT, PROFILE_WITH_CONTACT, REAL_SHEET])
+    profile = PROFILE_WITH_CONTACT.replace("calsma_official", "thegrindbjj")
+    phone = FakePhone(tmp_path, [NOT_FOUND_SCREEN, profile, profile, REAL_SHEET])
     found = asyncio.run(phone.instagram("thegrindbjj"))
     assert found.emails == {"thegrindbjj54@gmail.com": "contact"}
     assert sum("am start" in c for c in phone.commands) == 2
+
+
+@pytest.mark.parametrize("stale", [
+    screen(IG, ("Message", "", True), ("Follow", "", True), ("Contact", "", True)),
+    PROFILE_WITH_CONTACT.replace("calsma_official", "previous_school"),
+])
+def test_old_profile_or_reel_is_never_a_completed_lookup(tmp_path, monkeypatch, stale):
+    _quick(monkeypatch)
+    phone = FakePhone(tmp_path, [stale])
+    found = asyncio.run(phone.instagram("calsma_official"))
+    assert found.blocked == "requested Instagram profile did not open"
+    assert not found.missing and not found.emails
+    assert not any(c.startswith("input tap") for c in phone.commands)
+    assert sum("am start" in c for c in phone.commands) == 2
+
+
+def test_slow_navigation_waits_for_the_requested_account(tmp_path, monkeypatch):
+    _quick(monkeypatch)
+    stale = PROFILE_WITH_CONTACT.replace("calsma_official", "previous_school")
+    phone = FakePhone(tmp_path, [stale, stale, PROFILE_WITH_CONTACT, PROFILE_WITH_CONTACT, REAL_SHEET])
+    found = asyncio.run(phone.instagram("calsma_official"))
+    assert found.emails == {"thegrindbjj54@gmail.com": "contact"}
+    assert sum("am start" in c for c in phone.commands) == 1
+
+
+def test_profile_header_must_be_visible_and_belong_to_instagram():
+    nodes = parse_dump(PROFILE_WITH_CONTACT)
+    assert instagram_profile_shown(nodes, "CALsma_official")
+    nodes[0].bounds = (0, 0, 0, 0)
+    assert not instagram_profile_shown(nodes, "calsma_official")
+    assert not instagram_profile_shown(parse_dump(PROFILE_WITH_CONTACT.replace(IG, "other.app")), "calsma_official")
+
+
+def test_delayed_contact_sheet_is_waited_for(tmp_path, monkeypatch):
+    _quick(monkeypatch)
+    phone = FakePhone(tmp_path, [PROFILE_WITH_CONTACT] * 4 + [REAL_SHEET])
+    found = asyncio.run(phone.instagram("calsma_official"))
+    assert found.emails == {"thegrindbjj54@gmail.com": "contact"}
+    assert sum(c.startswith("input tap") for c in phone.commands) == 1
+
+
+def test_contact_tap_that_does_not_open_is_retryable(tmp_path, monkeypatch):
+    _quick(monkeypatch)
+    phone = FakePhone(tmp_path, [PROFILE_WITH_CONTACT])
+    found = asyncio.run(phone.instagram("calsma_official"))
+    assert found.blocked and not found.emails
+    assert sum(c.startswith("input tap") for c in phone.commands) == 1
+
+
+def test_direct_email_button_discards_draft(tmp_path, monkeypatch):
+    _quick(monkeypatch)
+    profile = PROFILE_WITH_CONTACT.replace('text="Contact"', 'text="Email"')
+    discard = screen("com.google.android.gm", ("Discard", "", True))
+    phone = FakePhone(tmp_path, [profile, profile, GMAIL_DRAFT, discard, discard])
+    found = asyncio.run(phone.instagram("calsma_official"))
+    assert found.emails == {"admin@calsma.com": "contact"}
+    assert "am force-stop com.google.android.gm" in phone.commands
+
+
+def test_profile_changed_after_loading_is_not_scraped(tmp_path, monkeypatch):
+    _quick(monkeypatch)
+    stale = PROFILE_WITH_CONTACT.replace("calsma_official", "different_school")
+    phone = FakePhone(tmp_path, [PROFILE_WITH_CONTACT, stale])
+    found = asyncio.run(phone.instagram("calsma_official"))
+    assert found.blocked and not found.emails
+    assert not any(c.startswith("input tap") for c in phone.commands)

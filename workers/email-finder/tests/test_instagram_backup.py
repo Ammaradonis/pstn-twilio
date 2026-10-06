@@ -48,7 +48,9 @@ def test_facebook_handles_worth_trying_on_instagram():
     assert _facebook_handle("https://www.facebook.com/gbsouthatx/") == "gbsouthatx"
     assert _facebook_handle("https://www.facebook.com/profile.php?id=100075447356523") is None
     assert _facebook_handle("https://www.facebook.com/pages/Some-Dojo/123") is None
-    assert _facebook_handle("https://www.facebook.com/107408974782307") == "107408974782307"
+    assert _facebook_handle("https://www.facebook.com/107408974782307") is None
+    assert _facebook_handle("https://www.facebook.com/policy.php/") is None
+    assert _facebook_handle("facebook.com/policy.php/") is None
 
 
 # ── the engine never stops at a Facebook page without an address ───────────

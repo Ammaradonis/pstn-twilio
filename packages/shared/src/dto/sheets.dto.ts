@@ -41,7 +41,9 @@ export type SheetsEmailStatus =
   | 'SENT'
   | 'FAILED'
   | 'CANCELLED'
-  | 'MANUAL';
+  | 'MANUAL'
+  // The lead wrote back, so the rest of the sequence was not sent.
+  | 'REPLIED';
 
 /** Response from the push endpoint. */
 export interface SheetsStatusDto {
@@ -79,6 +81,8 @@ export interface SheetsFollowUpDto {
   emailTo: string | null;
   emailTemplate: string | null;
   emailStatus: SheetsEmailStatus;
+  // Which of the sequence's 6 emails is next (or the last one, once finished).
+  sequenceStep: number;
   emailDueAt: string | null;
   emailSentAt: string | null;
   emailError: string | null;

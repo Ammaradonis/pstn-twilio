@@ -2,6 +2,7 @@ import { Module } from '@nestjs/common';
 
 import { ContactFormService } from './contact-form.service';
 import { EmailFinderService } from './email-finder.service';
+import { FollowUpRenderer } from './follow-up-renderer.service';
 import { GmailService } from './gmail.service';
 import { SheetsFollowUpService } from './sheets-follow-up.service';
 import { SheetsTimezoneService } from './sheets-timezone.service';
@@ -28,6 +29,7 @@ import { SheetsService } from './sheets.service';
     SheetsService,
     SheetsTimezoneService,
     GmailService,
+    FollowUpRenderer,
     SheetsFollowUpService,
     EmailFinderService,
     ContactFormService,

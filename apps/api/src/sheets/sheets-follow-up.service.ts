@@ -1,23 +1,22 @@
 /**
- * Sends follow-up cold emails once they are due.
+ * Sends the follow-up sequences: 6 emails per push, on the days in
+ * SEQUENCE_DAYS after the call.
  *
- * The schedule lives in sheets_push_logs (emailStatus PENDING + emailDueAt),
- * so it survives restarts and deploys. A sweep every few minutes claims due
- * rows one at a time (PENDING → SENDING) and sends them; the claim is a
- * conditional update, so two machines never send the same email.
+ * The schedule lives in sheets_push_logs (emailStatus PENDING, emailDueAt and
+ * sequenceStep), so it survives restarts and deploys. A sweep every few
+ * minutes claims due rows one at a time (PENDING → SENDING) and sends the
+ * next email; the claim is a conditional update, so two machines never send
+ * the same email. After email 6 the row is SENT.
  */
 
 import { Injectable, Logger, OnModuleDestroy, OnModuleInit } from '@nestjs/common';
 
 import { PrismaService } from '../prisma/prisma.service';
 
-import { GmailService, type TemplateVars } from './gmail.service';
-import {
-  formatLocalTime,
-  formatLocalWeekday,
-  stripCountryCode,
-  nationalDigits,
-} from './sheets.util';
+import { FollowUpRenderer } from './follow-up-renderer.service';
+import { SEQUENCE_LENGTH, sequenceDueAt } from './follow-up-sequences';
+import { GmailService } from './gmail.service';
+import { nationalDigits } from './sheets.util';
 
 const SWEEP_MS = 5 * 60_000;
 const MAX_ATTEMPTS = 4;
@@ -35,6 +34,7 @@ export class SheetsFollowUpService implements OnModuleInit, OnModuleDestroy {
   constructor(
     private readonly prisma: PrismaService,
     private readonly gmail: GmailService,
+    private readonly renderer: FollowUpRenderer,
   ) {}
 
   onModuleInit(): void {
@@ -161,17 +161,54 @@ export class SheetsFollowUpService implements OnModuleInit, OnModuleDestroy {
     if (claimed.count === 0 || !log.emailTo || !log.emailTemplate) return;
 
     try {
-      await this.gmail.sendFromTemplate(
-        log.connection.userId,
-        log.emailTo,
-        log.emailTemplate,
-        templateVars(log),
-      );
+      // Once they've written back, the rest of the sequence would be noise.
+      if (log.emailSentAt && (await this.replied(log))) {
+        await this.prisma.sheetsPushLog.update({
+          where: { id: log.id },
+          data: { emailStatus: 'REPLIED', emailError: null },
+        });
+        this.logger.log(`Follow-up sequence for push ${log.id} stopped: ${log.emailTo} replied`);
+        return;
+      }
+      const email = await this.renderer.render(log, log.connection.userId);
+      if (!email) {
+        // Nothing left that this lead has the data for.
+        await this.prisma.sheetsPushLog.update({
+          where: { id: log.id },
+          data: log.emailSentAt
+            ? { emailStatus: 'SENT', emailError: null }
+            : {
+                emailStatus: 'FAILED',
+                emailError: 'No email in the sequence has the data it needs.',
+              },
+        });
+        return;
+      }
+      await this.gmail.send(log.connection.userId, log.emailTo, email.subject, email.body);
+      const sentAt = new Date();
+      const next = email.step + 1;
       await this.prisma.sheetsPushLog.update({
         where: { id: log.id },
-        data: { emailStatus: 'SENT', emailSentAt: new Date(), emailError: null },
+        data:
+          next <= SEQUENCE_LENGTH
+            ? {
+                emailStatus: 'PENDING',
+                sequenceStep: next,
+                emailDueAt: sequenceDueAt(log.callEndedAt, next, sentAt),
+                emailSentAt: sentAt,
+                emailAttempts: 0,
+                emailError: null,
+              }
+            : {
+                emailStatus: 'SENT',
+                sequenceStep: email.step,
+                emailSentAt: sentAt,
+                emailError: null,
+              },
       });
-      this.logger.log(`Follow-up email ${log.emailTemplate} sent for push ${log.id}`);
+      this.logger.log(
+        `Follow-up "${log.emailTemplate}" email ${email.step}/${SEQUENCE_LENGTH} (${email.region}) sent for push ${log.id}`,
+      );
     } catch (err) {
       const message = (err as Error).message.slice(0, 500);
       const attempts = log.emailAttempts + 1;
@@ -191,23 +228,23 @@ export class SheetsFollowUpService implements OnModuleInit, OnModuleDestroy {
       );
     }
   }
-}
 
-/** Placeholder values for a push's follow-up email. */
-export function templateVars(log: {
-  schoolName: string | null;
-  customNote: string | null;
-  callerE164: string;
-  destinationE164: string;
-  callEndedAt: Date;
-  timeZone: string;
-}): TemplateVars {
-  return {
-    schoolName: log.schoolName ?? '',
-    customNote: log.customNote ?? '',
-    callerNumber: stripCountryCode(log.callerE164),
-    phoneNumber: stripCountryCode(log.destinationE164),
-    callDay: formatLocalWeekday(log.callEndedAt, log.timeZone),
-    localTime: formatLocalTime(log.callEndedAt, log.timeZone),
-  };
+  private async replied(log: {
+    id: string;
+    emailTo: string | null;
+    callEndedAt: Date;
+    connection: { userId: string };
+  }): Promise<boolean> {
+    if (!log.emailTo) return false;
+    try {
+      return (
+        (await this.gmail.hasReplyFrom(log.connection.userId, log.emailTo, log.callEndedAt)) ===
+        true
+      );
+    } catch (err) {
+      // A failed check shouldn't hold the sequence back.
+      this.logger.warn(`Reply check for push ${log.id} failed: ${(err as Error).message}`);
+      return false;
+    }
+  }
 }

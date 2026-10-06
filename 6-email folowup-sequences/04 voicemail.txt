@@ -1,0 +1,99 @@
+STATUS: voicemail
+
+==============================
+EMAIL 1
+Subject: went to voicemail at {{call_time}}
+
+Hey,
+
+Called {{school_name}} on {{called_number}} at {{call_time}} and it went to voicemail. I called from {{my_number}} if you want to find it.
+
+{{call_note}}
+
+Heres the thing. In my experience more parents hang up at the beep then leave a message. They just try the next school.
+
+I built a phone agent for martial arts schools so that call gets answered instead. Try the demo at (667) 220-6726 and play a parent.
+
+Reply with how the call felt. Then one thing. how fast does someone return a voicemail at your school, same day or next?
+
+Ammar
+
+==============================
+EMAIL 2
+Subject: the callers you never see
+
+Hi,
+
+Think about the voicemails you got last week. Now think about everyone who called and didnt leave one. You cant, because they never show up anywhere.
+
+Thats the leak. People who hang up at the beep are invisible.
+
+Call (667) 220-6726 and ask about kids classes like a parent would. It dosnt give anyone a reason to hang up.
+
+Reply with how it handled you. Then pull up your call log and tell me one thing. how many missed calls last week came with no voicemail?
+
+Ammar
+
+==============================
+EMAIL 3
+Subject: next morning is too late
+
+Hey,
+
+A parent in {{city}} calls at 7pm, gets voicemail, leaves a message. You call back the next morning. By then she already booked a trial at whoever picked up.
+
+The school that answers dosnt have to be better then you. Just faster. Your {{rating}} stars and {{review_count}} reviews say the classes are great. The callback is where it slips.
+
+Try the demo at (667) 220-6726 and time how long it takes to get a trial booked.
+
+Reply with how long it took and how it felt. Then one thing. who at {{school_name}} is in charge of returning calls?
+
+Ammar
+
+==============================
+EMAIL 4
+Subject: your voicemail is already a robot
+
+Hi,
+
+Owners tell me they dont want a robot answering thier phone. Totally fair.
+
+But a voicemail greeting already is a robot. Just one that cant answer a single question or book anything.
+
+The demo at (667) 220-6726 is what the other kind sounds like. Ask it about uniforms, age limits, whatever a {{category}} parent usually asks you.
+
+Reply with your honest reaction. Then tell me one thing. whats the question parents ask you the most on the phone?
+
+Ammar
+
+==============================
+EMAIL 5
+Subject: heres the link I held back
+
+Hey,
+
+Didnt send a link till now on purpose. Wanted you to hear it before reading about it.
+
+Its called MatBoss. matboss.online. AI phone agent for martial arts schools plus a few automations. It answers, books the trial, and sends you the details so voicemail stops being your front desk.
+
+Saw on {{website}} your over on {{street}}. Parents searching that area at night would get a real answer.
+
+Demo (667) 220-6726. Reply with how it went and one thing. how many trials do you book in a normal week?
+
+Ammar
+
+==============================
+EMAIL 6
+Subject: should I close your file
+
+Hi,
+
+Ill keep this one short. I've emailed a few times and dont want to be a pest.
+
+If voicemail is working fine, just tell me and I'll stop. If its not, everything is on matboss.online and the demo is at (667) 220-6726.
+
+Either way a reply helps. How the demo went if you tried it, and one thing. if you could stop doing one phone task at {{school_name}} forever, wich would it be?
+
+Hope the fall is treating you good out there in {{state}}.
+
+Ammar

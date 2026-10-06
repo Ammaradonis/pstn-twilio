@@ -1,0 +1,99 @@
+STATUS: line was busy
+
+==============================
+EMAIL 1
+Subject: got a busy signal on {{called_number}}
+
+Hey,
+
+Tried {{school_name}} at {{call_time}} on {{called_number}} and got a busy signal. Called from {{my_number}} if you want to look it up.
+
+{{call_note}}
+
+Means someone was already on the line or the phone was off the hook. Either way the next caller gets nothing. I hung up. A parent would too.
+
+I built a phone agent for martial arts schools that takes more then one call at a time. Test it at (667) 220-6726 and pretend your a parent.
+
+Reply with how it went, then one thing. how many phone lines does the school actually have?
+
+Ammar
+
+==============================
+EMAIL 2
+Subject: two parents one line
+
+Hi,
+
+Picture back to school season. One parent is on the phone asking 10 questions about the kids program. Two more call in the meantime. Both get busy.
+
+Neither leaves a message cause there was nothing to leave one on. Both call the next {{category}} in {{city}}.
+
+The busiest weeks are exactly when one line hurts the most.
+
+Call (667) 220-6726. Have a buddy call it at the same time if you want to test that.
+
+Reply with how the demo handled you and one thing. wich month gets you the most calls?
+
+Ammar
+
+==============================
+EMAIL 3
+Subject: great reviews, busy line
+
+Hey,
+
+{{rating}} stars from {{review_count}} reviews. People who make it through your door clearly stay.
+
+The busy signal is the gap before the door. Its the one part of {{school_name}} you never hear from the outside.
+
+Call the demo at (667) 220-6726 like a parent who just read those reviews and wants a trial this week. See if it gets you booked.
+
+Reply with your honest take. Then one thing. when your already on a call and another one comes in, what happens to it?
+
+Ammar
+
+==============================
+EMAIL 4
+Subject: will it sound like a robot
+
+Hi,
+
+Usually the first question I get. Nobody wants a robot talking to parents about thier kids. I get it, its your name on the door.
+
+Only way to know is to call. (667) 220-6726. Interrupt it. Change your mind halfway through. Ask something totally off script.
+
+Then reply and tell me straight if it passed. And one thing about your school. who answers the phone while your teaching the evening kids class?
+
+Ammar
+
+==============================
+EMAIL 5
+Subject: MatBoss for {{school_name}}
+
+Hey,
+
+Should of said this earlier. What I built is MatBoss. matboss.online
+
+AI phone agent for martial arts schools plus a few automations. It takes every call at once so nobody hears busy, books the trial, and tells you who called.
+
+For a school on {{street}} in {{state}} thats alot of parents who'd stop hitting that signal.
+
+Demo (667) 220-6726. Reply with how the call went and one thing. roughly how many new students did you sign last month?
+
+Ammar
+
+==============================
+EMAIL 6
+Subject: one last thing and im out
+
+Hi,
+
+Last email, promise.
+
+I looked at {{website}} one more time. Everything a parent needs to say yes is right there. Its just the phone that gets in the way sometimes.
+
+matboss.online has the rest. Demo stays at (667) 220-6726.
+
+If you call it, reply with what you thought. And one thing you'd fix at the school tommorow if you had an extra set of hands at the desk.
+
+Ammar

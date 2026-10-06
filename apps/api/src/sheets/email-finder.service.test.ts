@@ -278,9 +278,10 @@ describe('contact form delivery lease', () => {
       .fn()
       .mockResolvedValueOnce({ count: 1 })
       .mockResolvedValueOnce({ count: 0 });
-    const service = new ContactFormService({
-      sheetsPushLog: { updateMany },
-    } as unknown as PrismaService);
+    const service = new ContactFormService(
+      { sheetsPushLog: { updateMany } } as unknown as PrismaService,
+      {} as never,
+    );
     expect(await service.arm('id', 'lease')).toEqual({ armed: true });
     expect(await service.arm('id', 'lease')).toEqual({ armed: false });
     expect(updateMany.mock.calls[0]![0]).toMatchObject({
@@ -291,9 +292,10 @@ describe('contact form delivery lease', () => {
 
   it('does not accept SENT for an unarmed or cancelled form', async () => {
     const updateMany = vi.fn().mockResolvedValue({ count: 0 });
-    const service = new ContactFormService({
-      sheetsPushLog: { updateMany },
-    } as unknown as PrismaService);
+    const service = new ContactFormService(
+      { sheetsPushLog: { updateMany } } as unknown as PrismaService,
+      {} as never,
+    );
     expect(await service.complete('id', 'lease', 'SENT')).toEqual({ saved: false });
     expect(updateMany.mock.calls[0]![0]).toMatchObject({
       where: { emailStatus: 'FORM_SENDING', formLeaseToken: 'lease' },

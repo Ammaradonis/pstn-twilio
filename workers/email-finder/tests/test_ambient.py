@@ -10,6 +10,8 @@ import sys
 import time
 from pathlib import Path
 
+import pytest
+
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 import email_finder.android as android
 from email_finder.ambient import AmbientSettings, ReelSession, hour_bucket, in_quiet_hours
@@ -20,10 +22,10 @@ IG = "com.instagram.android"
 REELS = "com.instagram.android/.activity.MainTabActivity"
 
 
-def node(text="", desc="", rid="", clickable=False, bounds=(0, 0, 720, 1560), package=IG):
+def node(text="", desc="", rid="", clickable=False, bounds=(0, 0, 720, 1560), package=IG, selected=False):
     left, top, right, bottom = bounds
     return (f'<node index="0" text="{text}" resource-id="{rid}" class="android.widget.FrameLayout" '
-            f'package="{package}" content-desc="{desc}" clickable="{str(clickable).lower()}" '
+            f'package="{package}" content-desc="{desc}" clickable="{str(clickable).lower()}" selected="{str(selected).lower()}" '
             f'bounds="[{left},{top}][{right},{bottom}]" />')
 
 
@@ -40,6 +42,7 @@ AUTHOR = node(text="thegrindbjj", rid=f"{IG}:id/clips_username", clickable=True,
 AVATAR = node(text="", desc="thegrindbjj", rid=f"{IG}:id/avatar", clickable=True, bounds=(40, 1000, 130, 1090))
 REEL = screen(LIKE, OVERFLOW, AUTHOR, AVATAR)
 LIKED_REEL = screen(UNLIKE, OVERFLOW, AUTHOR)
+INTEREST_CONFIRMED = screen(LIKE, OVERFLOW, AUTHOR, node(text="Thanks for your feedback"))
 
 FOLLOW_BUTTON = node(text="Follow", rid=f"{IG}:id/profile_action_button", clickable=True,
                      bounds=(40, 600, 400, 680))
@@ -140,12 +143,11 @@ def test_gestures_stay_on_screen_and_use_a_mixture_of_speeds():
     assert min(durations) < 200 and max(durations) > 500  # nor one uniform speed
 
 
-def test_scrolling_goes_backwards_sometimes_and_the_angle_varies():
+def test_scrolling_always_advances_instead_of_pulling_to_refresh():
     session = _session()
     drawn = [session.scroll(720, 1560) for _ in range(300)]
-    back = sum(1 for g in drawn if g.y2 > g.y1)  # looking at the previous reel again
     angles = {g.x2 - g.x1 for g in drawn}
-    assert 20 < back < 110
+    assert all(g.y2 < g.y1 for g in drawn)
     assert len(angles) > 50  # a thumb, not a metronome
 
 
@@ -204,14 +206,13 @@ def test_hour_buckets_and_quiet_hours():
 # ── what the phone is allowed to do ──────────────────────────────────────────
 
 
-def test_a_like_is_a_double_tap_on_empty_picture(tmp_path, monkeypatch):
+def test_a_like_taps_the_explicit_button_and_verifies_unlike(tmp_path, monkeypatch):
     _quick(monkeypatch)
     phone = FakePhone(tmp_path, [LIKED_REEL])
     button = android.find_button(parse_dump(REEL), "Like")
     assert asyncio.run(phone._like(parse_dump(REEL), _session())) is True
     taps = phone.taps()
-    assert len(taps) == 2 and taps[0] == taps[1]  # one double tap, same point
-    assert taps[0] != f"input tap {button.center[0]} {button.center[1]}"  # not the button
+    assert taps == [f"input tap {button.center[0]} {button.center[1]}"]
 
 
 def test_a_like_falls_back_to_the_button_when_the_picture_is_covered(tmp_path, monkeypatch):
@@ -233,11 +234,12 @@ def test_an_already_liked_reel_is_left_alone(tmp_path, monkeypatch):
 
 def test_the_interest_menu_is_tapped_only_for_an_exact_label(tmp_path, monkeypatch):
     _quick(monkeypatch)
-    phone = FakePhone(tmp_path, [MENU_SAFE, REEL])
+    phone = FakePhone(tmp_path, [MENU_SAFE, INTEREST_CONFIRMED])
     assert asyncio.run(phone._interest(parse_dump(REEL), _session())) is True
     items = _centres(MENU_SAFE)
     chosen = [c for c in phone.taps() if tuple(int(v) for v in c.split()[2:4]) in items]
     assert len(chosen) == 1  # exactly one menu item, and it is the interest label
+    assert "input keyevent KEYCODE_BACK" not in phone.commands
 
 
 def test_a_menu_without_the_label_is_only_backed_out_of(tmp_path, monkeypatch):
@@ -250,17 +252,19 @@ def test_a_menu_without_the_label_is_only_backed_out_of(tmp_path, monkeypatch):
     assert "input keyevent KEYCODE_BACK" in phone.commands
 
 
-def test_following_opens_the_author_and_never_does_it_twice(tmp_path, monkeypatch):
+def test_follow_uses_only_inline_button_and_confirms_result(tmp_path, monkeypatch):
     _quick(monkeypatch)
-    phone = FakePhone(tmp_path, [PROFILE, PROFILE])
-    author = android.author_handle(parse_dump(REEL), 720, 1560)
-    follow = android.find_button(parse_dump(PROFILE), "Follow")
-    assert asyncio.run(phone._follow(parse_dump(REEL))) is True
-    assert f"input tap {author[1].center[0]} {author[1].center[1]}" in phone.taps()
-    assert f"input tap {follow.center[0]} {follow.center[1]}" in phone.taps()
+    inline = node(text="Follow", rid=f"{IG}:id/inline_follow_button", clickable=True,
+                  bounds=(250, 1150, 390, 1240))
+    confirmed = node(text="Following", rid=f"{IG}:id/inline_follow_button", clickable=True,
+                     bounds=(250, 1150, 390, 1240))
+    reel = screen(LIKE, OVERFLOW, AUTHOR, inline)
+    phone = FakePhone(tmp_path, [screen(LIKE, AUTHOR, confirmed)])
+    assert asyncio.run(phone._follow(parse_dump(reel))) is True
+    assert phone.taps() == ["input tap 320 1195"]
     assert phone.followed_handles() == ["thegrindbjj"]
     phone.commands.clear()
-    assert asyncio.run(phone._follow(parse_dump(REEL))) is False  # already followed
+    assert asyncio.run(phone._follow(parse_dump(reel))) is False  # already followed
     assert phone.taps() == []
 
 
@@ -281,7 +285,7 @@ def test_an_already_followed_profile_is_not_tapped(tmp_path, monkeypatch):
     assert asyncio.run(phone._follow(parse_dump(REEL))) is False
     forbidden = {f"input tap {x} {y}" for x, y in _centres(already)}
     assert not any(t in forbidden for t in phone.taps())
-    assert "input keyevent KEYCODE_BACK" in phone.commands
+    assert phone.commands == []
 
 
 def test_the_caps_bound_the_day_whatever_the_draw_says(tmp_path, monkeypatch):
@@ -325,12 +329,13 @@ def test_an_unreadable_reel_is_never_guessed_at(tmp_path, monkeypatch):
     assert "could not be read" in phone._ambient_note
 
 
-def test_a_queued_lookup_preempts_the_session(tmp_path, monkeypatch):
+def test_queued_lookups_allow_one_reel_then_get_the_phone_back(tmp_path, monkeypatch):
     _quick(monkeypatch)
     phone = FakePhone(tmp_path, [REEL] * 40)
     phone._wanted = 1
-    assert asyncio.run(phone._ambient_slice(_session())) == 0
-    assert phone.commands == []  # it did not even take the phone
+    assert asyncio.run(phone._ambient_slice(_session())) == 1
+    assert phone.swipes()
+    assert not phone._ambient_has_turn
     phone._wanted = 0
     assert asyncio.run(phone._ambient_slice(_session())) > 0
 
@@ -381,4 +386,239 @@ def test_a_long_dwell_gives_way_to_a_queued_lookup(tmp_path, monkeypatch):
         phone._wanted = 1  # a lookup arrives mid-reel
         return await phone._wait(45.0)
     assert asyncio.run(interrupt()) is False
+    assert phone.taps() == []
+
+
+def test_feed_like_button_is_not_mistaken_for_a_reel():
+    feed = screen(node(desc="Like", clickable=True, bounds=(0, 900, 90, 990)),
+                  node(desc="Reels", clickable=True, bounds=(144, 1399, 288, 1480)),
+                  node(bounds=(0, 0, 720, 1560)))
+    assert not android.reel_on_screen(parse_dump(feed))
+    assert android.reel_on_screen(parse_dump(REEL))
+
+
+def test_open_reels_are_not_relaunched_or_refreshed(tmp_path, monkeypatch):
+    _quick(monkeypatch)
+    phone = FakePhone(tmp_path, [REEL])
+    assert asyncio.run(phone._ensure_reels())
+    assert phone.commands == []
+
+
+def test_feed_opens_reels_tab_without_relaunching_instagram(tmp_path, monkeypatch):
+    _quick(monkeypatch)
+    feed = screen(node(desc="Reels", clickable=True, bounds=(144, 1399, 288, 1480)))
+    phone = FakePhone(tmp_path, [feed, REEL])
+    assert asyncio.run(phone._ensure_reels())
+    assert phone.commands == ["input tap 216 1439"]
+
+
+def test_failed_dump_does_not_read_a_stale_screen(tmp_path, monkeypatch):
+    phone = Galaxy(Cache(tmp_path / "c.db"), "adb")
+    monkeypatch.setattr(phone, "_read_live_xml", lambda: REEL)
+    assert asyncio.run(phone._dump_xml()) == REEL
+
+    def failed_read():
+        raise OSError("device offline")
+
+    monkeypatch.setattr(phone, "_read_live_xml", failed_read)
+    with pytest.raises(PhoneUnavailable, match="live screen could not be read"):
+        asyncio.run(phone._dump_xml())
+
+
+def test_timeout_after_adb_exit_is_recoverable(tmp_path, monkeypatch):
+    class ExitedProcess:
+        reaped = False
+
+        async def communicate(self):
+            raise asyncio.TimeoutError
+
+        def kill(self):
+            raise ProcessLookupError
+
+        async def wait(self):
+            self.reaped = True
+
+    process = ExitedProcess()
+
+    async def spawn(*args, **kwargs):
+        return process
+
+    monkeypatch.setattr(android.asyncio, "create_subprocess_exec", spawn)
+    phone = Galaxy(Cache(tmp_path / "c.db"), "adb")
+    with pytest.raises(PhoneUnavailable, match="timed out"):
+        asyncio.run(phone._run("shell", "uiautomator dump"))
+    assert process.reaped
+
+
+def test_ig449_selected_like_is_verified_and_never_unliked(tmp_path, monkeypatch):
+    _quick(monkeypatch)
+    liked = screen(node(desc="Like", rid=f"{IG}:id/like_button", clickable=True,
+                        selected=True, bounds=(629, 644, 706, 721)))
+    phone = FakePhone(tmp_path, [liked])
+    assert asyncio.run(phone._like(parse_dump(REEL), _session()))
+    assert len(phone.taps()) == 1
+    phone.commands.clear()
+    assert not asyncio.run(phone._like(parse_dump(liked), _session()))
+    assert phone.taps() == []
+
+
+def test_ig449_more_menu_and_real_interest_confirmation(tmp_path, monkeypatch):
+    _quick(monkeypatch)
+    reel = screen(LIKE, node(desc="More", rid=f"{IG}:id/clips_ufi_more_button_component",
+                             clickable=True, bounds=(629, 1209, 706, 1286)))
+    after = screen(LIKE, node(text="We'll suggest more posts like this for 30 days.",
+                              rid=f"{IG}:id/snackbar_message"))
+    phone = FakePhone(tmp_path, [MENU_SAFE, after])
+    assert asyncio.run(phone._interest(parse_dump(reel), _session(interest_positive_odds=1.0)))
+    assert len(phone.taps()) == 2
+    assert "input keyevent KEYCODE_BACK" not in phone.commands
+
+
+def test_visible_interest_button_does_not_require_overflow(tmp_path, monkeypatch):
+    _quick(monkeypatch)
+    reel = screen(LIKE, node(text="Interested", clickable=True, bounds=(400, 1200, 600, 1300)))
+    phone = FakePhone(tmp_path, [INTEREST_CONFIRMED])
+    assert asyncio.run(phone._interest(parse_dump(reel), _session(interest_positive_odds=1.0)))
+    assert phone.taps() == ["input tap 500 1250"]
+
+
+def test_unconfirmed_interest_is_not_counted_as_success(tmp_path, monkeypatch):
+    _quick(monkeypatch)
+    phone = FakePhone(tmp_path, [MENU_SAFE, REEL])
+    assert not asyncio.run(phone._interest(parse_dump(REEL), _session()))
+    assert "input keyevent KEYCODE_BACK" not in phone.commands
+
+
+def test_menu_overlay_is_not_treated_as_the_reel_behind_it():
+    assert not android.reel_on_screen(parse_dump(screen(LIKE, node(rid=f"{IG}:id/background_dimmer"))))
+
+
+def test_unreadable_slices_do_not_consume_the_session_budget(tmp_path, monkeypatch):
+    _quick(monkeypatch)
+    phone = FakePhone(tmp_path, [REEL], slices_per_day=1)
+    phone.unreadable = True
+    assert asyncio.run(phone._ambient_slice(_session())) == 0
+    assert phone.cache.count("ambient-slice") == 0
+    phone.unreadable = False
+    assert asyncio.run(phone._ambient_slice(_session())) > 0
+    assert phone.cache.count("ambient-slice") == 1
+
+
+def test_ambient_queues_between_lookups_without_overlap(tmp_path):
+    phone = FakePhone(tmp_path, [REEL])
+    order = []
+
+    async def ambient_turn(session):
+        assert phone._lock.locked()
+        order.append("reels")
+        return 1
+
+    phone._ambient_slice_locked = ambient_turn
+
+    async def lookup():
+        async with phone._lock:
+            order.append("lookup")
+
+    async def run():
+        await phone._lock.acquire()
+        first = asyncio.create_task(lookup())
+        await asyncio.sleep(0)
+        reels = asyncio.create_task(phone._ambient_slice(_session()))
+        await asyncio.sleep(0)
+        second = asyncio.create_task(lookup())
+        await asyncio.sleep(0)
+        phone._lock.release()
+        await asyncio.gather(first, reels, second)
+
+    asyncio.run(run())
+    assert order == ["lookup", "reels", "lookup"]
+
+
+def test_finished_session_starts_another_without_leaving_instagram(tmp_path, monkeypatch):
+    _quick(monkeypatch)
+    phone = FakePhone(tmp_path, [REEL])
+    old = phone._session = _session()
+    old.reels = old.limit
+    seen = []
+
+    async def once(session):
+        seen.append(session)
+        phone._stop_ambient.set()
+        return 1
+
+    phone._ambient_slice = once
+    asyncio.run(phone._ambient_loop())
+    assert seen and seen[0] is not old
+    assert "input keyevent KEYCODE_HOME" not in phone.commands
+    assert phone._session_break() <= 5
+
+
+def test_loop_recovers_after_an_unexpected_failure(tmp_path, monkeypatch):
+    _quick(monkeypatch)
+    phone = FakePhone(tmp_path, [REEL])
+    attempts = []
+
+    async def fail_once(session):
+        attempts.append(1)
+        if len(attempts) == 1:
+            raise RuntimeError("temporary read failure")
+        phone._stop_ambient.set()
+        return 1
+
+    phone._ambient_slice = fail_once
+    asyncio.run(phone._ambient_loop())
+    assert len(attempts) == 2
+
+
+@pytest.mark.parametrize("label", ["Sponsored", "Gesponsert", "Mehr dazu", "Jetzt bewerben"])
+def test_ads_receive_no_engagement_clicks_or_budget_charges(tmp_path, monkeypatch, label):
+    _quick(monkeypatch)
+    ad = screen(LIKE, OVERFLOW, AUTHOR, node(text=label))
+    phone = FakePhone(tmp_path, [ad])
+    for action in ("like", "follow", "interest", "pause"):
+        assert not asyncio.run(phone._act(action, _session()))
+    assert phone.taps() == []
+    assert phone.cache.count("ambient-follow") == 0
+
+
+def test_follow_label_on_an_ad_cta_is_not_a_follow_control(tmp_path, monkeypatch):
+    _quick(monkeypatch)
+    ad = screen(LIKE, AUTHOR, node(text="Follow", rid=f"{IG}:id/ad_cta_button", clickable=True))
+    phone = FakePhone(tmp_path, [ad])
+    assert not asyncio.run(phone._follow(parse_dump(ad)))
+    assert phone.taps() == []
+
+
+def test_arbitrary_handle_shaped_ad_text_is_not_an_author():
+    ad = screen(node(text="systemgas4382", rid=f"{IG}:id/static_header_business_name", clickable=True))
+    assert android.author_handle(parse_dump(ad), 720, 1560) is None
+
+
+def test_a_reel_without_explicit_pause_control_gets_no_picture_taps(tmp_path, monkeypatch):
+    _quick(monkeypatch)
+    phone = FakePhone(tmp_path, [REEL])
+    assert not asyncio.run(phone._pause_reel(parse_dump(REEL)))
+    assert phone.taps() == []
+
+
+def test_lead_form_is_cleared_without_tapping_its_fields(tmp_path, monkeypatch):
+    _quick(monkeypatch)
+    phone = FakePhone(tmp_path, [REEL], foreground=f"{IG}/com.instagram.leadads.activity.LeadAdsActivity")
+    original_shell = phone._shell
+
+    async def shell(command, timeout=25):
+        if "--activity-clear-top" in command:
+            phone.foreground = REELS
+        return await original_shell(command, timeout)
+
+    phone._shell = shell
+    assert asyncio.run(phone._ensure_reels())
+    assert any("--activity-clear-top" in c for c in phone.commands)
+    assert phone.taps() == [] and phone.swipes() == []
+
+
+def test_stale_reel_tree_cannot_drive_a_lead_form(tmp_path, monkeypatch):
+    _quick(monkeypatch)
+    phone = FakePhone(tmp_path, [REEL], foreground=f"{IG}/com.instagram.leadads.activity.LeadAdsActivity")
+    assert not asyncio.run(phone._act("follow", _session()))
     assert phone.taps() == []

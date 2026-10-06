@@ -1,0 +1,97 @@
+STATUS: voicemail box is full
+
+==============================
+EMAIL 1
+Subject: your mailbox is full
+
+Hey,
+
+Called {{school_name}} at {{call_time}} on {{called_number}}. It rang, then I got the mailbox is full message. I called from {{my_number}}.
+
+{{call_note}}
+
+A full mailbox means a stack of people already waiting on a call back. And the next parent cant even leave a name.
+
+I built a phone agent for martial arts schools so nobody ends up in that pile. Try the demo at (667) 220-6726.
+
+Reply with how the call felt. Then one thing. when did someone last clear that voicemail?
+
+Ammar
+
+==============================
+EMAIL 2
+Subject: whats sitting in that mailbox
+
+Hi,
+
+Genuine question. How many of the messages in that full mailbox are parents asking about trials?
+
+Each one liked your {{rating}} stars and {{review_count}} reviews enough to pick up the phone. And they're still waiting.
+
+Call (667) 220-6726 and see what it looks like when the call gets handled on the spot.
+
+Reply with your take on the demo and one thing. roughly how many voicemails are in there right now?
+
+Ammar
+
+==============================
+EMAIL 3
+Subject: the grading before the grading
+
+Hey,
+
+To a parent, mailbox full means nobody is checking. Even if your the most organized {{category}} in {{city}}.
+
+You'd never let a student test with a sloppy guard. The phone is the grading a new family gives you before they ever meet you.
+
+Test the demo at (667) 220-6726 and see how it holds up.
+
+Reply with what you thought, then one thing. who is supposed to check the messages, and how often does it really happen?
+
+Ammar
+
+==============================
+EMAIL 4
+Subject: clearing it wont fix it
+
+Hi,
+
+Clearing the mailbox buys you a week or two. Then it fills right back up cause the same thing is still true. Nobody can answer during class. And january is coming, wich is usually the busiest phone month of the year for schools.
+
+The agent answers during class. Nothing to clear.
+
+Call (667) 220-6726 and act like a parent calling at 6pm. Thats the hour your mailbox fills up.
+
+Reply with how it went, and one thing. what hours can you personally never pick up?
+
+Ammar
+
+==============================
+EMAIL 5
+Subject: MatBoss so the mailbox stays empty
+
+Hey,
+
+Heres the site finally. matboss.online. The product is called MatBoss.
+
+AI phone agent for martial arts schools plus a few automations. Every call gets answered, trials get booked, and you get a summary instead of a full mailbox.
+
+I looked at {{website}}. For a school on {{street}} thats alot of callers who'd stop hitting that recording.
+
+Demo (667) 220-6726. Reply with how it went and one thing. of the people who left a message last month, how many actually became students?
+
+Ammar
+
+==============================
+EMAIL 6
+Subject: the last message I'll leave you
+
+Hi,
+
+Kinda funny, this is me leaving you one more message. Last one, promise.
+
+matboss.online has everything. Demo stays at (667) 220-6726.
+
+If you call it, reply with how it felt and one thing. how many hours a week go into returning calls at {{school_name}}? Curious what owners in {{state}} say to that one.
+
+Ammar

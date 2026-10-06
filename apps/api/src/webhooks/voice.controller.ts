@@ -2,6 +2,7 @@ import { Body, Controller, Header, HttpCode, Logger, Post, Query, UseGuards } fr
 
 import { TwilioSignatureGuard } from './twilio-signature.guard';
 import {
+  agentHandoffTwiml,
   CallStatusParams,
   InboundVoiceParams,
   OutboundVoiceParams,
@@ -20,14 +21,18 @@ export class VoiceWebhookController {
   @Post('inbound')
   @HttpCode(200)
   @Header('Content-Type', 'text/xml')
-  async inbound(@Body() body: InboundVoiceParams): Promise<string> {
+  async inbound(
+    @Body() body: InboundVoiceParams,
+    @Query('fallback') fallback?: string,
+  ): Promise<string> {
+    const agentFallback = fallback === 'agent';
     try {
-      return await this.service.handleInbound(body);
+      return await this.service.handleInbound(body, { agentFallback });
     } catch (err) {
       this.logger.error(
         `Inbound voice webhook failed: ${err instanceof Error ? err.message : 'unknown'}`,
       );
-      return this.service.handleFallback();
+      return agentFallback ? agentHandoffTwiml() : this.service.handleFallback();
     }
   }
 
@@ -62,9 +67,12 @@ export class VoiceWebhookController {
   @Post(['dial-complete', 'voicemail'])
   @HttpCode(200)
   @Header('Content-Type', 'text/xml')
-  async voicemail(@Body() body: VoicemailParams): Promise<string> {
+  async voicemail(
+    @Body() body: VoicemailParams,
+    @Query('fallback') fallback?: string,
+  ): Promise<string> {
     try {
-      return await this.service.handleVoicemail(body);
+      return await this.service.handleVoicemail(body, { agentFallback: fallback === 'agent' });
     } catch (err) {
       this.logger.error(
         `Voice voicemail webhook failed: ${err instanceof Error ? err.message : 'unknown'}`,

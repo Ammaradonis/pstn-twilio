@@ -44,7 +44,6 @@ DURATION_FLICK = (130, 300)  # ms
 DURATION_DRAG = (340, 620)
 DURATION_NUDGE = (200, 450)
 FLICK_ODDS, DRAG_ODDS = 0.60, 0.25  # remainder: nudge
-SCROLL_BACK_ODDS = 0.18  # looking at the previous reel again
 DIAGONAL_ODDS = 0.12  # a clearly angled swipe rather than thumb drift
 DOUBLE_SCROLL_ODDS = 0.08  # two flicks in a row, paging fast
 DWELL_MEDIAN, DWELL_SIGMA = 3.2, 0.75  # seconds, log-normal
@@ -58,7 +57,6 @@ MOOD_SCALE = {"like": (0.35, 1.30), "interest": (0.50, 1.00),
               "follow": (0.40, 1.20), "pause": (1.00, 0.00)}
 SLICE_REELS = (3, 9)  # reels per phone slice, so a lookup never waits long
 REST_SHORT = (2.0, 12.0)  # seconds between slices
-REST_LONG_ODDS, REST_LONG = 0.22, (90.0, 420.0)  # the phone goes down a while
 SESSION_REELS_MEDIAN, SESSION_REELS_SIGMA = 9.0, 0.6
 SESSION_REELS_MAX = 60
 TAP_GAP_MS = (80, 140)  # between the two taps of a double tap
@@ -202,9 +200,7 @@ class ReelSession:
         return self._rng.randint(*SLICE_REELS)
 
     def rest(self) -> float:
-        """Pause before the next slice; sometimes long, like putting it down."""
-        if self._rng.random() < REST_LONG_ODDS:
-            return self._rng.uniform(*REST_LONG)
+        """Brief pause between slices; the loop keeps going between lookups."""
         return self._rng.uniform(*REST_SHORT)
 
     def record(self, action: str) -> None:
@@ -226,7 +222,7 @@ class ReelSession:
         return min(30.0, max(0.8, drawn))
 
     def scroll(self, width: int, height: int) -> Gesture:
-        """A swipe in the thumb zone, away from the action rail and the nav bar."""
+        """An upward swipe to the next reel, clear of the action rail and nav."""
         roll = self._rng.random()
         if roll < FLICK_ODDS:
             span, duration, kind = self._rng.uniform(*GESTURE_FLICK), self._rng.randint(*DURATION_FLICK), "flick"
@@ -237,8 +233,6 @@ class ReelSession:
         x1 = int(self._rng.uniform(0.18, 0.70) * width)
         y1 = int(self._rng.uniform(0.58, 0.88) * height)
         travel = -span * height  # a thumb moving up: the next reel
-        if self._rng.random() < SCROLL_BACK_ODDS:
-            travel = -travel  # a thumb moving down: the reel before this one
         y2 = y1 + travel
         # Keep the whole gesture on screen, below the status bar and above the nav.
         y2 = int(min(max(y2, 0.12 * height), 0.94 * height))

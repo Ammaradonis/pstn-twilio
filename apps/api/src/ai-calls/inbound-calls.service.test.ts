@@ -88,10 +88,30 @@ describe('InboundCallsService', () => {
     );
   });
 
-  it('rejects stale clients trying to re-enable the agent', async () => {
+  it('rings the browser and hands calls it does not answer to the agent', async () => {
+    const { service, update, audit } = build(REJECT_URL);
+
+    await expect(service.setMode({ userId: 'u1' }, 'browser-then-agent')).resolves.toEqual({
+      phoneNumber: '+16672206726',
+      mode: 'browser-then-agent',
+    });
+
+    expect(update).toHaveBeenCalledWith(
+      expect.objectContaining({
+        voiceUrl: 'https://api.example.com/webhooks/twilio/voice/inbound?fallback=agent',
+        voiceMethod: 'POST',
+        voiceFallbackUrl: REJECT_URL,
+      }),
+    );
+    expect(audit.log).toHaveBeenCalledWith(
+      expect.objectContaining({ action: 'ai_inbound.browser_then_agent_enabled' }),
+    );
+  });
+
+  it('never lets the agent answer every call before the browser rings', async () => {
     const { service, update } = build(REJECT_URL);
     await expect(service.setMode({ userId: 'u1' }, 'agent' as never)).rejects.toThrow(
-      'answered manually',
+      'Unknown incoming call mode',
     );
     expect(update).not.toHaveBeenCalled();
   });

@@ -1,4 +1,4 @@
-import { Injectable, Logger } from '@nestjs/common';
+import { Injectable, Logger, Optional } from '@nestjs/common';
 import {
   CallDirection,
   Call,
@@ -12,10 +12,12 @@ import {
 import { normalizeDialablePhoneNumber } from '@pstn-twilio/shared';
 import twilio from 'twilio';
 
+import { AGENT_FALLBACK_QUERY, VAPI_TWILIO_INBOUND_URL } from '../ai-calls/inbound-calls.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { RealtimeService } from '../realtime/realtime.service';
 import { RedisService } from '../redis/redis.service';
 import { TwilioService } from '../twilio/twilio.service';
+import { VoiceAppCallsService } from '../voice-app/voice-app-calls.service';
 
 import { mapTwilioCallStatus } from './voice-status.mapper';
 
@@ -89,6 +91,14 @@ type CallWithRecordings = Call & { recordings?: CallRecording[] };
 type OutboundCallIntentWithNumber = OutboundCallIntent & { phoneNumber: PhoneNumber };
 
 const RECORDING_CALLBACK_EVENTS = ['in-progress', 'completed', 'absent'] as const;
+// Dial outcomes that leave the caller unanswered: the browser timed out, the
+// call was declined, or no device was online to ring.
+const AGENT_HANDOFF_DIAL_STATUSES = new Set(['no-answer', 'busy', 'failed']);
+
+export interface InboundRouting {
+  // Hand calls the browser doesn't answer to the Vapi agent.
+  agentFallback?: boolean;
+}
 const CALL_WITH_RECORDINGS_INCLUDE = {
   recordings: { orderBy: { createdAt: 'desc' as const } },
 };
@@ -120,9 +130,10 @@ export class VoiceWebhookService {
     private readonly twilio: TwilioService,
     private readonly realtime: RealtimeService,
     private readonly redis: RedisService,
+    @Optional() private readonly voiceApp?: VoiceAppCallsService,
   ) {}
 
-  async handleInbound(params: InboundVoiceParams): Promise<string> {
+  async handleInbound(params: InboundVoiceParams, routing: InboundRouting = {}): Promise<string> {
     const callSid = params.CallSid ?? '';
     const to = params.To ?? '';
     const from = params.From ?? '';
@@ -159,36 +170,55 @@ export class VoiceWebhookService {
       call: toCallDto(call),
     });
 
-    const identity = this.twilio.voiceIdentity(phoneNumber.userId, phoneNumber.id);
+    // Numbers of voice app users ring their devices and linked phones, with
+    // blocking and voicemail. Everyone else keeps the browser-only routing.
+    if (this.voiceApp && (await this.voiceApp.isVoiceUser(phoneNumber.userId))) {
+      try {
+        return await this.voiceApp.inboundTwiml(params, phoneNumber, call.id);
+      } catch (err) {
+        this.logger.error(
+          `Voice app routing failed for ${callSid}: ${err instanceof Error ? err.message : 'unknown'}`,
+        );
+        return this.voiceApp.voicemailTwiml(null, null);
+      }
+    }
+
+    const identity = this.twilio.voiceIdentity(phoneNumber.userId);
     const response = new twilio.twiml.VoiceResponse();
     const dial = response.dial({
       answerOnBridge: true,
       timeout: 30,
-      action: `${this.twilio.webhookBaseUrl}/webhooks/twilio/voice/dial-complete`,
+      action: `${this.twilio.webhookBaseUrl}/webhooks/twilio/voice/dial-complete${
+        routing.agentFallback ? `?${AGENT_FALLBACK_QUERY}` : ''
+      }`,
       method: 'POST',
       timeLimit: 3600,
       ...((phoneNumber.tags as Record<string, unknown> | null)?.recordInboundCalls === true
         ? this.recordingDialAttributes()
         : { record: 'do-not-record' as const }),
     });
-    dial.client(
-      {
-        statusCallback: `${this.twilio.webhookBaseUrl}/webhooks/twilio/voice/status`,
-        statusCallbackMethod: 'POST',
-        statusCallbackEvent: ['initiated', 'ringing', 'answered', 'completed'],
-      },
-      identity,
-    );
+    const client = dial.client({
+      statusCallback: `${this.twilio.webhookBaseUrl}/webhooks/twilio/voice/status`,
+      statusCallbackMethod: 'POST',
+      statusCallbackEvent: ['initiated', 'ringing', 'answered', 'completed'],
+    });
+    client.identity(identity);
+    // All of the user's numbers ring the same browser identity; tell the
+    // incoming-call popup which of them was dialed.
+    client.parameter({ name: 'calledNumber', value: phoneNumber.phoneNumberE164 });
     return response.toString();
   }
 
-  async handleVoicemail(params: VoicemailParams): Promise<string> {
+  async handleVoicemail(params: VoicemailParams, routing: InboundRouting = {}): Promise<string> {
     // Keep the legacy voicemail URL safe for calls already ringing at deploy.
     // Never play a greeting or execute Record on an unanswered call.
     if (params.DialCallStatus === 'completed' || params.DialBridged === 'true') {
       const response = new twilio.twiml.VoiceResponse();
       response.hangup();
       return response.toString();
+    }
+    if (routing.agentFallback && AGENT_HANDOFF_DIAL_STATUSES.has(params.DialCallStatus ?? '')) {
+      return agentHandoffTwiml();
     }
     return rejectTwiml();
   }
@@ -456,7 +486,7 @@ export class VoiceWebhookService {
 
     const phoneNumber = intent.phoneNumber;
     const expectedIdentity = phoneNumber.userId
-      ? this.twilio.voiceIdentity(phoneNumber.userId, phoneNumber.id)
+      ? this.twilio.voiceIdentity(phoneNumber.userId)
       : null;
     if (
       !phoneNumber.active ||
@@ -673,6 +703,14 @@ export class VoiceWebhookService {
       this.logger.debug(`Webhook event dedupe race for ${dedupeKey}: ${(err as Error).message}`);
     }
   }
+}
+
+// Vapi answers the still-unanswered call as an incoming call to the number it
+// imported from Twilio, and asks this API which assistant takes it.
+export function agentHandoffTwiml(): string {
+  const response = new twilio.twiml.VoiceResponse();
+  response.redirect({ method: 'POST' }, VAPI_TWILIO_INBOUND_URL);
+  return response.toString();
 }
 
 function rejectTwiml(): string {

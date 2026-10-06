@@ -22,6 +22,7 @@ const EMAIL_STATUS_LABEL: Record<SheetsEmailStatus, string> = {
   FAILED: 'Failed',
   CANCELLED: 'Cancelled',
   MANUAL: 'Contact form needs review',
+  REPLIED: 'Replied, sequence stopped',
 };
 
 export function SettingsSheets() {
@@ -172,7 +173,8 @@ ${message.body}`);
                   <p className="truncate font-medium text-slate-800">
                     {f.emailTo ?? (f.contactFormUrl ? 'Contact form' : 'Researching contact')}{' '}
                     <span className="font-normal text-slate-500">
-                      ({f.emailTemplate}, {f.sheetTitle} row {f.rowIndex})
+                      ({f.emailTemplate}, email {f.sequenceStep} of 6, {f.sheetTitle} row{' '}
+                      {f.rowIndex})
                     </span>
                   </p>
                   <p className="text-slate-500">

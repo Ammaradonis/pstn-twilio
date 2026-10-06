@@ -53,7 +53,7 @@ COPY --from=build /out/api/package.json ./package.json
 COPY --from=build /out/api/node_modules ./node_modules
 COPY --from=build /app/apps/api/dist ./dist
 COPY --from=build /app/apps/api/prisma ./prisma
-# Cold email templates, read at runtime by the Sheets follow-up sender.
+# Follow-up email sequences, read at runtime by the Sheets follow-up sender.
 COPY --from=build /app/apps/api/templates ./templates
 EXPOSE 3000
 HEALTHCHECK --interval=30s --timeout=5s --retries=3 \

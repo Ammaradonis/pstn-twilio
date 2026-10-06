@@ -24,6 +24,10 @@ vi.mock('./lib/realtime', () => ({
   refreshSocketAuth: vi.fn(),
 }));
 
+vi.mock('./voice/voice-app', () => ({
+  VoiceApp: () => <p>Voice app</p>,
+}));
+
 vi.mock('./lib/api-client', async () => {
   const actual = await vi.importActual<typeof ApiClientModule>('./lib/api-client');
   return {
@@ -147,5 +151,43 @@ describe('App routing', () => {
   it('renders the not-found page for unknown routes', () => {
     renderWith('/this-does-not-exist');
     expect(screen.getByRole('heading', { name: /not found/i })).toBeInTheDocument();
+  });
+});
+
+describe('App routing by experience', () => {
+  const voiceUser = {
+    id: 'u2',
+    email: 'test@example.com',
+    role: 'OPERATOR' as const,
+    experience: 'voice' as const,
+    createdAt: new Date().toISOString(),
+    lastLoginAt: null,
+  };
+
+  it('sends voice app accounts to the voice app instead of the console', async () => {
+    apiMocks.authMe.mockResolvedValue(voiceUser);
+    useAuthStore.setState({ token: 'voice-token', user: voiceUser, status: 'authenticated' });
+    renderWith('/dashboard');
+    expect(await screen.findByText('Voice app', {}, { timeout: 5000 })).toBeInTheDocument();
+    expect(screen.queryByRole('heading', { name: /dashboard/i })).not.toBeInTheDocument();
+  });
+
+  it('keeps the owner on the console, even when they open a voice app link', async () => {
+    useAuthStore.setState({
+      token: 'fake-token',
+      user: {
+        id: 'u1',
+        email: 'owner@example.com',
+        role: 'OWNER',
+        createdAt: new Date().toISOString(),
+        lastLoginAt: null,
+      },
+      status: 'authenticated',
+    });
+    renderWith('/voice/calls');
+    expect(
+      await screen.findByRole('heading', { name: /dashboard/i }, { timeout: 5000 }),
+    ).toBeInTheDocument();
+    expect(screen.queryByText('Voice app')).not.toBeInTheDocument();
   });
 });

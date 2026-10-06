@@ -1,3 +1,4 @@
+import type { AiInboundMode } from '@pstn-twilio/shared';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
@@ -7,7 +8,8 @@ import { formatPhone } from '../lib/format';
 
 const INBOUND_KEY = ['ai-calls', 'inbound'] as const;
 
-// Incoming calls must be answered manually; outbound AI calls are independent.
+// Who answers incoming calls to the AI caller line; outbound AI calls are
+// independent.
 function IncomingCallsToggle() {
   const queryClient = useQueryClient();
   const inboundQuery = useQuery({ queryKey: INBOUND_KEY, queryFn: () => api.aiCalls.inbound() });
@@ -15,7 +17,7 @@ function IncomingCallsToggle() {
   const [error, setError] = useState<string | null>(null);
   const status = inboundQuery.data;
 
-  async function setMode(mode: 'browser' | 'blocked') {
+  async function setMode(mode: AiInboundMode) {
     setBusy(true);
     setError(null);
     try {
@@ -41,7 +43,9 @@ function IncomingCallsToggle() {
       ? 'Blocked. Callers hear a busy signal and the agent never answers.'
       : status.mode === 'browser'
         ? 'Calls ring your browser. Only you can answer; voicemail is disabled.'
-        : 'Routed somewhere else in Twilio. Choose an option to take control.';
+        : status.mode === 'browser-then-agent'
+          ? "Calls ring your browser first. If you don't answer within 30 seconds, the AI agent picks up."
+          : 'Routed somewhere else in Twilio. Choose an option to take control.';
 
   return (
     <div className="mt-3 flex flex-wrap items-center justify-between gap-2 border-t border-slate-100 pt-3 text-sm">
@@ -76,6 +80,16 @@ function IncomingCallsToggle() {
           className="rounded bg-slate-900 px-3 py-1.5 text-sm font-semibold text-white hover:bg-slate-700 disabled:opacity-60"
         >
           Ring my browser
+        </button>
+      )}
+      {status && status.mode !== 'browser-then-agent' && (
+        <button
+          type="button"
+          onClick={() => void setMode('browser-then-agent')}
+          disabled={busy}
+          className="rounded bg-emerald-700 px-3 py-1.5 text-sm font-semibold text-white hover:bg-emerald-800 disabled:opacity-60"
+        >
+          Ring me, then the AI agent
         </button>
       )}
       {error && <p className="w-full text-xs text-rose-700">{error}</p>}

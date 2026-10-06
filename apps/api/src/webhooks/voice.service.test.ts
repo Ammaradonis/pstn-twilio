@@ -26,8 +26,7 @@ function buildService(overrides: { prisma?: any; twilio?: any; realtime?: any; r
   };
   const twilio = overrides.twilio ?? {
     webhookBaseUrl: 'https://example.com',
-    voiceIdentity: (userId: string, numberId?: string) =>
-      numberId ? `user_${userId}_number_${numberId}` : `user_${userId}`,
+    voiceIdentity: (userId: string) => `user_${userId}`,
   };
   const realtime = overrides.realtime ?? {
     callInboundRinging: vi.fn(),
@@ -67,7 +66,7 @@ function makeOutboundIntent(
     id: 'intent1',
     userId: phoneNumber.userId ?? 'u1',
     phoneNumberId: phoneNumber.id,
-    identity: phoneNumber.userId ? `user_${phoneNumber.userId}_number_${phoneNumber.id}` : '',
+    identity: phoneNumber.userId ? `user_${phoneNumber.userId}` : '',
     destinationE164: '+15551111111',
     selectedCallerId: phoneNumber.phoneNumberE164,
     expiresAt: new Date(Date.now() + 60_000),
@@ -185,7 +184,10 @@ describe('VoiceWebhookService.handleInbound', () => {
     expect(xml).not.toContain('recordingStatusCallback');
     expect(xml).not.toMatch(/<(Say|Record|Play|Pause)/);
     expect(xml).toContain('<Client');
-    expect(xml).toContain('user_u1_number_pn1');
+    // Every number rings the owner's one browser identity, tagged with the
+    // number that was called.
+    expect(xml).toContain('<Identity>user_u1</Identity>');
+    expect(xml).toContain('<Parameter name="calledNumber" value="+15552222222"/>');
     expect(xml).toContain('statusCallback="https://example.com/webhooks/twilio/voice/status"');
 
     // Only an explicit persisted opt-in may enable recording.
@@ -243,10 +245,92 @@ describe('VoiceWebhookService.handleVoicemail', () => {
   });
 });
 
+describe('agent fallback on the AI caller line', () => {
+  const phoneNumber = {
+    id: 'pn667',
+    phoneNumberE164: '+16672206726',
+    userId: 'u1',
+    active: true,
+    capabilitiesVoice: true,
+  };
+
+  function buildForInbound() {
+    const prisma = {
+      webhookEvent: {
+        findUnique: vi.fn().mockResolvedValue(null),
+        create: vi.fn().mockResolvedValue({}),
+      },
+      phoneNumber: { findUnique: vi.fn().mockResolvedValue(phoneNumber) },
+      call: {
+        findUnique: vi.fn().mockResolvedValue(null),
+        create: vi.fn().mockResolvedValue({
+          id: 'c1',
+          phoneNumberId: 'pn667',
+          twilioCallSid: 'CA1',
+          direction: CallDirection.INBOUND,
+          fromE164: '+15551111111',
+          toE164: '+16672206726',
+          status: CallStatus.RINGING,
+          createdAt: new Date('2026-10-04T00:00:00Z'),
+        }),
+        update: vi.fn(),
+      },
+    };
+    return buildService({ prisma });
+  }
+
+  it('rings the browser first and comes back to ask for the agent when unanswered', async () => {
+    const { service } = buildForInbound();
+    const inbound = { CallSid: 'CA1', From: '+15551111111', To: '+16672206726' };
+
+    const withAgent = await service.handleInbound(inbound, { agentFallback: true });
+    expect(withAgent).toContain('<Identity>user_u1</Identity>');
+    expect(withAgent).toContain(
+      'action="https://example.com/webhooks/twilio/voice/dial-complete?fallback=agent"',
+    );
+
+    const browserOnly = await service.handleInbound(inbound);
+    expect(browserOnly).toContain(
+      'action="https://example.com/webhooks/twilio/voice/dial-complete"',
+    );
+  });
+
+  it.each(['no-answer', 'busy', 'failed'])(
+    'hands a %s call to the Vapi agent',
+    async (DialCallStatus) => {
+      const { service } = buildService();
+      const xml = await service.handleVoicemail(
+        { CallSid: 'CA1', DialCallStatus },
+        { agentFallback: true },
+      );
+      expect(xml).toBe(
+        '<?xml version="1.0" encoding="UTF-8"?><Response>' +
+          '<Redirect method="POST">https://api.vapi.ai/twilio/inbound_call</Redirect></Response>',
+      );
+    },
+  );
+
+  it('never hands an answered or abandoned call to the agent', async () => {
+    const { service } = buildService();
+    const answered = await service.handleVoicemail(
+      { CallSid: 'CA1', DialCallStatus: 'completed' },
+      { agentFallback: true },
+    );
+    expect(answered).toContain('<Hangup');
+
+    // The caller hung up while it was ringing.
+    const abandoned = await service.handleVoicemail(
+      { CallSid: 'CA1', DialCallStatus: 'canceled' },
+      { agentFallback: true },
+    );
+    expect(abandoned).not.toContain('vapi');
+  });
+});
+
 describe('VoiceWebhookService.handleOutbound', () => {
   it('hangups when selectedNumberId or destination is missing', async () => {
     const { service } = buildService();
-    const xml = await service.handleOutbound({ CallSid: 'CA1' }, 'user_u1_number_pn1');
+    const xml = await service.handleOutbound({ CallSid: 'CA1' }, 'user_u1');
     expect(xml).toContain('Missing call parameters');
   });
 
@@ -275,7 +359,7 @@ describe('VoiceWebhookService.handleOutbound', () => {
         destinationNumber: 'not-a-number',
         outboundIntentId: 'intent1',
       },
-      'user_u1_number_pn1',
+      'user_u1',
     );
     expect(xml).toContain('valid phone number');
   });
@@ -308,7 +392,7 @@ describe('VoiceWebhookService.handleOutbound', () => {
         destinationNumber: '+15551111111',
         outboundIntentId: 'intent1',
       },
-      'user_attacker_number_pn1',
+      'user_attacker',
     );
     expect(xml).toContain('Call authorization expired');
     expect(prisma.outboundCallIntent.updateMany).not.toHaveBeenCalled();
@@ -327,7 +411,7 @@ describe('VoiceWebhookService.handleOutbound', () => {
       phoneNumberId: 'pn1',
       twilioCallSid: 'CA1',
       direction: CallDirection.OUTBOUND,
-      fromE164: 'user_u1_number_pn1',
+      fromE164: 'user_u1',
       toE164: '+15551111111',
       selectedCallerId: '+15552222222',
       destinationE164: '+15551111111',
@@ -363,7 +447,7 @@ describe('VoiceWebhookService.handleOutbound', () => {
         destinationNumber: '+15551111111',
         outboundIntentId: 'intent1',
       },
-      'user_u1_number_pn1',
+      'user_u1',
     );
     expect(xml).toContain('callerId="+15552222222"');
     expect(xml).toContain('record="record-from-answer-dual"');
@@ -408,7 +492,7 @@ describe('VoiceWebhookService.handleOutbound', () => {
           phoneNumberId: 'pn1',
           twilioCallSid: 'CA1',
           direction: CallDirection.OUTBOUND,
-          fromE164: 'user_u1_number_pn1',
+          fromE164: 'user_u1',
           toE164: '+15551111111',
           selectedCallerId: '+15552222222',
           destinationE164: '+15551111111',
@@ -437,7 +521,7 @@ describe('VoiceWebhookService.handleOutbound', () => {
         destinationNumber: '+15551111111',
         outboundIntentId: 'intent1',
       },
-      'user_u1_number_pn1',
+      'user_u1',
     );
     await flushAsyncWork();
 
@@ -469,7 +553,7 @@ describe('VoiceWebhookService.handleOutbound', () => {
           phoneNumberId: 'pn1',
           twilioCallSid: 'CA1',
           direction: CallDirection.OUTBOUND,
-          fromE164: 'user_u1_number_pn1',
+          fromE164: 'user_u1',
           toE164: '+15551111111',
           selectedCallerId: '+15552222222',
           destinationE164: '+15551111111',
@@ -501,7 +585,7 @@ describe('VoiceWebhookService.handleOutbound', () => {
         destinationNumber: '+15551111111',
         outboundIntentId: 'intent1',
       },
-      'user_u1_number_pn1',
+      'user_u1',
     );
 
     expect(xml).toContain('callerId="+15552222222"');
@@ -522,7 +606,7 @@ describe('VoiceWebhookService.handleOutbound', () => {
       phoneNumberId: 'pn1',
       twilioCallSid: 'CA1',
       direction: CallDirection.OUTBOUND,
-      fromE164: 'user_u1_number_pn1',
+      fromE164: 'user_u1',
       toE164: '+15304419961',
       selectedCallerId: '+15552222222',
       destinationE164: '+15304419961',
@@ -560,7 +644,7 @@ describe('VoiceWebhookService.handleOutbound', () => {
         destinationNumber: '+1 530-441-9961',
         outboundIntentId: 'intent1',
       },
-      'user_u1_number_pn1',
+      'user_u1',
     );
 
     await flushAsyncWork();
@@ -608,7 +692,7 @@ describe('VoiceWebhookService.handleOutbound', () => {
         destinationNumber: '+15551111111',
         outboundIntentId: 'intent1',
       },
-      'user_u1_number_pn1',
+      'user_u1',
     );
 
     expect(xml).toContain('<Dial');
@@ -658,7 +742,7 @@ describe('VoiceWebhookService.handleOutbound', () => {
         update: vi.fn().mockResolvedValue({
           ...existing,
           phoneNumberId: 'pn1',
-          fromE164: 'user_u1_number_pn1',
+          fromE164: 'user_u1',
           toE164: '+15551111111',
           selectedCallerId: '+15552222222',
           destinationE164: '+15551111111',
@@ -678,7 +762,7 @@ describe('VoiceWebhookService.handleOutbound', () => {
         destinationNumber: '+15551111111',
         outboundIntentId: 'intent1',
       },
-      'user_u1_number_pn1',
+      'user_u1',
     );
     await flushAsyncWork();
 
@@ -788,7 +872,7 @@ describe('VoiceWebhookService.handleStatus', () => {
       twilioCallSid: 'CA-parent',
       parentCallSid: null,
       direction: CallDirection.OUTBOUND,
-      fromE164: 'user_u1_number_pn1',
+      fromE164: 'user_u1',
       toE164: '+15551111111',
       selectedCallerId: '+15552222222',
       destinationE164: '+15551111111',
@@ -1110,5 +1194,84 @@ describe('VoiceWebhookService.handleFallback', () => {
     const xml = service.handleVoicemailComplete();
     expect(xml).toContain('<Response>');
     expect(xml).toContain('<Response><Reject reason="busy"/></Response>');
+  });
+});
+
+describe('VoiceWebhookService.handleInbound for voice app users', () => {
+  function setup(isVoiceUser: boolean) {
+    const phoneNumber = {
+      id: 'pn1',
+      phoneNumberE164: '+18776524532',
+      userId: 'u1',
+      active: true,
+      capabilitiesVoice: true,
+      tags: null,
+    };
+    const call = {
+      id: 'c1',
+      phoneNumberId: 'pn1',
+      twilioCallSid: 'CA1',
+      direction: CallDirection.INBOUND,
+      fromE164: '+14155550100',
+      toE164: '+18776524532',
+      status: CallStatus.RINGING,
+      createdAt: new Date(),
+      startedAt: new Date(),
+    };
+    const prisma = {
+      webhookEvent: {
+        findUnique: vi.fn().mockResolvedValue(null),
+        create: vi.fn().mockResolvedValue({}),
+      },
+      phoneNumber: { findUnique: vi.fn().mockResolvedValue(phoneNumber) },
+      call: {
+        findUnique: vi.fn().mockResolvedValue(null),
+        create: vi.fn().mockResolvedValue(call),
+        update: vi.fn(),
+      },
+    };
+    const voiceApp = {
+      isVoiceUser: vi.fn().mockResolvedValue(isVoiceUser),
+      inboundTwiml: vi.fn().mockResolvedValue('<Response>voice app</Response>'),
+      voicemailTwiml: vi.fn().mockResolvedValue('<Response>voicemail</Response>'),
+    };
+    const realtime = { callInboundRinging: vi.fn(), callStatusUpdated: vi.fn() };
+    const service = new VoiceWebhookService(
+      prisma as never,
+      {
+        webhookBaseUrl: 'https://example.com',
+        voiceIdentity: (id: string) => `user_${id}`,
+      } as never,
+      realtime as never,
+      { client: { set: vi.fn() } } as never,
+      voiceApp as never,
+    );
+    return { service, voiceApp, realtime };
+  }
+  const params = { CallSid: 'CA1', From: '+14155550100', To: '+18776524532' };
+
+  it('hands calls to voice app users to the voice app routing', async () => {
+    const { service, voiceApp, realtime } = setup(true);
+    await expect(service.handleInbound(params)).resolves.toBe('<Response>voice app</Response>');
+    expect(voiceApp.inboundTwiml).toHaveBeenCalledWith(
+      params,
+      expect.objectContaining({ id: 'pn1' }),
+      'c1',
+    );
+    expect(realtime.callInboundRinging).toHaveBeenCalled();
+  });
+
+  it('keeps the browser-only routing for console users', async () => {
+    const { service, voiceApp } = setup(false);
+    const xml = await service.handleInbound(params);
+    expect(voiceApp.inboundTwiml).not.toHaveBeenCalled();
+    expect(xml).toContain('<Client');
+    expect(xml).toContain('<Identity>user_u1</Identity>');
+  });
+
+  it('takes a voicemail if the voice app routing fails', async () => {
+    const { service, voiceApp } = setup(true);
+    voiceApp.inboundTwiml.mockRejectedValue(new Error('db down'));
+    await expect(service.handleInbound(params)).resolves.toBe('<Response>voicemail</Response>');
   });
 });

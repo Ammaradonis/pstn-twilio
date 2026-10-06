@@ -1,87 +1,56 @@
 /**
  * GmailService
  *
- * Sends the follow-up cold emails from the connected Google account (the same
- * grant as Sheets, with the gmail.send scope).
- *
- * Templates are apps/api/templates/cold-email/<name>.txt: the first line is
- * "Subject: …", the rest is the body. Placeholders:
- *   {{schoolName}}  {{customNote}}  {{callerNumber}}  {{phoneNumber}}
- *   {{callDay}} (weekday of the call, their time)  {{localTime}}
- * Phone numbers are written without country codes.
+ * Sends the follow-up emails from the connected Google account (the same
+ * grant as Sheets, with the gmail.send scope). The text comes from the
+ * follow-up sequences (follow-up-renderer.service.ts).
  */
-
-import { existsSync, readFileSync } from 'fs';
-import { join } from 'path';
 
 import { Injectable } from '@nestjs/common';
 
-import { SheetsService } from './sheets.service';
-
-// dist/main.js runs from /app in the image (templates copied to /app/templates)
-// and from apps/api in development.
-const TEMPLATE_DIRS = [
-  join(process.cwd(), 'templates', 'cold-email'),
-  join(process.cwd(), 'apps', 'api', 'templates', 'cold-email'),
-  join(__dirname, '..', 'templates', 'cold-email'),
-];
-
-export type TemplateVars = Partial<
-  Record<
-    'schoolName' | 'customNote' | 'callerNumber' | 'phoneNumber' | 'callDay' | 'localTime',
-    string
-  >
->;
+import { GMAIL_READ_SCOPE, SheetsService } from './sheets.service';
 
 @Injectable()
 export class GmailService {
   constructor(private readonly sheets: SheetsService) {}
 
-  async sendFromTemplate(
-    userId: string,
-    to: string,
-    templateName: string,
-    vars: TemplateVars,
-  ): Promise<void> {
-    const { subject, body } = renderTemplate(loadTemplate(templateName), vars);
+  /** Returns Gmail's message id. */
+  async send(userId: string, to: string, subject: string, body: string): Promise<string> {
     const token = await this.sheets.getAccessToken(userId);
     const res = await fetch('https://gmail.googleapis.com/gmail/v1/users/me/messages/send', {
       method: 'POST',
       headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
       body: JSON.stringify({ raw: encodeMessage(to, subject, body) }),
     });
+    const json = (await res.json().catch(() => ({}))) as {
+      id?: string;
+      error?: { message?: string };
+    };
     if (!res.ok) {
-      const err = (await res.json().catch(() => ({}))) as { error?: { message?: string } };
-      throw new Error(`Gmail send failed: ${err.error?.message ?? `HTTP ${res.status}`}`);
+      throw new Error(`Gmail send failed: ${json.error?.message ?? `HTTP ${res.status}`}`);
     }
+    return json.id ?? '';
   }
-}
 
-export function templateDir(): string | null {
-  return TEMPLATE_DIRS.find((dir) => existsSync(join(dir, 'default.txt'))) ?? null;
-}
-
-export function loadTemplate(name: string): string {
-  const dir = templateDir();
-  if (!dir) throw new Error('Cold email templates are missing from the API build.');
-  const file = join(dir, `${name}.txt`);
-  return readFileSync(existsSync(file) ? file : join(dir, 'default.txt'), 'utf8');
-}
-
-export function renderTemplate(raw: string, vars: TemplateVars): { subject: string; body: string } {
-  const lines = raw.replace(/\r\n/g, '\n').split('\n');
-  const fill = (s: string) =>
-    s.replace(
-      /\{\{(\w+)\}\}/g,
-      (_, key: string) => (vars as Record<string, string>)[key]?.trim() ?? '',
+  /**
+   * Whether `address` has written to the inbox since `since`. Null when the
+   * connection can't read mail (connected before reply checks existed).
+   */
+  async hasReplyFrom(userId: string, address: string, since: Date): Promise<boolean | null> {
+    if (!(await this.sheets.hasScope(userId, GMAIL_READ_SCOPE))) return null;
+    const token = await this.sheets.getAccessToken(userId);
+    const q = `from:${address} after:${Math.floor(since.getTime() / 1000)}`;
+    const res = await fetch(
+      `https://gmail.googleapis.com/gmail/v1/users/me/messages?maxResults=1&q=${encodeURIComponent(q)}`,
+      { headers: { Authorization: `Bearer ${token}` } },
     );
-  const subject = fill(lines[0]!.replace(/^Subject:\s*/i, '')).trim();
-  const body = fill(lines.slice(1).join('\n'))
-    // An empty placeholder on its own line leaves a gap; collapse it.
-    .replace(/\n[ \t]*\n(?:[ \t]*\n)+/g, '\n\n')
-    .replace(/[ \t]+\n/g, '\n')
-    .trim();
-  return { subject, body };
+    const json = (await res.json().catch(() => ({}))) as {
+      messages?: unknown[];
+      error?: { message?: string };
+    };
+    if (!res.ok) throw new Error(`Gmail search failed: ${json.error?.message ?? res.status}`);
+    return (json.messages?.length ?? 0) > 0;
+  }
 }
 
 // RFC 2822 message, base64url as the Gmail API wants it. The subject is

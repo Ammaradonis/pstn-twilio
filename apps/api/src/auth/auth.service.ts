@@ -36,7 +36,10 @@ export class AuthService {
     });
 
     const token = this.jwt.sign({ sub: user.id, email: user.email, role: user.role });
-    return { token, user: { id: user.id, email: user.email, role: user.role } };
+    return {
+      token,
+      user: { id: user.id, email: user.email, role: user.role, experience: user.experience },
+    };
   }
 
   async validateUser(userId: string) {

@@ -8,11 +8,11 @@ business's Contact button.
 Between lookups the phone would otherwise sit outside Instagram, which is itself
 a pattern worth avoiding, so the worker keeps an ordinary Reels session going:
 it scrolls with the randomised gestures of ambient.py, watches for a drawn
-time, and occasionally engages. A lookup preempts the session at the end of the
-current gesture, opens the profile, reads it, and hands the phone back.
+time, and occasionally engages. Lookups and Reels take turns using the phone,
+so neither can starve the other when research is busy.
 
 House rules
-* Only reads the screen (uiautomator dump) and taps the profile's own buttons.
+* Only reads the screen (UiAutomator hierarchy) and taps the profile's own buttons.
   Never types and never sends anything.
 * Ambient activity is limited to what `ambient.AmbientSettings` allows and is
   capped per hour and per day. No comments, no messages, no shares, no saving,
@@ -30,7 +30,7 @@ House rules
 * Contact -> Email opens a draft in the phone's email app; the address is read
   from it and the draft is discarded.
 * Instagram profiles get 3 seconds, once loaded, to show Contact, then one
-  refresh and 3 more.
+  more read after 3 seconds without pulling down to refresh.
 * One process at a time drives the phone (a lock file shared by the worker and
   any probe script), so nobody presses Home in the middle of someone else's wait.
 * 10-20 s between profiles, EMAIL_FINDER_GALAXY_DAILY_LIMIT lookups a day.
@@ -39,11 +39,13 @@ House rules
 from __future__ import annotations
 
 import asyncio
+from contextlib import suppress
 import logging
 import os
 import random
 import re
 import shutil
+import subprocess
 import time
 import xml.etree.ElementTree as ET
 from dataclasses import dataclass, field
@@ -63,7 +65,6 @@ EMAIL_APPS = ("com.google.android.gm", "com.samsung.android.email.provider")
 SETTLE_S = 3.0  # how long a loaded profile gets to show its Contact button
 LOAD_S = 10  # how long the app gets to put the profile on screen at all
 LOCK_STALE_S = 600  # a lock older than this was left by a process that died
-PROFILE_SHOWN = ("Follow", "Following", "Message", "Edit profile", "Requested")
 # Instagram's answer for a handle it can't show. Golden rule: open it twice
 # before moving on (it is sometimes a passing hiccup).
 NOT_FOUND = re.compile(r"user not found|page isn.t available|link you followed may be broken", re.I)
@@ -86,6 +87,9 @@ REEL_ANCHORS = ("Like", "Unlike", "Comment", "Share")
 MENU_INTEREST = ("Interested", "Not interested")
 HANDLE = re.compile(r"^[a-z0-9._]{3,30}$")
 HANDLE_RIDS = ("username", "profile_name", "title", "name")
+AD_ACTIVITY = re.compile(r"leadads|browserlite|inappbrowser", re.I)
+AD_LABELS = {"sponsored", "gesponsert", "werbung", "anzeige", "ad", "learn more", "mehr dazu",
+             "jetzt bewerben", "apply now", "sign up", "registrieren", "shop now", "jetzt kaufen"}
 # A failed adb command reads like this; the device dropping off USB is common
 # enough that every read-only command is retried, and no input command is.
 TRANSPORT_ERRORS = ("device not found", "device offline", "no devices/emulators",
@@ -106,6 +110,7 @@ class Node:
     clickable: bool
     center: tuple[int, int]
     bounds: tuple[int, int, int, int] = (0, 0, 0, 0)
+    selected: bool = False
 
     @property
     def label(self) -> str:
@@ -137,7 +142,8 @@ def parse_dump(xml: str) -> list[Node]:
         box = (int(m[1]), int(m[2]), int(m[3]), int(m[4])) if m else (0, 0, 0, 0)
         center = ((box[0] + box[2]) // 2, (box[1] + box[3]) // 2) if m else (0, 0)
         nodes.append(Node(n.get("text", ""), n.get("content-desc", ""), n.get("resource-id", ""),
-                          n.get("package", ""), n.get("clickable") == "true", center, box))
+                          n.get("package", ""), n.get("clickable") == "true", center, box,
+                          n.get("selected") == "true"))
     return nodes
 
 
@@ -152,7 +158,16 @@ def emails_on_screen(nodes: list[Node]) -> list[str]:
 
 
 def user_not_found(nodes: list[Node]) -> bool:
-    return any(NOT_FOUND.search(n.label) for n in nodes if n.label)
+    return any(n.package == INSTAGRAM and NOT_FOUND.search(n.label) for n in nodes if n.label)
+
+
+def instagram_profile_shown(nodes: list[Node], handle: str) -> bool:
+    """Verify the requested profile, not the old profile or a Reel's Message tab."""
+    visible = [n for n in nodes if n.package == INSTAGRAM
+               and n.bounds[2] > n.bounds[0] and n.bounds[3] > n.bounds[1]]
+    return (any(n.rid == f"{INSTAGRAM}:id/action_bar_title"
+                and n.label.lstrip("@").casefold() == handle.casefold() for n in visible)
+            and any(n.rid.startswith(f"{INSTAGRAM}:id/profile_header_") for n in visible))
 
 
 def find_button(nodes: list[Node], *names: str) -> Node | None:
@@ -164,8 +179,27 @@ def find_button(nodes: list[Node], *names: str) -> Node | None:
 
 
 def reel_on_screen(nodes: list[Node]) -> bool:
-    """True when these nodes are a Reel: its like/comment/share rail is up."""
-    return find_button(nodes, *REEL_ANCHORS) is not None
+    """Require the Reel's right-hand rail; feed posts also have Like buttons."""
+    instagram = [n for n in nodes if n.package == INSTAGRAM]
+    if any(n.rid == f"{INSTAGRAM}:id/background_dimmer" for n in instagram):
+        return False  # a menu/dialog can include the Reel behind it in the tree
+    width = max((n.bounds[2] for n in instagram), default=0)
+    return width > 0 and any(
+        n.label in REEL_ANCHORS and n.clickable and n.center[0] >= width * 0.8
+        for n in instagram
+    )
+
+
+def reel_is_liked(nodes: list[Node]) -> bool:
+    button = find_button(nodes, "Like", "Unlike")
+    return button is not None and (button.label == "Unlike" or button.selected)
+
+
+def sponsored_reel(nodes: list[Node]) -> bool:
+    return any(n.package == INSTAGRAM and (
+        n.label.casefold() in AD_LABELS or any(part in n.rid.lower() for part in
+        ("sponsored", "lead_gen", "leadgen", "lead_ads", "ad_cta", "ad_action", "cta_button",
+         "static_header_business_name", "bb_primary_action_container"))) for n in nodes)
 
 
 def node_at(nodes: list[Node], x: int, y: int) -> Node | None:
@@ -186,24 +220,21 @@ def safe_centre(nodes: list[Node], width: int, height: int) -> tuple[int, int] |
     return None
 
 
-def author_handle(nodes: list[Node], width: int, height: int) -> tuple[str, Node] | None:
+def author_handle(nodes: list[Node], width: int = 0, height: int = 0) -> tuple[str, Node] | None:
     """The Reel author's handle and the node to tap to open their profile.
 
-    Only a clickable node in the top strip whose text is exactly a handle shape
-    counts -- a display name ("The Grind BJJ") has spaces and never matches, so
-    this cannot open a caption or a mention by mistake. Returns None rather than
-    guessing, and the caller then skips the follow.
+    Only Instagram's explicit Reel-author resource IDs count. Generic title,
+    name and handle-shaped ad text are never treated as author controls.
     """
     for n in nodes:
-        if not n.clickable or n.center == (0, 0) or n.center[1] > height * 0.35:
-            continue
-        if n.center[0] > width * 0.75:
+        if n.package != INSTAGRAM or n.rid not in (
+            f"{INSTAGRAM}:id/clips_author_username", f"{INSTAGRAM}:id/clips_username"
+        ) or not n.clickable or n.center == (0, 0):
             continue
         text = (n.text or "").strip().lstrip("@")
         if not HANDLE.match(text):
             continue
-        if any(word in n.rid.lower() for word in HANDLE_RIDS) or len(text) >= 5:
-            return text, n
+        return text, n
     return None
 
 
@@ -226,11 +257,13 @@ class Galaxy:
         self._last = 0.0
         self._size: tuple[int, int] | None = None
         self._activity = ""  # the app's launcher component, resolved once
+        self._ui = None  # persistent hierarchy reader; can read a playing video
         self._session: ReelSession | None = None
         self._ambient_task: asyncio.Task | None = None
         self._stop_ambient = asyncio.Event()
         self._wanted = 0  # lookups waiting for the phone right now
         self._ambient_note = ""  # why the last slice did nothing, for the log
+        self._ambient_has_turn = False
 
     # ── adb plumbing ─────────────────────────────────────────────────────────
 
@@ -241,12 +274,20 @@ class Galaxy:
         text = ""
         for attempt in range(max(1, tries)):
             cmd = [self.adb] + (["-s", self.serial] if self.serial else []) + list(args)
-            proc = await asyncio.create_subprocess_exec(*cmd, stdout=asyncio.subprocess.PIPE,
-                                                        stderr=asyncio.subprocess.STDOUT)
+            # pythonw hides the worker, but console children such as adb still
+            # open a terminal unless each launch explicitly disables its console.
+            proc = await asyncio.create_subprocess_exec(
+                *cmd, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.STDOUT,
+                creationflags=subprocess.CREATE_NO_WINDOW if os.name == "nt" else 0,
+            )
             try:
                 out, _ = await asyncio.wait_for(proc.communicate(), timeout)
-            except asyncio.TimeoutError:
-                proc.kill()
+            except (asyncio.TimeoutError, asyncio.CancelledError) as err:
+                with suppress(ProcessLookupError):
+                    proc.kill()
+                await proc.wait()
+                if isinstance(err, asyncio.TimeoutError):
+                    raise PhoneUnavailable("the phone command timed out") from err
                 raise
             text = out.decode("utf-8", errors="replace")
             if not any(err in text.lower() for err in TRANSPORT_ERRORS):
@@ -267,9 +308,31 @@ class Galaxy:
             raise PhoneUnavailable(f"{DEVICE_NAME} did not accept: {command}")
         return out
 
+    def _read_live_xml(self) -> str:
+        # The shell dumper waits for idle and fails on playing Reels. The
+        # persistent reader returns the current tree without pausing the video.
+        import uiautomator2 as u2
+
+        if self._ui is None:
+            self._ui = u2.connect(self.serial)
+        self._ui.jsonrpc.setConfigurator(
+            {"waitForIdleTimeout": 0, "waitForSelectorTimeout": 0}, http_timeout=12)
+        return self._ui.jsonrpc.dumpWindowHierarchy(True, 50, http_timeout=12)
+
     async def _dump_xml(self) -> str:
-        await self._shell("uiautomator dump /sdcard/ef-ui.xml >/dev/null 2>&1")
-        return await self._run("exec-out", "cat", "/sdcard/ef-ui.xml")
+        # Read directly: no on-device XML file that can outlive a failed dump.
+        # Shield the read on cancellation and wait for it before releasing the
+        # phone lock, so a background thread cannot overlap the next driver.
+        task = asyncio.create_task(asyncio.to_thread(self._read_live_xml))
+        try:
+            return await asyncio.shield(task)
+        except asyncio.CancelledError:
+            with suppress(Exception):
+                await task
+            raise
+        except Exception as err:
+            self._ui = None
+            raise PhoneUnavailable("the live screen could not be read") from err
 
     async def _screen(self) -> list[Node]:
         """The screen's nodes. Raises rather than returning [] when the phone
@@ -318,11 +381,6 @@ class Galaxy:
         """Idempotent, so it may be retried when the link hiccups."""
         await self._shell("input keyevent KEYCODE_HOME")
 
-    async def _refresh(self) -> None:
-        width, height = await self._geometry()
-        await self._input(f"input swipe {width // 2} {int(0.29 * height)} "
-                          f"{width // 2} {int(0.80 * height)} 350")  # pull to refresh
-
     async def available(self) -> bool:
         try:
             if (await self._run("get-state", timeout=8)).strip() != "device":
@@ -333,7 +391,7 @@ class Galaxy:
                 return False
             await self._shell("input keyevent KEYCODE_WAKEUP")
             return True
-        except (OSError, asyncio.TimeoutError):
+        except (PhoneUnavailable, OSError, asyncio.TimeoutError):
             return False
 
     # ── one driver at a time ─────────────────────────────────────────────────
@@ -366,12 +424,12 @@ class Galaxy:
         except (FileNotFoundError, OSError):
             pass
 
-    async def _until_profile_shown(self) -> list[Node]:
-        """The screen once the app shows the profile (or after LOAD_S seconds)."""
+    async def _until_profile_shown(self, handle: str) -> list[Node]:
+        """Wait for this account's header; old screens are not lookup results."""
         nodes: list[Node] = []
         for _ in range(LOAD_S):
             nodes = await self._screen()
-            if any(n.label in PROFILE_SHOWN for n in nodes) or user_not_found(nodes):
+            if instagram_profile_shown(nodes, handle) or user_not_found(nodes):
                 return nodes
             await asyncio.sleep(1)
         return nodes
@@ -453,8 +511,10 @@ class Galaxy:
     # ── Instagram ────────────────────────────────────────────────────────────
 
     async def instagram(self, handle: str, return_to: str | None = None) -> AppLookup:
+        if not re.fullmatch(r"[A-Za-z0-9._]{1,30}", handle):
+            return AppLookup(blocked="invalid Instagram handle")
         leave = return_to or ("reels" if self.ambient_running else "home")
-        self._wanted += 1  # an ambient slice yields the phone at its next gesture
+        self._wanted += 1  # an ambient slice yields after at most one Reel
         try:
             async with self._lock:
                 if not await self._hold_phone():
@@ -464,7 +524,12 @@ class Galaxy:
                     if why:
                         return AppLookup(blocked=why)
                     try:
-                        return await self._instagram(handle)
+                        log.info("%s Instagram: opening @%s", DEVICE_NAME, handle)
+                        found = await self._instagram(handle)
+                        log.info("%s Instagram @%s: %s", DEVICE_NAME, handle,
+                                 found.blocked or ("profile missing" if found.missing else
+                                 f"profile verified; {len(found.emails)} address(es)"))
+                        return found
                     except PhoneUnavailable as err:
                         log.info("%s: %s", DEVICE_NAME, err)
                         return AppLookup(blocked="the phone stopped answering")
@@ -477,32 +542,47 @@ class Galaxy:
 
     async def _instagram(self, handle: str) -> AppLookup:
         result = AppLookup()
+        missing = False
         for visit in range(2):
-            await self._shell(f"am start -a android.intent.action.VIEW -d https://www.instagram.com/{handle}/ -p {INSTAGRAM}")
-            if not user_not_found(await self._until_profile_shown()):
+            stop = await self._stopped("instagram")
+            if stop:
+                result.blocked = stop
+                return result
+            await self._input(f"am start -a android.intent.action.VIEW -d https://www.instagram.com/{handle}/ -p {INSTAGRAM}")
+            nodes = await self._until_profile_shown(handle)
+            stop = await self._stopped("instagram")
+            if stop:
+                result.blocked = stop
+                return result
+            missing = user_not_found(nodes)
+            if not missing and instagram_profile_shown(nodes, handle):
                 break
-            log.info("Instagram says %s isn't there (try %d of 2)", handle, visit + 1)
+            log.info("Instagram @%s: %s (try %d of 2)", handle,
+                     "user not found" if missing else "requested profile did not open", visit + 1)
             await asyncio.sleep(2)
         else:
-            result.missing = True
+            result.missing = missing
+            result.blocked = None if missing else "requested Instagram profile did not open"
             return result
         contact = None
         for attempt in range(2):
             if attempt:
-                await self._until_profile_shown()  # after the refresh
+                await self._until_profile_shown(handle)  # allow delayed profile controls to load
             await asyncio.sleep(SETTLE_S)
             stop = await self._stopped("instagram")
             if stop:
                 result.blocked = stop
                 return result
             nodes = await self._screen()
+            if not instagram_profile_shown(nodes, handle):
+                return AppLookup(blocked="Instagram left the requested profile before contact lookup")
+            nodes = [n for n in nodes if n.package == INSTAGRAM]
             result.context = " ".join(n.label for n in nodes if n.label)[:2000]
             for email in emails_on_screen(nodes):
                 result.emails.setdefault(email, "page")
             contact = find_button(nodes, "Contact", "Email")
             if contact or attempt:
                 break
-            await self._refresh()
         if contact:
             emails, result.phones = await self._open_contact(contact)
             for email in emails:
@@ -514,7 +594,21 @@ class Galaxy:
         The Instagram app lists them on its Contact sheet ("Call ...", "Email ...")."""
         await self._tap(button)
         await asyncio.sleep(1.5)
-        sheet = await self._screen()
+        for attempt in range(4):
+            sheet = await self._screen()
+            if any(n.package in EMAIL_APPS or (n.package == INSTAGRAM and
+                   ("contact_option" in n.rid or n.label.lower() in {"call", "send email", "directions"}))
+                   for n in sheet):
+                break
+            if attempt < 3:
+                await asyncio.sleep(0.5)
+        else:
+            raise PhoneUnavailable("Instagram Contact did not open its sheet or email app")
+        if any(n.package in EMAIL_APPS for n in sheet):
+            found = emails_on_screen([n for n in sheet if n.package in EMAIL_APPS])
+            await self._discard_draft(sheet)
+            return found, []
+        sheet = [n for n in sheet if n.package == INSTAGRAM]
         found = emails_on_screen(sheet)
         phones = [n.label for n in sheet if n.rid.endswith("contact_option_sub_text") and PHONE.match(n.label)]
         if found:
@@ -594,9 +688,7 @@ class Galaxy:
             about = find_button(nodes, "About", "See About info", "Contact info") if step == 0 else None
             if about:
                 await self._tap(about)
-            elif step == 0:
-                await self._refresh()
-            else:
+            elif step > 0:
                 break
         return result
 
@@ -641,14 +733,21 @@ class Galaxy:
 
     async def _ensure_reels(self) -> bool:
         """Get to a Reel, tapping only verified labels; False says why not."""
-        if reel_on_screen(await self._screen()):
-            return True
         stop = await self._stopped("instagram")
         if stop:
             self._ambient_note = f"stopped on a {stop.rsplit('.', 1)[-1]} screen"
             return False
-        await self._shell(f"am start -n {await self._launcher_component()}")
-        await asyncio.sleep(4.0)
+        activity = await self._foreground()
+        if activity.startswith(INSTAGRAM + "/") and AD_ACTIVITY.search(activity):
+            log.warning("%s ambient: leaving ad/lead form without interacting with it", DEVICE_NAME)
+            await self._shell(f"am start --activity-clear-top -n {await self._launcher_component()}")
+            await asyncio.sleep(2.0)
+            if AD_ACTIVITY.search(await self._foreground()):
+                self._ambient_note = "could not leave the ad screen; no controls touched"
+                return False
+        if not (await self._foreground()).startswith(INSTAGRAM + "/"):
+            await self._shell(f"am start -n {await self._launcher_component()}")
+            await asyncio.sleep(4.0)
         stop = await self._stopped("instagram")
         if stop:
             self._ambient_note = f"stopped on a {stop.rsplit('.', 1)[-1]} screen"
@@ -658,7 +757,7 @@ class Galaxy:
             return True
         tab = find_button(nodes, "Reels", "Clips")
         if tab is None:
-            self._ambient_note = "no Reels tab on screen"
+            self._ambient_note = "no Reels tab on screen; " + self._describe_screen(nodes)
             return False
         await self._tap(tab)
         await asyncio.sleep(3.5)
@@ -679,11 +778,19 @@ class Galaxy:
         if stop:
             self._ambient_note = f"stopped on a {stop.rsplit('.', 1)[-1]} screen"
             return False
-        if not await self._wait(session.dwell()):
+        dwell = session.dwell()
+        if self._wanted and self._ambient_has_turn:
+            dwell = min(dwell, 5.0)  # one bounded Reel between queued lookups
+        if not await self._wait(dwell):
             return False  # a lookup wants the phone: stop before acting
         action = session.action()
         if action != "none" and await self._act(action, session):
             session.record(action)
+        # Menus, ad forms and browser activities must never receive the next
+        # swipe (or a tap interpreted from it) using the old Reel's coordinates.
+        if AD_ACTIVITY.search(await self._foreground()) or not reel_on_screen(await self._screen()):
+            self._ambient_note = "left Reels after an action; recovering before scrolling"
+            return False
         session.watched()
         width, height = await self._geometry()
         await self._swipe(session.scroll(width, height))
@@ -703,11 +810,11 @@ class Galaxy:
         """
         left = seconds
         while left > 0:
-            if self._wanted or self._stop_ambient.is_set():
+            if (self._wanted and not self._ambient_has_turn) or self._stop_ambient.is_set():
                 return False
             await asyncio.sleep(min(step, left))
             left -= step
-        return not (self._wanted or self._stop_ambient.is_set())
+        return not ((self._wanted and not self._ambient_has_turn) or self._stop_ambient.is_set())
 
     def _describe_screen(self, nodes: list[Node]) -> str:
         """What was on screen, for when the Reels labels don't match: without
@@ -722,6 +829,15 @@ class Galaxy:
         likes, follows and interest marks is bounded no matter what the random
         draw asks for.
         """
+        if not getattr(self.ambient, action, False):
+            return False
+        if await self._stopped("instagram") or AD_ACTIVITY.search(await self._foreground()):
+            return False
+        nodes = await self._screen()
+        if not reel_on_screen(nodes) or sponsored_reel(nodes):
+            if sponsored_reel(nodes):
+                log.info("%s ambient: sponsored Reel; skipping engagement", DEVICE_NAME)
+            return False
         if action in self.CAPS:
             name, per_hour, per_day = self.CAPS[action]
             if not self.cache.reserve(hour_bucket(name), int(getattr(self.ambient, per_hour))):
@@ -730,9 +846,6 @@ class Galaxy:
             if not self.cache.reserve(name, int(getattr(self.ambient, per_day))):
                 log.info("%s ambient: daily %s cap reached; not acting", DEVICE_NAME, action)
                 return False
-        nodes = await self._screen()  # a fresh screen, never a remembered one
-        if not reel_on_screen(nodes):
-            return False
         if action == "like":
             return await self._like(nodes, session)
         if action == "follow":
@@ -744,45 +857,45 @@ class Galaxy:
         return False
 
     async def _like(self, nodes: list[Node], session: ReelSession) -> bool:
-        """A double tap on the picture, as a person likes a Reel -- taken on a
-        point no button covers, so it cannot land on a poll, sticker or avatar."""
-        if find_button(nodes, "Unlike") is not None:
+        """Tap Like once and verify the selected state (IG 449 keeps its label)."""
+        if reel_is_liked(nodes):
             return False  # already liked
-        width, height = await self._geometry()
-        point = safe_centre(nodes, width, height)
-        if point is not None:
-            await self._double_tap(point[0], point[1], session.double_tap_gap())
-        else:
-            button = find_button(nodes, "Like")
-            if button is None:
-                return False
-            await self._tap(button)
+        button = find_button(nodes, "Like")
+        if button is None:
+            return False
+        await self._tap(button)
         await asyncio.sleep(1.2)
-        if find_button(await self._screen(), "Unlike") is None:
+        if not reel_is_liked(await self._screen()):
             log.info("%s ambient: the like did not register", DEVICE_NAME)
             return False
+        log.info("%s ambient: liked Reel (selected Like control confirmed)", DEVICE_NAME)
         return True
 
     async def _follow(self, nodes: list[Node]) -> bool:
-        """Open the author's profile and follow it. Skips rather than guesses
-        when the handle cannot be identified with certainty."""
-        width, height = await self._geometry()
-        found = author_handle(nodes, width, height)
+        """Follow only through the Reel's explicit inline Follow control."""
+        if sponsored_reel(nodes) or not reel_on_screen(nodes):
+            return False
+        found = author_handle(nodes)
         if found is None:
             return False
-        handle, node = found
+        handle, _ = found
         if handle in self._followed():
             return False
-        await self._tap(node)
-        await asyncio.sleep(2.5)
-        follow = find_button(await self._screen(), "Follow")
+        follow = next((n for n in nodes if n.package == INSTAGRAM
+                       and n.rid == f"{INSTAGRAM}:id/inline_follow_button" and n.clickable
+                       and n.label in ("Follow", "Folgen")), None)
         if follow is None:
-            await self._key("KEYCODE_BACK")  # already following, or not a profile
             return False
         await self._tap(follow)
         await asyncio.sleep(1.5)
-        await self._key("KEYCODE_BACK")
-        await asyncio.sleep(1.0)
+        if AD_ACTIVITY.search(await self._foreground()):
+            log.warning("%s ambient: unexpected ad screen after Follow; stopping this action", DEVICE_NAME)
+            return False
+        after = await self._screen()
+        if not any(n.rid == follow.rid and (n.selected or n.label in
+                   ("Following", "Requested", "Abonniert", "Angefragt")) for n in after):
+            log.info("%s ambient: Follow tapped for %s; result unconfirmed", DEVICE_NAME, handle)
+            return False
         self._remember_follow(handle)
         log.info("%s ambient: followed %s", DEVICE_NAME, handle)
         return True
@@ -792,33 +905,55 @@ class Galaxy:
 
         That menu also holds Report, Hide and Unfollow, so only an exact label
         match is ever tapped; anything unexpected gets a Back."""
-        menu = find_button(nodes, "More options")
-        if menu is None:
-            return False
-        await self._tap(menu)
-        await asyncio.sleep(1.3)
-        items = await self._screen()
         want = MENU_INTEREST[0] if session.picks_interested() else MENU_INTEREST[1]
-        target = find_button(items, want)
+        target = find_button(nodes, want)
+        if target is None:
+            menu = find_button(nodes, "More options", "More")
+            if menu is None:
+                log.info("%s ambient: no Reel overflow control", DEVICE_NAME)
+                return False
+            await self._tap(menu)
+            await asyncio.sleep(1.3)
+            items = await self._screen()
+            target = find_button(items, want)
         if target is None:
             await self._key("KEYCODE_BACK")
+            log.info("%s ambient: %r is not offered for this Reel", DEVICE_NAME, want)
             return False
         await self._tap(target)
-        await asyncio.sleep(1.4)
-        await self._key("KEYCODE_BACK")
-        log.info("%s ambient: marked %r", DEVICE_NAME, want)
-        return True
+        await asyncio.sleep(0.3)
+        # Instagram dismisses this sheet itself. An unconditional Back here
+        # used to exit Reels, interrupting the very next scroll.
+        confirmed = False
+        for _ in range(3):
+            after = await self._screen()
+            confirmed = any(re.search(r"thanks for (?:your |the )?feedback|we.ll (?:show|suggest|recommend) (?:you )?(?:more|fewer)|"
+                                      r"you.ll see (?:more|fewer)|(?:marked|mark) as (?:not )?interested",
+                                      n.label, re.I) for n in after)
+            if confirmed:
+                break
+            await asyncio.sleep(0.6)  # the acknowledgement may arrive after the sheet closes
+        if confirmed:
+            log.info("%s ambient: marked %r (feedback confirmed)", DEVICE_NAME, want)
+        else:
+            log.info("%s ambient: tapped %r; feedback not confirmed", DEVICE_NAME, want)
+        if not reel_on_screen(after):
+            await self._key("KEYCODE_BACK")
+        return confirmed
 
     async def _pause_reel(self, nodes: list[Node]) -> bool:
-        """Tap to pause the Reel, then tap to carry on: the least risky thing
-        the session can do, and it still reads as attention."""
-        width, height = await self._geometry()
-        point = safe_centre(nodes, width, height)
-        if point is None:
+        """Use a labelled video control only; video-centre taps can open ads."""
+        if sponsored_reel(nodes):
             return False
-        await self._tap_point(*point)
+        pause = find_button(nodes, "Pause video", "Video pausieren")
+        if pause is None:
+            return False
+        await self._tap(pause)
         await self._wait(random.uniform(2.0, 6.0))
-        await self._tap_point(*point)
+        play = find_button(await self._screen(), "Play video", "Video abspielen")
+        if play is None:
+            return False
+        await self._tap(play)
         return True
 
     # ── driving the session ──────────────────────────────────────────────────
@@ -835,14 +970,16 @@ class Galaxy:
             return "quiet hours"
         if not await self.available():
             return "the phone is unavailable"
-        if not self.cache.reserve("ambient-slice", self.ambient.slices_per_day):
+        if self.cache.count("ambient-slice") >= self.ambient.slices_per_day:
             return "the daily session limit is reached"
         return None
 
     async def _ambient_slice(self, session: ReelSession) -> int:
-        """One short burst on the phone, so a lookup waits only a few seconds."""
-        if self._wanted:
-            return 0
+        """Queue fairly with profile lookups instead of starving behind them."""
+        async with self._lock:
+            return await self._ambient_slice_locked(session)
+
+    async def _ambient_slice_locked(self, session: ReelSession) -> int:
         if not await self._hold_phone(wait_s=5):
             return 0
         watched = 0
@@ -853,8 +990,12 @@ class Galaxy:
                 return 0
             if not await self._ensure_reels():
                 return 0
+            if not self.cache.reserve("ambient-slice", self.ambient.slices_per_day):
+                self._ambient_note = "the daily session limit is reached"
+                return 0
+            self._ambient_has_turn = True
             for _ in range(session.slice_length()):
-                if self._wanted or self._stop_ambient.is_set():
+                if (self._wanted and watched) or session.finished or self._stop_ambient.is_set():
                     break
                 if not self.cache.reserve("ambient-gesture", self.ambient.gestures_per_day):
                     self._ambient_note = "the daily gesture limit is reached"
@@ -865,30 +1006,27 @@ class Galaxy:
         except PhoneUnavailable as err:
             self._ambient_note = str(err)
         finally:
+            self._ambient_has_turn = False
             self._release_phone()
         return watched
 
     def _session_break(self) -> float:
-        return random.uniform(300.0, 1200.0)
+        return random.uniform(2.0, 5.0)
 
     async def _ambient_loop(self) -> None:
         engaging = [n for n in ("like", "follow", "interest") if getattr(self.ambient, n)]
         log.info("%s ambient session: watching Reels between lookups (%s)", DEVICE_NAME,
                  "engaging with " + ", ".join(engaging) if engaging else "no engagement")
         said = ""
-        try:
-            while not self._stop_ambient.is_set():
+        while not self._stop_ambient.is_set():
+            try:
                 session = self._session
                 if session is None:
                     session = self._session = ReelSession(self.ambient)
                     log.info("%s ambient: new session, %s", DEVICE_NAME, session.describe())
                 if session.finished:
                     self._session = None
-                    await self._home()
                     await asyncio.sleep(self._session_break())
-                    continue
-                if self._wanted:
-                    await asyncio.sleep(0.5)
                     continue
                 if await self._ambient_slice(session) == 0:
                     if self._ambient_note and self._ambient_note != said:
@@ -898,10 +1036,11 @@ class Galaxy:
                     continue
                 said = ""
                 await asyncio.sleep(session.rest())
-        except asyncio.CancelledError:
-            raise
-        except Exception:  # noqa: BLE001 - a session must never take the worker down
-            log.exception("%s ambient session stopped after an error", DEVICE_NAME)
+            except asyncio.CancelledError:
+                raise
+            except Exception:  # noqa: BLE001 - a transient error must not kill the loop
+                log.exception("%s ambient: error; retrying in 5 seconds", DEVICE_NAME)
+                await asyncio.sleep(5.0)
 
     def start_ambient(self) -> bool:
         """Watch Reels between lookups. False when it is off or already running."""

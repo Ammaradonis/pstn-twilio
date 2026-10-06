@@ -18,6 +18,19 @@ import sys
 import time
 from pathlib import Path
 
+PACKAGE_DIR = Path(__file__).resolve().parent
+
+
+def code_stamp() -> tuple[tuple[str, int], ...]:
+    """Names and modification times of the worker's code and scoring file."""
+    files = [*PACKAGE_DIR.glob("*.py"), PACKAGE_DIR / "scoring-parameters.json"]
+    return tuple(sorted((f.name, f.stat().st_mtime_ns) for f in files if f.exists()))
+
+
+# Capture before slow imports/setup. Files edited during startup must not be
+# mistaken for the version this process imported.
+IMPORTED_CODE = code_stamp()
+
 import httpx
 
 from .cache import Cache
@@ -35,7 +48,6 @@ log = logging.getLogger("email_finder.worker")
 IDLE_POLL_SECONDS = 20
 HEARTBEAT_SECONDS = 45
 CACHE_MAINTENANCE_SECONDS = 3600
-PACKAGE_DIR = Path(__file__).resolve().parent
 # A restart waits until the code has been unchanged this long (an edit or
 # git pull in progress shouldn't restart the worker halfway through).
 CODE_SETTLE_SECONDS = 30
@@ -121,12 +133,6 @@ def to_result(row_id: str, f: Finding, lease_token: str) -> dict:
     }
 
 
-def code_stamp() -> tuple[tuple[str, int], ...]:
-    """Names and modification times of the worker's code and scoring file."""
-    files = [*PACKAGE_DIR.glob("*.py"), PACKAGE_DIR / "scoring-parameters.json"]
-    return tuple(sorted((f.name, f.stat().st_mtime_ns) for f in files if f.exists()))
-
-
 def new_code_ready(started: tuple[tuple[str, int], ...], rejected: set) -> bool:
     """True when the code on disk changed, has settled, and imports cleanly.
 
@@ -141,6 +147,7 @@ def new_code_ready(started: tuple[tuple[str, int], ...], rejected: set) -> bool:
     check = subprocess.run(
         [sys.executable, "-c", "import email_finder.worker"],
         cwd=PACKAGE_DIR.parent, capture_output=True, text=True, timeout=300,
+        creationflags=subprocess.CREATE_NO_WINDOW if os.name == "nt" else 0,
     )
     if check.returncode != 0:
         log.error("Worker code changed but doesn't import; keeping the running version. %s",
@@ -267,9 +274,11 @@ async def run() -> bool:
             finding = await asyncio.wait_for(engine.find(row), timeout=settings.row_timeout)
         except asyncio.TimeoutError:
             finding = Finding(notes=["Research time limit reached; will resume using cached pages"], retry_after=1800, research_complete=False)
-        log.info("Research finished: %s (%s)%s", finding.status, finding.email_type or "unresolved",
-                 f" — {finding.method}" if finding.method else "")
         result = to_result(item["id"], finding, item["leaseToken"])
+        log.info("Research finished: %s (%s) row=%s%s%s", result["status"],
+                 finding.email_type or "unresolved", item["id"],
+                 f" — {finding.method}" if finding.method else "",
+                 f"; retry in {finding.retry_after}s" if finding.retry_after else "")
         cache.set("outbox-v2", item["id"], {"kind": "research", "result": result}, 365 * 86400)
         await flush_outbox()
 
@@ -297,7 +306,7 @@ async def run() -> bool:
                  f"{settings.ambient.quiet_hours[0]:02d}:00-{settings.ambient.quiet_hours[1]:02d}:00"
                  if settings.ambient.quiet_hours else "none", settings.ambient.cap_hours)
     backoff = IDLE_POLL_SECONDS
-    started_code, rejected_code = code_stamp(), set()
+    started_code, rejected_code = IMPORTED_CODE, set()
     restart = False
     maintained_at = time.monotonic()
     log.info("Email finder worker started: %d concurrent rows; search providers: %s",
@@ -388,7 +397,7 @@ def main() -> None:
         if os.name == "nt":
             subprocess.Popen(
                 args, cwd=PACKAGE_DIR.parent, close_fds=True,
-                creationflags=subprocess.DETACHED_PROCESS | subprocess.CREATE_NEW_PROCESS_GROUP,
+                creationflags=subprocess.CREATE_NO_WINDOW | subprocess.CREATE_NEW_PROCESS_GROUP,
             )
         else:
             os.chdir(PACKAGE_DIR.parent)

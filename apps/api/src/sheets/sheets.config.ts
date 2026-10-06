@@ -59,6 +59,11 @@ export class SheetsConfig {
     return this.get('US_CONQUEST_SHEET_ID') ?? '1hEen_n9M27n5bjyXpsnaHXpvG7S5eHHmPl6HG2LhRnM';
   }
 
+  /** "The Official UK" workbook: its follow-ups use the UK demo line 02045726501. */
+  get ukSheetId(): string {
+    return this.get('UK_OFFICIAL_SHEET_ID') ?? '1RmfJeS9wj82LwvpNa5VdKRNwyQChzVyGwzLx31jP3ts';
+  }
+
   /** API settings that still need to be set; empty when ready. */
   missing(): string[] {
     const required: [string, string | undefined][] = [

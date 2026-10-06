@@ -4,13 +4,15 @@ import { Injectable } from '@nestjs/common';
 
 import { PrismaService } from '../prisma/prisma.service';
 
-import { loadTemplate, renderTemplate } from './gmail.service';
-import { templateVars } from './sheets-follow-up.service';
+import { FollowUpRenderer } from './follow-up-renderer.service';
 
 /** Durable hand-off to the local browser. Only scheduled follow-ups can be claimed. */
 @Injectable()
 export class ContactFormService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly renderer: FollowUpRenderer,
+  ) {}
 
   async claim() {
     const now = new Date();
@@ -35,7 +37,7 @@ export class ContactFormService {
       },
       orderBy: { emailDueAt: 'asc' },
       take: 5,
-      include: { connection: { select: { googleEmail: true } } },
+      include: { connection: { select: { googleEmail: true, userId: true } } },
     });
     for (const log of due) {
       if (!log.emailTemplate || !log.connection.googleEmail) {
@@ -48,7 +50,16 @@ export class ContactFormService {
         });
         continue;
       }
-      const message = renderTemplate(loadTemplate(log.emailTemplate), templateVars(log));
+      // A contact form only gets the first email of the sequence.
+      const rendered = await this.renderer.render(log, log.connection.userId, 1);
+      if (!rendered) {
+        await this.prisma.sheetsPushLog.updateMany({
+          where: { id: log.id, emailStatus: 'PENDING' },
+          data: { emailStatus: 'MANUAL', emailError: 'The follow-up needs data this lead lacks.' },
+        });
+        continue;
+      }
+      const message = { subject: rendered.subject, body: rendered.body };
       const leaseToken = randomUUID();
       const result = await this.prisma.sheetsPushLog.updateMany({
         where: { id: log.id, emailStatus: 'PENDING' },

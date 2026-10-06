@@ -1,6 +1,7 @@
 import { Module } from '@nestjs/common';
 
 import { PrismaModule } from '../prisma/prisma.module';
+import { VoiceAppModule } from '../voice-app/voice-app.module';
 
 import { MessagingWebhookController } from './messaging.controller';
 import { MessagingWebhookService } from './messaging.service';
@@ -9,7 +10,7 @@ import { VoiceWebhookController } from './voice.controller';
 import { VoiceWebhookService } from './voice.service';
 
 @Module({
-  imports: [PrismaModule],
+  imports: [PrismaModule, VoiceAppModule],
   controllers: [MessagingWebhookController, VoiceWebhookController],
   providers: [TwilioSignatureGuard, MessagingWebhookService, VoiceWebhookService],
   exports: [TwilioSignatureGuard],

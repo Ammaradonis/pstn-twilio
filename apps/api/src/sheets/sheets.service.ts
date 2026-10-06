@@ -15,6 +15,7 @@
 import { randomUUID } from 'crypto';
 
 import { Injectable, Logger, NotFoundException } from '@nestjs/common';
+import type { Prisma } from '@prisma/client';
 import {
   pickFollowUpTemplate,
   US_STATES,
@@ -37,6 +38,7 @@ import {
 } from '../common/secret-box';
 import { PrismaService } from '../prisma/prisma.service';
 
+import { rowRecord, type RowData } from './follow-up-vars';
 import {
   cityKey,
   parseUsAddress,
@@ -55,12 +57,15 @@ import {
   stripCountryCode,
 } from './sheets.util';
 
+// Optional: lets the follow-up sweep see replies and stop a sequence.
+export const GMAIL_READ_SCOPE = 'https://www.googleapis.com/auth/gmail.readonly';
 const SCOPES = [
   'openid',
   'email',
   'https://www.googleapis.com/auth/spreadsheets',
   'https://www.googleapis.com/auth/drive.metadata.readonly',
   'https://www.googleapis.com/auth/gmail.send',
+  GMAIL_READ_SCOPE,
 ];
 
 const STATUS_HEADER = 'Status';
@@ -140,7 +145,9 @@ export class SheetsService {
       );
     }
     const granted = String(tokens.scope ?? '');
-    const missing = SCOPES.filter((s) => s.startsWith('https://') && !granted.includes(s));
+    const missing = SCOPES.filter(
+      (s) => s.startsWith('https://') && s !== GMAIL_READ_SCOPE && !granted.includes(s),
+    );
     if (missing.length > 0) {
       throw new SheetsUnavailableError(
         'Not every permission was granted. Connect again and tick all the boxes (Sheets, Drive file list, Gmail send).',
@@ -294,16 +301,23 @@ export class SheetsService {
     const dueAt = ['PENDING', 'MANUAL', 'WAITING_RESEARCH'].includes(email.status)
       ? new Date(Math.max(callEndedAt.getTime() + FOLLOW_UP_DELAY_MS, Date.now()))
       : null;
+    const bookedDemo = dto.orderedTags.includes('Booked a demo');
 
     // An overwrite replaces the earlier outcome, so its unsent email goes too.
+    // A sequence that has already started keeps going (the new push doesn't
+    // email them again), unless they booked a demo: then it stops.
     await this.prisma.$transaction([
       this.prisma.sheetsPushLog.updateMany({
         where: {
           connectionId: conn.id,
           destinationE164: dto.destinationE164,
           emailStatus: { in: ['PENDING', 'MANUAL', 'WAITING_RESEARCH', 'FORM_PREPARING'] },
+          ...(bookedDemo ? {} : { emailSentAt: null }),
         },
-        data: { emailStatus: 'CANCELLED', emailError: 'Replaced by a newer push.' },
+        data: {
+          emailStatus: 'CANCELLED',
+          emailError: bookedDemo ? 'Booked a demo; sequence stopped.' : 'Replaced by a newer push.',
+        },
       }),
       this.prisma.sheetsPushLog.create({
         data: {
@@ -323,6 +337,7 @@ export class SheetsService {
           emailTemplate: email.template,
           emailDueAt: dueAt,
           contactFormUrl: !email.to ? contactFormUrl : null,
+          rowData: rowRecord(headers, row) as Prisma.InputJsonValue,
           callEndedAt,
         },
       }),
@@ -369,21 +384,25 @@ export class SheetsService {
           : 'Follow-up is waiting for email research on this school.',
       };
     }
+    // A sequence still running (PENDING with an email already sent) counts too.
     const recent = await this.prisma.sheetsPushLog.findFirst({
       where: {
         connectionId,
         emailTo: { equals: to, mode: 'insensitive' },
-        emailStatus: { in: ['SENT', 'SENDING'] },
+        emailStatus: { in: ['SENT', 'SENDING', 'PENDING'] },
         emailSentAt: { gte: new Date(Date.now() - RECENT_EMAIL_WINDOW_MS) },
       },
-      select: { emailSentAt: true },
+      select: { emailSentAt: true, emailStatus: true, sequenceStep: true },
     });
     if (recent) {
       return {
         status: 'NONE',
         to,
         template: decision.template,
-        note: `Already emailed ${to} on ${recent.emailSentAt?.toISOString().slice(0, 10)}; not sending another.`,
+        note:
+          recent.emailStatus === 'PENDING'
+            ? `A follow-up sequence to ${to} is already running (email ${recent.sequenceStep} of 6 is next); not starting another.`
+            : `Already emailed ${to} on ${recent.emailSentAt?.toISOString().slice(0, 10)}; not sending another.`,
       };
     }
     return { status: 'PENDING', to, template: decision.template, note: null };
@@ -405,6 +424,7 @@ export class SheetsService {
       emailTo: r.emailTo,
       emailTemplate: r.emailTemplate,
       emailStatus: r.emailStatus as SheetsEmailStatus,
+      sequenceStep: r.sequenceStep,
       emailDueAt: r.emailDueAt?.toISOString() ?? null,
       emailSentAt: r.emailSentAt?.toISOString() ?? null,
       emailError: r.emailError,
@@ -431,6 +451,24 @@ export class SheetsService {
       data: { emailStatus: 'SENT', emailSentAt: new Date(), emailError: null },
     });
     if (res.count === 0) throw new NotFoundException('No contact-form follow-up with that id.');
+  }
+
+  /** The lead's row (by normalized header) for a dialed number, or null if it's no longer in the tab. */
+  async readLeadRow(
+    userId: string,
+    spreadsheetId: string,
+    sheetTitle: string,
+    destinationE164: string,
+  ): Promise<RowData | null> {
+    const target = nationalDigits(destinationE164);
+    if (!target) return null;
+    const token = await this.getAccessToken(userId);
+    const rows = await this.fetchRows(token, spreadsheetId, sheetTitle);
+    const headers = (rows[0] ?? []).map(normalizeHeader);
+    const cols = findColumns(headers);
+    if (cols.phone === -1) return null;
+    const row = rows.slice(1).find((r) => cellHasPhone(text(r?.[cols.phone]), target));
+    return row ? rowRecord(headers, row) : null;
   }
 
   async followUpLog(userId: string, id: string) {
@@ -581,6 +619,14 @@ export class SheetsService {
   }
 
   // ── OAuth token management ────────────────────────────────────────────────
+
+  async hasScope(userId: string, scope: string): Promise<boolean> {
+    const conn = await this.prisma.googleSheetsConnection.findUnique({
+      where: { userId },
+      select: { scopes: true },
+    });
+    return Boolean(conn?.scopes.split(/\s+/).includes(scope));
+  }
 
   /** Also used by GmailService: one grant covers Sheets and Gmail. */
   async getAccessToken(userId: string): Promise<string> {

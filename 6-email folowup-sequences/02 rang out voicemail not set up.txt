@@ -1,0 +1,99 @@
+STATUS: rang out but voicemail box hasnt been set up yet
+
+==============================
+EMAIL 1
+Subject: your voicemail box isnt set up yet
+
+Hi,
+
+I called {{school_name}} on {{called_number}} at {{call_time}}. It rang out, then the carrier said the voicemail box hasnt been set up yet. I called from {{my_number}} so you can find it in your log.
+
+{{call_note}}
+
+Tiny thing, but that message sounds like a number nobody owns. A parent hearing it could think the school closed.
+
+I built a phone agent just for martial arts schools. Call the demo at (667) 220-6726, play a parent, and hear what callers could get instead.
+
+Reply with how it felt. Then one thing. when did anyone last call your own number from a strangers phone?
+
+Ammar
+
+==============================
+EMAIL 2
+Subject: a black belt school with a white belt phone
+
+Hey,
+
+Still thinking about that "not set up yet" recording.
+
+You've got {{review_count}} reviews and a {{rating}} on google. Somebody reads those, gets fired up, calls, and hears a robot say the mailbox dosnt exist. Thats a white belt first impression for a black belt school.
+
+Recording a greeting fixes the message. It dosnt fix nobody picking up.
+
+Call (667) 220-6726 and hear the other option. Ask it what a trial class looks like.
+
+Reply with your take on the call and one thing. who actually checks messages at the school, you or someone else?
+
+Ammar
+
+==============================
+EMAIL 3
+Subject: parents in {{city}} call while you teach
+
+Hi,
+
+Most calls to a {{category}} land when the owner is teaching. After work, before dinner. The exact hours you cant touch the phone.
+
+Your line rang out with no mailbox. So in that window every caller in {{city}} gets nothing. Not even a way to leave a name.
+
+The demo at (667) 220-6726 answers like a good front desk would. Call it at a wierd hour if you want, it dosnt sleep.
+
+Reply with what you thought. Then one thing. what are your busiest class hours on a weekday?
+
+Ammar
+
+==============================
+EMAIL 4
+Subject: the 2 minute fix vs the real one
+
+Hey,
+
+The 2 minute fix is recording a greeting. You should prolly do it today either way.
+
+The real fix is nobody needing to leave a message at all. In my experience most parents wont leave one anyway. They hang up and try the next place.
+
+Thats what I built. It picks up, answers the questions, and books the trial while your on the mat.
+
+Test it at (667) 220-6726 and be picky. Reply with what bugged you about the call, and one thing about how you follow up with people who call but dont book.
+
+Ammar
+
+==============================
+EMAIL 5
+Subject: saw your site, had one idea
+
+Hi,
+
+I was on {{website}} again. Your school looks like the kind of place parents in {{state}} would drive accross town for.
+
+What I built is called MatBoss. matboss.online. AI phone agent for martial arts schools plus some automations so leads dont slip through. Every call to your number gets answered and the trial gets booked.
+
+Demo is (667) 220-6726 if you havent tried it yet.
+
+Reply with how the call went and one thing. does your website push people to call, fill out a form, or both?
+
+Ammar
+
+==============================
+EMAIL 6
+Subject: last note before I leave you be
+
+Hey,
+
+This is my last email. If you already set up the voicemail, good move. It still means a parent driving past your spot on {{street}} at 6pm gets a beep instead of a person.
+
+Everything is on matboss.online and the demo stays at (667) 220-6726.
+
+If you give it one call, reply with how it went and one thing you'd change about how new students find you. Even a "not for me" helps. Honestly I learn more from no's then yes's.
+
+Ammar

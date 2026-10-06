@@ -77,13 +77,11 @@ export class TwilioService implements OnModuleInit {
     return v;
   }
 
-  voiceIdentity(userId: string, numberId?: string | null): string {
-    const userPart = userId.replace(/[^a-zA-Z0-9]/g, '');
-    if (numberId) {
-      const numPart = numberId.replace(/[^a-zA-Z0-9]/g, '');
-      return `user_${userPart}_number_${numPart}`;
-    }
-    return `user_${userPart}`;
+  // One browser identity per user, shared by all of their numbers: the web app
+  // registers a single Device wherever it is open, and inbound calls to any of
+  // the user's numbers ring it.
+  voiceIdentity(userId: string): string {
+    return `user_${userId.replace(/[^a-zA-Z0-9]/g, '')}`;
   }
 
   get client(): Twilio {

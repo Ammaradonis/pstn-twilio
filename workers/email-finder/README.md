@@ -87,18 +87,31 @@ depend on the worker.
   (unless `EMAIL_FINDER_AMBIENT_STOP_LOOKUPS=off`), because a challenge is the
   loudest signal the account gets. A find made there says "on the Galaxy A20e"
   in its method and in the Dial page notification.
+- Phone profile lookups wait for a second Contact-button read without pulling
+  down to refresh. Reels gestures always swipe upward to advance; an already
+  open Reels view is kept in place instead of relaunching Instagram.
+  The UiAutomator2 reader reads the current screen during video playback,
+  without waiting for idle or reusing a previous screen dump.
 - Between lookups the phone watches Reels, so the account looks like what it is
   logged in as rather than like something that only ever opens profiles. The
   session scrolls with randomised gestures, watches each reel for a drawn
   log-normal time, and now and then — at rates drawn from a per-session mood,
-  and bounded by per-hour and per-day caps — likes a reel with a double tap,
+  and bounded by per-hour and per-day caps — likes a reel with its Like button,
   follows the author, marks "Interested"/"Not interested", or taps to pause.
-  A lookup preempts it at the next gesture, so the profile visit reads as part
-  of the same session; afterwards the phone goes back to the reels instead of
-  Home. It never comments, messages, shares, saves or unfollows, and in the
+  Reels and lookups share a fair queue: a pending lookup gets the phone after
+  one Reel, and a busy lookup queue cannot starve scrolling. Session breaks
+  last only a few seconds and keep Instagram open. It never comments, messages,
+  shares, saves or unfollows, and in the
   overflow menu — which also holds Report and Unfollow — it taps only an exact
   label it knows and presses Back otherwise. Every action that changes something
   is taken only after a freshly dumped screen confirms the button is there.
+  Likes are verified through the selected button state, and Interested through
+  Instagram's feedback message. Both the More menu and inline Interested
+  buttons are supported; a dismissed menu does not trigger an extra Back.
+  Sponsored Reels receive no engagement clicks. Following requires the exact
+  inline Follow control and a verified result; author-name guesses and generic
+  picture taps are not used. If Instagram opens a lead form or ad browser, the
+  worker returns to the main activity without touching any form fields.
 - Search every configured source group: general directories, country/style
   federations, association school registers, public tournament/team pages and
   owner references. Domains in the root `email-hunt.txt` are loaded at runtime.
@@ -239,6 +252,13 @@ and send no live messages.
 
 Logs: `.cache/worker.log`. End only the `email_finder.worker` Python process to
 stop; another instance is prevented with a process lock.
+
+Reset today's local lookup usage from PowerShell with `./reset-lookup-limits.ps1`.
+It resets the UTC-day Google, CSE, Facebook, Instagram, phone and search-API
+counters in one transaction, and records their previous values in
+`.cache/lookup-reset-*.json`. It also works while the worker is running. Saved
+sessions, cached results, security pauses, engagement counters and configured
+daily ceilings stay intact. Provider-side quotas and credits are unaffected.
 
 ## Large-sample calibration
 

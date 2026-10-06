@@ -1,0 +1,99 @@
+STATUS: hung up on me
+
+==============================
+EMAIL 1
+Subject: I think we got cut off
+
+Hey,
+
+Called {{school_name}} at {{call_time}} on {{called_number}}. Someone picked up and hung up before I got a word out. I called from {{my_number}}.
+
+{{call_note}}
+
+No hard feelings. Could of been mid class or you figured I was spam. Happens to everyone.
+
+But a parent calling right then gets the same click, and most wont try twice.
+
+I built a phone agent for martial arts schools. It never has a rough moment. Call the demo at (667) 220-6726 and act like a parent.
+
+Reply with how it went, then one thing. who grabs the phone when it rings during class?
+
+Ammar
+
+==============================
+EMAIL 2
+Subject: nobody hangs up on purpose
+
+Hi,
+
+Not writing to call anyone out. Whoever picked up was prolly juggling 3 things. Kids on the mat, a parent at the counter, phone going off.
+
+Thats the exact moment a new family calls. Busy people cut calls short. Parents take it personal.
+
+The demo at (667) 220-6726 is calm every single time. Try being a difficult caller on purpose.
+
+Reply with how it handled you. Then one thing. what does the front of your school look like at 5:30 on a weekday?
+
+Ammar
+
+==============================
+EMAIL 3
+Subject: {{review_count}} people already love it there
+
+Hey,
+
+{{review_count}} reviews and {{rating}} stars. The in person experience at {{school_name}} is clearly solid.
+
+The phone is the one spot a new parent judges you before ever seeing the mats. One rushed hang up can undo alot of good reviews.
+
+Call (667) 220-6726 and ask about a trial for a 7 year old. See if you'd trust it with your families.
+
+Reply with your honest take, then tell me one thing. of your new students, how many called first vs walked in or filled out a form?
+
+Ammar
+
+==============================
+EMAIL 4
+Subject: fair if you thought I was spam
+
+Hi,
+
+If you hung up cause you figured I was selling something, fair. I was.
+
+But I'd rather you judge the thing then me. Its a phone agent built only for {{category}} owners. Give (667) 220-6726 two minutes.
+
+If it sucks tell me it sucks. I mean that.
+
+Reply with what you thought, and one thing about your phone setup. does the school line ring a cell, a desk phone, or both?
+
+Ammar
+
+==============================
+EMAIL 5
+Subject: the name is MatBoss
+
+Hey,
+
+Never introduced this properly. Its MatBoss. matboss.online
+
+AI phone agent for martial arts schools plus automations so no parent gets dropped. It answers, books the trial, and lets you know after.
+
+I looked at {{website}}. A school on {{street}} in {{city}} with those reviews deserves a phone that never clicks off on a parent.
+
+Demo at (667) 220-6726. Reply with how the call went and one thing. how many calls do you think you miss on your busiest day?
+
+Ammar
+
+==============================
+EMAIL 6
+Subject: last one, no hard feelings either way
+
+Hi,
+
+Last email from me. Thanks for reading this far if you did.
+
+matboss.online has the details and the demo is still (667) 220-6726 whenever you want to test it.
+
+If you do, reply with how it went and one thing about how your school handles the phone that I should understand before I talk to anyone else in {{state}}. Owners teach me more then any course.
+
+Ammar

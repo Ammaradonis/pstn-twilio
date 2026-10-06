@@ -1,0 +1,30 @@
+READ ME FIRST
+
+12 sequences, 6 emails each, 72 emails total. One file per call status.
+
+VARIABLES
+Every sequence uses all 12 of these somewhere across its 6 emails. If your sending tool uses different names, find and replace them.
+
+{{school_name}}    school name
+{{website}}        school website URL
+{{rating}}         Google rating (example 4.9)
+{{review_count}}   number of Google reviews
+{{category}}       Google category (example Martial arts school)
+{{street}}         street name
+{{city}}           city
+{{state}}          state
+{{called_number}}  the school number you called
+{{my_number}}      the number you called from, so they can find it in their call log
+{{call_time}}      time of your call (example 6:42pm on Tuesday)
+{{call_note}}      your personal note on the call
+
+NOTES
+{{call_note}} sits on its own line in email 1 of every sequence. Write it as a full first person sentence so it reads naturally. Example: A kid picked up, said hold on, and I waited almost 2 minutes before it cut off.
+
+matboss.online only appears in emails 5 and 6. Emails 1 to 4 never mention the site.
+
+Every email pushes the demo line (667) 220-6726 and asks for a reply with two things in this order. First how the demo call felt. Then one thing about their school that exposes a blind spot.
+
+The typos, missing apostrophes and plain punctuation are on purpose. Dont let anyone clean them up.
+
+No hyphenated words anywhere in the emails. The only hyphen is inside the demo phone number.

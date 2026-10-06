@@ -1,0 +1,101 @@
+STATUS: has an answering service
+
+==============================
+EMAIL 1
+Subject: your answering service picked up
+
+Hey,
+
+Called {{school_name}} at {{call_time}} on {{called_number}} and got your answering service. I called from {{my_number}} if you want to check.
+
+{{call_note}}
+
+Good that a human picks up. But they took a message. So a parent waits for a call back and keeps shopping around in the meantime.
+
+I built a phone agent just for martial arts schools that books the trial on the first call. Try it at (667) 220-6726.
+
+Then reply with how it compared. And one thing. how long after a message does someone at the school actually call back?
+
+Ammar
+
+==============================
+EMAIL 2
+Subject: does your service know what a gi is
+
+Hi,
+
+Answering services are great for plumbers. They read a script and pass along a message.
+
+A parent asking can my 6 year old start in the middle of a session, whats the difference between kids and teens, do we need a gi. Thats where a script falls apart.
+
+Call (667) 220-6726 and ask it exactly those. Then call your own line and ask the same.
+
+Reply with wich one you'd rather be the parent on, and one thing. what does your service do when someone asks to book a trial?
+
+Ammar
+
+==============================
+EMAIL 3
+Subject: paying by the minute for a message
+
+Hey,
+
+Most services charge per call or per minute. So your paying someone to write down a name and a number.
+
+For a {{category}} with {{review_count}} reviews and a {{rating}} rating, thats alot of good leads running through a middle man.
+
+Demo is (667) 220-6726. See if it gets you booked without anybody needing to call you back.
+
+Reply with what you thought, and one thing. roughly what does the service cost you a month?
+
+Ammar
+
+==============================
+EMAIL 4
+Subject: the gap between message and callback
+
+Hi,
+
+Typing this on my phone so excuse any typos.
+
+Heres where I think the leak is. Message taken at 7pm. Owner sees it after class. Calls back at 9 or next morning. Parent already booked somewhere else in {{city}}.
+
+Nothing wrong with your service. The gap is just built into how messages work.
+
+Call the demo at (667) 220-6726 and notice theres no gap.
+
+Reply with your honest reaction. Then one thing. how many messages from your service turned into students last month?
+
+Ammar
+
+==============================
+EMAIL 5
+Subject: MatBoss vs a message pad
+
+Hey,
+
+What I built is MatBoss. matboss.online
+
+AI phone agent for martial arts schools with automations around it. It knows your programs and books the trial right on the call. No message, no callback.
+
+I went through {{website}}. A school on {{street}} with that schedule could run it next to the service or instead of it.
+
+Demo (667) 220-6726. Reply with how the call felt, and one thing. wich question does your service get wrong most often?
+
+Ammar
+
+==============================
+EMAIL 6
+Subject: try this side by side
+
+Hi,
+
+Last email. One simple test if your up for it.
+
+Call your own number after hours and ask to book a trial. Then call (667) 220-6726 and ask the same thing. Everything else is on matboss.online.
+
+Reply with how the two compared, and one thing you wish any service did better for {{school_name}}. Even if you stick with them.
+
+Hope all is good out in {{state}}.
+
+Ammar

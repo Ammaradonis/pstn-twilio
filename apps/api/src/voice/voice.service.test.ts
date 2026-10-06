@@ -27,8 +27,7 @@ function buildService(overrides: { prisma?: any; twilio?: any; audit?: any; redi
     apiKeySid: 'SKxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx',
     apiKeySecret: 'a-very-long-secret-value-for-test-only',
     twimlAppSid: 'APxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx',
-    voiceIdentity: (userId: string, numberId?: string | null) =>
-      numberId ? `user_${userId}_number_${numberId}` : `user_${userId}`,
+    voiceIdentity: (userId: string) => `user_${userId}`,
     client: {
       api: {
         v2010: {
@@ -266,8 +265,7 @@ describe('VoiceService.prepareOutbound', () => {
       apiKeySid: 'SKxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx',
       apiKeySecret: 'a-very-long-secret-value-for-test-only',
       twimlAppSid: 'APxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx',
-      voiceIdentity: (userId: string, numberId?: string | null) =>
-        numberId ? `user_${userId}_number_${numberId}` : `user_${userId}`,
+      voiceIdentity: (userId: string) => `user_${userId}`,
       client: {
         api: {
           v2010: {
@@ -322,7 +320,7 @@ describe('VoiceService.prepareOutbound', () => {
       selectedNumberId: 'pn1',
       selectedCallerId: '+15552222222',
       destinationNumber: '+15551111111',
-      identity: 'user_u1_number_pn1',
+      identity: 'user_u1',
       expiresAt: expect.any(String),
       recordCall: true,
     });
@@ -331,7 +329,7 @@ describe('VoiceService.prepareOutbound', () => {
         data: expect.objectContaining({
           userId: 'u1',
           phoneNumberId: 'pn1',
-          identity: 'user_u1_number_pn1',
+          identity: 'user_u1',
           destinationE164: '+15551111111',
           selectedCallerId: '+15552222222',
           expiresAt: expect.any(Date),

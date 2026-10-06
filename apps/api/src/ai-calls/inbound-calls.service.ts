@@ -13,6 +13,9 @@ import { AiCallingConfig } from './ai-calling.config';
 
 // Where Vapi receives calls to numbers imported from Twilio.
 export const VAPI_TWILIO_INBOUND_URL = 'https://api.vapi.ai/twilio/inbound_call';
+// Query on the inbound webhook that hands calls the browser doesn't answer to
+// the agent (see VoiceWebhookService.handleVoicemail).
+export const AGENT_FALLBACK_QUERY = 'fallback=agent';
 
 interface Actor {
   userId: string;
@@ -21,8 +24,9 @@ interface Actor {
 }
 
 // Switches incoming calls on the AI caller line (the 667 number) between the
-// browser and a busy signal. Twilio's Voice URL is the source of truth: outbound
-// AI calls never use it, so blocking incoming calls doesn't affect them.
+// browser, the browser with the agent picking up unanswered calls, and a busy
+// signal. Twilio's Voice URL is the source of truth: outbound AI calls never use
+// it, so blocking incoming calls doesn't affect them.
 @Injectable()
 export class InboundCallsService {
   constructor(
@@ -35,14 +39,24 @@ export class InboundCallsService {
     return `${this.settings.publicApiBaseUrl}/webhooks/twilio/voice/reject`;
   }
 
+  private get browserUrl(): string {
+    return `${this.settings.publicApiBaseUrl}/webhooks/twilio/voice/inbound`;
+  }
+
+  private voiceUrlFor(mode: AiInboundMode): string {
+    if (mode === 'blocked') return this.rejectUrl;
+    if (mode === 'browser-then-agent') return `${this.browserUrl}?${AGENT_FALLBACK_QUERY}`;
+    return this.browserUrl;
+  }
+
   async status(): Promise<AiInboundStatusDto> {
     const number = await this.findNumber();
     return { phoneNumber: number.phoneNumber, mode: this.modeFor(number.voiceUrl) };
   }
 
   async setMode(actor: Actor, mode: AiInboundMode): Promise<AiInboundStatusDto> {
-    if (mode !== 'blocked' && mode !== 'browser') {
-      throw new BadRequestException('Incoming calls must be answered manually in the browser.');
+    if (mode !== 'blocked' && mode !== 'browser' && mode !== 'browser-then-agent') {
+      throw new BadRequestException(`Unknown incoming call mode: ${String(mode)}`);
     }
     const number = await this.findNumber();
     const previous = this.modeFor(number.voiceUrl);
@@ -51,10 +65,7 @@ export class InboundCallsService {
         .accounts(this.twilio.accountSid)
         .incomingPhoneNumbers(number.sid)
         .update({
-          voiceUrl:
-            mode === 'blocked'
-              ? this.rejectUrl
-              : `${this.settings.publicApiBaseUrl}/webhooks/twilio/voice/inbound`,
+          voiceUrl: this.voiceUrlFor(mode),
           voiceMethod: 'POST',
           voiceApplicationSid: '',
           voiceFallbackUrl: this.rejectUrl,
@@ -62,7 +73,12 @@ export class InboundCallsService {
         });
       await this.audit.log({
         userId: actor.userId,
-        action: mode === 'blocked' ? 'ai_inbound.blocked' : 'ai_inbound.browser_enabled',
+        action:
+          mode === 'blocked'
+            ? 'ai_inbound.blocked'
+            : mode === 'browser-then-agent'
+              ? 'ai_inbound.browser_then_agent_enabled'
+              : 'ai_inbound.browser_enabled',
         entityType: 'PhoneNumber',
         entityId: number.sid,
         ipAddress: actor.ipAddress,
@@ -79,8 +95,8 @@ export class InboundCallsService {
 
   private modeFor(voiceUrl: string | null | undefined): AiInboundStatusDto['mode'] {
     if (voiceUrl === this.rejectUrl) return 'blocked';
-    if (voiceUrl === `${this.settings.publicApiBaseUrl}/webhooks/twilio/voice/inbound`)
-      return 'browser';
+    if (voiceUrl === this.browserUrl) return 'browser';
+    if (voiceUrl === this.voiceUrlFor('browser-then-agent')) return 'browser-then-agent';
     if (voiceUrl === VAPI_TWILIO_INBOUND_URL) return 'agent';
     return 'other';
   }

@@ -56,8 +56,7 @@ import { ZodValidationPipe } from '../common/zod.pipe';
 
 import { ContactFormService } from './contact-form.service';
 import { EmailFinderService } from './email-finder.service';
-import { loadTemplate, renderTemplate } from './gmail.service';
-import { templateVars } from './sheets-follow-up.service';
+import { FollowUpRenderer } from './follow-up-renderer.service';
 import { SheetsConfig } from './sheets.config';
 import { SheetsService, SheetsUnavailableError } from './sheets.service';
 
@@ -77,7 +76,10 @@ async function userFacing<T>(work: Promise<T>): Promise<T> {
 @Controller('sheets')
 @UseGuards(JwtAuthGuard)
 export class SheetsController {
-  constructor(private readonly sheets: SheetsService) {}
+  constructor(
+    private readonly sheets: SheetsService,
+    private readonly renderer: FollowUpRenderer,
+  ) {}
 
   @Get('status')
   status(@Req() req: AuthedRequest) {
@@ -136,8 +138,9 @@ export class SheetsController {
   ): Promise<SheetsFollowUpMessageDto> {
     const log = await this.sheets.followUpLog(req.user.id, id);
     if (!log.emailTemplate) throw new BadRequestException('This push has no follow-up email.');
-    const { subject, body } = renderTemplate(loadTemplate(log.emailTemplate), templateVars(log));
-    return { subject, body, contactFormUrl: log.contactFormUrl };
+    const rendered = await this.renderer.render(log, req.user.id);
+    if (!rendered) throw new BadRequestException('The follow-up needs data this lead lacks.');
+    return { subject: rendered.subject, body: rendered.body, contactFormUrl: log.contactFormUrl };
   }
 
   @Post('follow-ups/:id/sent')

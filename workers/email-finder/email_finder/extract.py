@@ -326,6 +326,8 @@ def _is_profile(url: str) -> bool:
     return first not in {
         "sharer", "sharer.php", "share", "dialog", "plugins", "tr", "p",
         "reel", "explore", "hashtag",
+        "policy.php", "privacy", "policies", "terms", "legal", "help",
+        "login", "login.php", "recover", "accounts", "developers",
     }
 
 

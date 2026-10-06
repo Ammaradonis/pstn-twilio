@@ -1,0 +1,99 @@
+STATUS: has a receptionist
+
+==============================
+EMAIL 1
+Subject: your front desk picked right up
+
+Hey,
+
+Called {{school_name}} at {{call_time}} on {{called_number}} and someone at the desk picked up. I called from {{my_number}} if you want to check.
+
+{{call_note}}
+
+Thats more then most schools manage. Not trying to replace anyone.
+
+I built a phone agent for martial arts schools that covers the calls a person cant. Lunch, sick days, after close, two calls at once. Try it at (667) 220-6726.
+
+Reply with how it went, and one thing. what hours is your desk actually covered?
+
+Ammar
+
+==============================
+EMAIL 2
+Subject: when the desk is on the other line
+
+Hi,
+
+Your desk person is great in person. Showing a parent around, helping with a gi size, checking kids in.
+
+Thats also when the phone rings. Nobody can do both at once.
+
+The agent takes that call so your person stays with the family standing in front of them. Test it at (667) 220-6726.
+
+Reply with what you thought. Then one thing. what happens to a call that comes in while the desk is busy with someone at the counter?
+
+Ammar
+
+==============================
+EMAIL 3
+Subject: after the desk goes home
+
+Hey,
+
+Parents in {{city}} do alot of thier research after the kids are in bed. 9pm, 10pm. The desk is long gone.
+
+With {{rating}} stars and {{review_count}} reviews you can bet people are looking you up at night.
+
+Call (667) 220-6726 late tonight and see if it books you.
+
+Reply with how it went, and one thing. what does a caller hear at {{school_name}} after closing time?
+
+Ammar
+
+==============================
+EMAIL 4
+Subject: backup for the backup
+
+Hi,
+
+Desk people get sick, go on vacation, quit right in the middle of the fall rush. Most {{category}} owners I've met have a story about it. And january is coming, thats usually the loudest month for the phone.
+
+The agent is the backup that never calls out. Your team keeps doing what they're good at.
+
+Try it at (667) 220-6726 and be a picky parent.
+
+Reply with your honest take. Then one thing. what happened to the phones the last time your desk person was out?
+
+Ammar
+
+==============================
+EMAIL 5
+Subject: how MatBoss fits next to your desk
+
+Hey,
+
+The thing I built is MatBoss. matboss.online
+
+AI phone agent for martial arts schools plus automations. It picks up overflow and after hours calls, books the trial, and hands your desk the details in the morning.
+
+I looked at the schedule on {{website}}. Thats alot of hours for one desk to cover at your spot on {{street}}.
+
+Demo (667) 220-6726. Reply with how the call went, and one thing. how many trials does your desk book in a normal week?
+
+Ammar
+
+==============================
+EMAIL 6
+Subject: one idea for your desk person
+
+Hi,
+
+Last one. Idea. Have your desk person call (667) 220-6726 and tell you what they think. They know your callers better then anyone.
+
+The rest is on matboss.online.
+
+Reply with thier take or yours, and one thing. wich calls does your desk hate getting the most? Those are usually the ones worth fixing first.
+
+Take care out there in {{state}}.
+
+Ammar

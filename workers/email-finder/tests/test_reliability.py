@@ -103,6 +103,14 @@ def test_safe_math_and_facebook_numeric_ids():
     assert not parse_page('https://dojo.org', '<a href="https://evil.org/docs.google.com/forms/x">contact</a>').forms
 
 
+def test_social_footer_links_are_not_school_profiles():
+    urls = ["https://www.facebook.com/policy.php", "https://www.facebook.com/privacy/",
+            "https://www.instagram.com/accounts/login/", "https://www.instagram.com/legal/terms/",
+            "https://www.facebook.com/123456789/", "https://www.instagram.com/dojo/"]
+    info = parse_page("https://dojo.org", "".join(f'<a href="{url}">link</a>' for url in urls))
+    assert info.social == set(urls[-2:])
+
+
 def test_form_answers_use_sender_not_school_or_invented_student():
     sender = {'name': 'Alex Baker', 'email': 'alex@business.org', 'phone': '+12025550123'}
     assert answer_field('Your name', 'text', sender, 'Subject\n\nBody', 'Subject') == 'Alex Baker'

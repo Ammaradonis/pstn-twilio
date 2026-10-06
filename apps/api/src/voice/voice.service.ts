@@ -84,8 +84,8 @@ export class VoiceService implements OnModuleInit, OnModuleDestroy {
 
   async issueToken(actor: ActorContext, numberId?: string): Promise<VoiceTokenDto> {
     if (numberId) await this.assertOwnership(actor, numberId);
-    const identity = this.twilio.voiceIdentity(actor.userId, numberId);
-    await this.ensureVoiceIdentity(actor.userId, numberId, identity);
+    const identity = this.twilio.voiceIdentity(actor.userId);
+    await this.ensureVoiceIdentity(actor.userId, identity);
 
     const { token, expiresAt } = this.createVoiceAccessToken(identity);
 
@@ -108,7 +108,7 @@ export class VoiceService implements OnModuleInit, OnModuleDestroy {
 
   async getIdentity(actor: ActorContext, numberId?: string): Promise<{ identity: string }> {
     if (numberId) await this.assertOwnership(actor, numberId);
-    return { identity: this.twilio.voiceIdentity(actor.userId, numberId) };
+    return { identity: this.twilio.voiceIdentity(actor.userId) };
   }
 
   getDeviceConfig() {
@@ -143,8 +143,8 @@ export class VoiceService implements OnModuleInit, OnModuleDestroy {
     if (!destinationNumber) {
       throw new BadRequestException('Destination must be E.164');
     }
-    const identity = this.twilio.voiceIdentity(actor.userId, phoneNumber.id);
-    await this.ensureVoiceIdentity(actor.userId, phoneNumber.id, identity);
+    const identity = this.twilio.voiceIdentity(actor.userId);
+    await this.ensureVoiceIdentity(actor.userId, identity);
     const recordCall = input.recordCall ?? true;
 
     const intent = await this.prisma.outboundCallIntent.create({
@@ -316,20 +316,16 @@ export class VoiceService implements OnModuleInit, OnModuleDestroy {
     }
   }
 
-  private async ensureVoiceIdentity(
-    userId: string,
-    numberId: string | undefined,
-    identity: string,
-  ): Promise<void> {
+  private async ensureVoiceIdentity(userId: string, identity: string): Promise<void> {
     try {
       await this.prisma.voiceIdentity.upsert({
         where: { identity },
         update: {},
         create: {
           userId,
-          phoneNumberId: numberId ?? null,
+          phoneNumberId: null,
           identity,
-          label: numberId ? `User ${userId} for number ${numberId}` : `User ${userId}`,
+          label: `User ${userId}`,
         },
       });
     } catch (err) {

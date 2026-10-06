@@ -1,0 +1,97 @@
+STATUS: stayed silent
+
+==============================
+EMAIL 1
+Subject: the line picked up but nobody spoke
+
+Hey,
+
+Called {{school_name}} at {{call_time}} on {{called_number}}. The call connected but it was just silence. I said hello a couple times then hung up. I called from {{my_number}} if you want to check.
+
+{{call_note}}
+
+Could be a forwarding glitch or someone grabbed it and got pulled away. Either way a parent hears dead air and hangs up.
+
+I build phone agents for martial arts schools. Call the demo at (667) 220-6726 and hear what should happen when a call connects.
+
+Reply with how it went. Then one thing. is your school line forwarded to a cell or another number?
+
+Ammar
+
+==============================
+EMAIL 2
+Subject: dead air on your line
+
+Hi,
+
+Following up on that silent call. Worth checking cause you might not know its happening.
+
+A parent hearing silence figures bad signal or wrong number. They dont call back.
+
+For a {{category}} with {{review_count}} reviews at {{rating}} stars thats good traffic running into a quiet line.
+
+Call (667) 220-6726 and hear what a connected call can sound like.
+
+Reply with what you thought, and one thing. has anyone ever told you they called and couldnt get through?
+
+Ammar
+
+==============================
+EMAIL 3
+Subject: answered in a pocket?
+
+Hey,
+
+Maybe the phone got answered in a pocket, or someone grabbed it between classes and got pulled onto the mat. Happens to all of us.
+
+Problem is you cant see it from your side. The parent in {{city}} just sees a school that didnt say anything.
+
+Try the demo at (667) 220-6726. It always says something.
+
+Reply with how it handled you, and one thing. who carries the school phone during classes?
+
+Ammar
+
+==============================
+EMAIL 4
+Subject: have a friend call you tonight
+
+Hi,
+
+Easy test. Most owners never hear thier own phone from the outside and its kinda eye opening.
+
+Tonight during class have a friend call your school line and write down exactly what they hear. Then you call the demo at (667) 220-6726 and compare.
+
+Reply with how the demo went first. Then one thing. what did your friend hear on your line?
+
+Ammar
+
+==============================
+EMAIL 5
+Subject: what I'd put on your line
+
+Hey,
+
+What I built is MatBoss. matboss.online
+
+AI phone agent for martial arts schools plus some automations. The second a call connects it talks, answers questions, and books the trial. No silence, no dead air.
+
+I looked at {{website}}. A school on {{street}} with your reviews shouldnt lose parents to a quiet line.
+
+Demo (667) 220-6726. Reply with how the call felt, and one thing. how many calls a week come in that you never hear about?
+
+Ammar
+
+==============================
+EMAIL 6
+Subject: breaking the silence one last time
+
+Hi,
+
+Last one from me. Hope that silent call was a one time glitch.
+
+If it wasnt, matboss.online and the demo at (667) 220-6726 are there.
+
+If you try it, reply with how it went and one thing about your phone system you've been meaning to fix for a while. Always curious what owners in {{state}} run into.
+
+Ammar

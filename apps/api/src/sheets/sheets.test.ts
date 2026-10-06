@@ -1,6 +1,3 @@
-import { existsSync } from 'fs';
-import { join } from 'path';
-
 import type { ConfigService } from '@nestjs/config';
 import {
   pickFollowUpTemplate,
@@ -10,7 +7,8 @@ import {
 } from '@pstn-twilio/shared';
 import { describe, expect, it } from 'vitest';
 
-import { encodeMessage, loadTemplate, renderTemplate, templateDir } from './gmail.service';
+import { hasSequence, loadSequence } from './follow-up-sequences';
+import { encodeMessage } from './gmail.service';
 import { parseUsAddress, resolveTimeZone } from './sheets-timezone.service';
 import { SheetsConfig } from './sheets.config';
 import { buildCellValue } from './sheets.service';
@@ -221,23 +219,11 @@ describe('follow-up email choice', () => {
 });
 
 describe('email templates', () => {
-  it('has a template file for every emailing status', () => {
-    const dir = templateDir();
-    expect(dir).not.toBeNull();
+  it('has a 6-email sequence for every emailing status', () => {
     for (const name of Object.values(TAG_EMAIL_TEMPLATE)) {
-      expect(existsSync(join(dir!, `${name}.txt`)), name).toBe(true);
+      expect(hasSequence(name), name).toBe(true);
+      expect(loadSequence(name), name).toHaveLength(6);
     }
-  });
-
-  it('fills placeholders and closes the gap an empty note leaves', () => {
-    const { subject, body } = renderTemplate(loadTemplate('voicemail'), {
-      callerNumber: '6672206726',
-      callDay: 'Monday',
-    });
-    expect(subject).toContain('voicemail');
-    expect(body).toContain('on Monday');
-    expect(body).toContain('6672206726');
-    expect(body).not.toMatch(/\{\{|\n\n\n/);
   });
 
   it('encodes a UTF-8 subject', () => {
@@ -287,12 +273,8 @@ describe('voicemail not set up status', () => {
     expect(pickFollowUpTemplate([tag, 'Rang out'])).toMatchObject({
       template: 'voicemail-not-set-up',
     });
-    const { subject, body } = renderTemplate(loadTemplate('voicemail-not-set-up'), {
-      callDay: 'Tuesday',
-      callerNumber: '6672206726',
-    });
-    expect(subject).toContain('Tuesday');
-    expect(body).toContain("hasn't been set up");
-    expect(body).not.toMatch(/\{\{/);
+    const [first] = loadSequence('voicemail-not-set-up');
+    expect(first!.subject).toBe('your voicemail box isnt set up yet');
+    expect(first!.body).toContain('the voicemail box hasnt been set up yet');
   });
 });
