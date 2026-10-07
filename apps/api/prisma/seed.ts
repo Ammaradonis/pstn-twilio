@@ -13,7 +13,7 @@ async function main() {
   });
 
   if (existingOwner) {
-    console.log(`Owner user already exists: ${ownerEmail}`);
+    console.log('Owner user already exists.');
     return;
   }
 
@@ -21,7 +21,7 @@ async function main() {
   const passwordHash = await argon2.hash(ownerPassword);
 
   // Create owner user
-  const owner = await prisma.user.create({
+  await prisma.user.create({
     data: {
       email: ownerEmail,
       passwordHash,
@@ -29,8 +29,7 @@ async function main() {
     },
   });
 
-  console.log(`✅ Created owner user: ${owner.email} (ID: ${owner.id})`);
-  console.log(`⚠️  Default password: ${ownerPassword}`);
+  console.log('✅ Created owner user.');
   console.log(`⚠️  Please change this password immediately after first login!`);
 
   // Create default Twilio account placeholder (will be configured later)
@@ -48,14 +47,14 @@ async function main() {
           isDefault: true,
         },
       });
-      console.log(`✅ Created Twilio account: ${twilioAccountSid}`);
+      console.log('✅ Created Twilio account.');
     }
   }
 }
 
 main()
-  .catch((e) => {
-    console.error('❌ Seed failed:', e);
+  .catch(() => {
+    console.error('❌ Seed failed. Check database connectivity and configuration.');
     process.exit(1);
   })
   .finally(async () => {
