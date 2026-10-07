@@ -43,6 +43,48 @@ describe('selecting a tab', () => {
       data: { status: 'PENDING', attempts: 0, writtenAt: null },
     });
   });
+
+  it('does not count the addresses it wrote itself as rows that already had one', async () => {
+    const prisma = {
+      emailFinderJob: { upsert: vi.fn().mockResolvedValue({ id: 'job', status: 'RUNNING' }) },
+      emailFinderRow: {
+        findMany: vi.fn(async (args: { where: { status?: string } }) =>
+          args.where.status === 'FOUND' ? [{ email: 'Info@Found.org' }] : [],
+        ),
+        updateMany: vi.fn().mockResolvedValue({ count: 0 }),
+        createMany: vi.fn(),
+      },
+    };
+    const sheets = {
+      getAccessToken: vi.fn().mockResolvedValue('t'),
+      fetchRows: vi.fn().mockResolvedValue([
+        ['title', 'email'],
+        ['Found Dojo', 'info@found.org'], // filled in by the finder
+        ['Typed Dojo', 'owner@typed.org'], // was in the sheet before
+        ['Empty Dojo', ''],
+      ]),
+    };
+    const redis = { client: { set: vi.fn() } };
+    const service = new EmailFinderService(
+      prisma as unknown as PrismaService,
+      sheets as unknown as SheetsService,
+      redis as unknown as RedisService,
+      {} as RealtimeService,
+    );
+    const internals = service as unknown as Record<string, unknown>;
+    internals.writeToSheet = vi.fn();
+    internals.scheduleFlush = vi.fn();
+    internals.finishIfComplete = vi.fn();
+    vi.spyOn(service, 'status').mockResolvedValue({} as never);
+
+    await service.start('u', 'spreadsheet', 'Sheet1');
+    // Was "2,094 rows already had one" next to "2,095 emails": the same rows twice.
+    expect(redis.client.set).toHaveBeenCalledWith('email-finder:job:job:had-email', '1');
+    const queued = prisma.emailFinderRow.createMany.mock.calls[0]![0] as {
+      data: { input: { title: string } }[];
+    };
+    expect(queued.data.map((r) => r.input.title)).toEqual(['Empty Dojo']);
+  });
 });
 
 describe('email finder row identity and writes', () => {

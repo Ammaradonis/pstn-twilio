@@ -181,14 +181,37 @@ export class EmailFinderService implements OnModuleDestroy, OnModuleInit {
       if (host) domainCounts.set(host, (domainCounts.get(host) ?? 0) + 1);
     }
 
+    const job = await this.prisma.emailFinderJob.upsert({
+      where: { userId_spreadsheetId_sheetTitle: { userId, spreadsheetId, sheetTitle } },
+      create: { userId, spreadsheetId, sheetTitle },
+      update: {},
+    });
+    if (job.status === 'DONE') {
+      await this.prisma.emailFinderJob.update({
+        where: { id: job.id },
+        data: { status: 'RUNNING', finishedAt: null },
+      });
+    }
+    // Addresses this finder wrote into the sheet itself. Counting those as
+    // rows that "already had one" made every find show up twice.
+    const foundByFinder = new Set(
+      (
+        await this.prisma.emailFinderRow.findMany({
+          where: { jobId: job.id, status: 'FOUND', email: { not: null } },
+          select: { email: true },
+        })
+      ).map((r) => r.email!.toLowerCase()),
+    );
+
     const queued: { fingerprint: string; input: FinderRowInput }[] = [];
     let alreadyHadEmail = 0;
     const seen = new Set<string>();
     for (const row of rows.slice(1)) {
       const title = text(row[cols.school]).trim();
       if (!title) continue;
-      if (cols.email !== -1 && extractEmail(text(row[cols.email]))) {
-        alreadyHadEmail++;
+      const existing = cols.email !== -1 ? extractEmail(text(row[cols.email])) : null;
+      if (existing) {
+        if (!foundByFinder.has(existing.toLowerCase())) alreadyHadEmail++;
         continue;
       }
       const fp = fingerprint(row, cols);
@@ -210,17 +233,6 @@ export class EmailFinderService implements OnModuleDestroy, OnModuleInit {
       });
     }
 
-    const job = await this.prisma.emailFinderJob.upsert({
-      where: { userId_spreadsheetId_sheetTitle: { userId, spreadsheetId, sheetTitle } },
-      create: { userId, spreadsheetId, sheetTitle },
-      update: {},
-    });
-    if (job.status === 'DONE') {
-      await this.prisma.emailFinderJob.update({
-        where: { id: job.id },
-        data: { status: 'RUNNING', finishedAt: null },
-      });
-    }
     // Create the output columns as soon as a sheet is selected, even if no address is found.
     await this.writeToSheet(job, []);
 
@@ -317,7 +329,7 @@ export class EmailFinderService implements OnModuleDestroy, OnModuleInit {
       },
       orderBy: { updatedAt: 'desc' },
       take: 5,
-      select: { input: true, notes: true },
+      select: { input: true, notes: true, status: true },
     });
     const finds = await this.prisma.emailFinderRow.findMany({
       where: { jobId: job.id, status: 'FOUND', email: { not: null } },
@@ -338,6 +350,7 @@ export class EmailFinderService implements OnModuleDestroy, OnModuleInit {
       issues: issues.map((r) => ({
         school: (r.input as unknown as FinderRowInput).title,
         note: r.notes ?? '',
+        status: r.status as 'RETRY' | 'FAILED' | 'NOT_FOUND',
       })),
       recentFinds: finds.map((r) => toFind(r, job)),
       workerOnline,

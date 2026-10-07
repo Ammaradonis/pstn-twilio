@@ -165,7 +165,8 @@ export interface EmailFinderStatusDto {
   workerLastSeen: string | null;
   retrying?: number;
   failed?: number;
-  issues?: { school: string; note: string }[];
+  /** Latest research notes. RETRY rows are retried on their own; FAILED and NOT_FOUND are final. */
+  issues?: { school: string; note: string; status?: 'RETRY' | 'FAILED' | 'NOT_FOUND' }[];
   /** The tab's latest finds, newest first. */
   recentFinds?: EmailFinderFindDto[];
 }

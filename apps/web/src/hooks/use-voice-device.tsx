@@ -1675,6 +1675,13 @@ function installRecoveryListeners(): void {
   });
 }
 
+/** Whether a call is up, for UI that only needs that (no device setup). */
+export function useCallActive(): boolean {
+  const [active, setActive] = useState(runtime.state.active);
+  useEffect(() => subscribe(() => setActive(runtime.state.active)), []);
+  return active;
+}
+
 export function useVoiceDevice(): UseVoiceDevice {
   const [snapshot, setSnapshot] = useState<VoiceRuntimeState>(runtime.state);
   const [browserSupported] = useState<boolean>(isBrowserSupported);

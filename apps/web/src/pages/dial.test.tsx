@@ -77,6 +77,7 @@ vi.mock('../lib/realtime', () => ({
 
 vi.mock('../hooks/use-voice-device', () => ({
   useVoiceDevice: () => voiceMock.current,
+  useCallActive: () => Boolean(voiceMock.current.active),
 }));
 
 vi.mock('../lib/api-client', () => {

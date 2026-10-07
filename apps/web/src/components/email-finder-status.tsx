@@ -66,6 +66,13 @@ function useEmailFinderStatus(spreadsheetId: string, sheetTitle: string) {
   return { start, data: status.data ?? start.data, toggle };
 }
 
+// Retries happen on their own; only the others are final for that row.
+const ISSUE_STATUS = {
+  RETRY: 'retried automatically',
+  FAILED: 'failed',
+  NOT_FOUND: 'no email found',
+} as const;
+
 function StatusPanel({ start, data, toggle }: ReturnType<typeof useEmailFinderStatus>) {
   if (start.isError) {
     return (
@@ -115,11 +122,16 @@ function StatusPanel({ start, data, toggle }: ReturnType<typeof useEmailFinderSt
       )}
       {!!s.issues?.length && (
         <details className="text-amber-800">
-          <summary className="cursor-pointer">Research needs attention</summary>
+          <summary className="cursor-pointer">Latest research notes</summary>
           <ul className="mt-1 space-y-1">
             {s.issues.map((issue, i) => (
-              <li key={i}>
+              <li key={i} className={issue.status === 'RETRY' ? 'text-slate-600' : undefined}>
                 {issue.school}: {issue.note}
+                {issue.status && (
+                  <span className="ml-1 text-[11px] text-slate-500">
+                    ({ISSUE_STATUS[issue.status]})
+                  </span>
+                )}
               </li>
             ))}
           </ul>

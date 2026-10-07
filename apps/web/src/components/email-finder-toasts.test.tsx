@@ -1,11 +1,14 @@
 import type { EmailFinderFindDto } from '@pstn-twilio/shared';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { act, fireEvent, render, screen, within } from '@testing-library/react';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { EmailFinderToasts } from './email-finder-toasts';
 
 const socketHandlers = vi.hoisted(() => new Map<string, (payload: unknown) => void>());
+const call = vi.hoisted(() => ({ active: false }));
+vi.mock('../hooks/use-voice-device', () => ({ useCallActive: () => call.active }));
+
 vi.mock('../lib/realtime', () => ({
   getSocket: () => ({
     on: (event: string, handler: (payload: unknown) => void) => socketHandlers.set(event, handler),
@@ -45,7 +48,13 @@ describe('EmailFinderToasts', () => {
   beforeEach(() => {
     socketHandlers.clear();
     window.localStorage.clear();
+    call.active = false;
+    // A few minutes after the finds dated below.
+    vi.useFakeTimers({ toFake: ['Date', 'setInterval', 'clearInterval'] });
+    vi.setSystemTime(new Date('2026-10-04T10:05:00Z'));
   });
+
+  afterEach(() => vi.useRealTimers());
 
   it('shows only the latest find on load, with the exact address and the method', () => {
     renderToasts([find({ rowId: 'new' }), find({ rowId: 'old', email: 'old@dojo.com' })]);
@@ -126,6 +135,30 @@ describe('EmailFinderToasts', () => {
   it('does not tag finds made in the browser', () => {
     renderToasts([find({ rowId: 'b' })]);
     expect(screen.getByRole('status')).not.toHaveTextContent('via Galaxy A20e');
+  });
+
+  it('does not bring back a find from hours ago when the page loads', () => {
+    renderToasts([find({ rowId: 'old', foundAt: '2026-10-04T08:05:00Z' })]);
+    expect(screen.queryByRole('status')).not.toBeInTheDocument();
+  });
+
+  it('goes away 15 minutes after the find', () => {
+    renderToasts([find({ rowId: 'x' })]);
+    expect(screen.getByRole('status')).toHaveTextContent('just now');
+    act(() => vi.advanceTimersByTime(14 * 60_000));
+    expect(screen.getByRole('status')).toHaveTextContent('14 min ago');
+    act(() => vi.advanceTimersByTime(60_000));
+    expect(screen.queryByRole('status')).not.toBeInTheDocument();
+  });
+
+  it('sits above the call bar during a call', () => {
+    renderToasts([find({ rowId: 'x' })]);
+    expect(screen.getByLabelText('Email finder notifications')).toHaveClass('bottom-2');
+    call.active = true;
+    renderToasts([find({ rowId: 'y' })]);
+    const regions = screen.getAllByLabelText('Email finder notifications');
+    expect(regions.at(-1)).toHaveClass('bottom-24');
+    expect(regions.at(-1)).not.toHaveClass('bottom-2');
   });
 
   it('stays dismissed after a reload', () => {

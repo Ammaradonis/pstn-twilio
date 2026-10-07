@@ -6,8 +6,9 @@
  * contact info via iPhone emulation (found via free Google search)"). It
  * arrives over the socket the moment the worker reports it; the tab's status
  * poll covers anything missed while the socket was down, and on load the
- * latest find is shown. A card stays until a newer find replaces it, or until
- * it is dismissed.
+ * latest find is shown if it is recent. A card stays until a newer find
+ * replaces it, it is dismissed, or 15 minutes pass (a "2 h ago" card used to
+ * sit over the call log). During a call it sits above the call bar.
  */
 
 import {
@@ -18,9 +19,15 @@ import {
 import { useQueryClient } from '@tanstack/react-query';
 import { useEffect, useRef, useState } from 'react';
 
+import { useCallActive } from '../hooks/use-voice-device';
 import { getSocket } from '../lib/realtime';
 
 const DISMISSED_KEY = 'pstn-twilio.email-finder.dismissed';
+// How long a find stays up; an older one isn't brought back on page load.
+const SHOW_FOR_MS = 15 * 60_000;
+
+const isFresh = (find: EmailFinderFindDto, now: number) =>
+  now - Date.parse(find.foundAt) < SHOW_FOR_MS;
 
 interface Props {
   spreadsheetId: string;
@@ -35,6 +42,7 @@ export function EmailFinderToasts({ spreadsheetId, sheetTitle, recent }: Props) 
   const [dismissed, setDismissed] = useState<Set<string>>(readDismissed);
   const [now, setNow] = useState(() => Date.now());
   const known = useRef(new Set<string>());
+  const inCall = useCallActive();
 
   function show(find: EmailFinderFindDto) {
     if (known.current.has(find.rowId)) return;
@@ -60,7 +68,7 @@ export function EmailFinderToasts({ spreadsheetId, sheetTitle, recent }: Props) 
   }, [queryClient]);
 
   useEffect(() => {
-    if (recent?.[0]) show(recent[0]);
+    if (recent?.[0] && isFresh(recent[0], Date.now())) show(recent[0]);
   }, [recent]);
 
   // Keep "x min ago" current.
@@ -78,13 +86,16 @@ export function EmailFinderToasts({ spreadsheetId, sheetTitle, recent }: Props) 
     });
   }
 
-  if (!current || dismissed.has(current.rowId)) return null;
+  if (!current || dismissed.has(current.rowId) || !isFresh(current, now)) return null;
 
   return (
     <div
       aria-label="Email finder notifications"
       aria-live="polite"
-      className="fixed inset-x-2 bottom-2 z-40 sm:inset-x-auto sm:bottom-4 sm:left-4 sm:w-[22rem]"
+      className={`fixed inset-x-2 z-40 sm:inset-x-auto sm:left-4 sm:w-[22rem] ${
+        // Clear of the call bar at the bottom of the screen.
+        inCall ? 'bottom-24' : 'bottom-2 sm:bottom-4'
+      }`}
     >
       <FindNotice
         key={current.rowId}
