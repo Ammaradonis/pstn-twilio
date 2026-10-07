@@ -11,7 +11,10 @@ The txt file's three pathways, as Google answers them in October 2026:
      browser", headless, with a persistent profile in .cache/google-profile so
      cookies and the consent choice survive restarts. Queries are typed into
      the search box (see _ask).
-  3. The Custom Search JSON API stays in search.py's chain.
+  3. The Custom Search JSON API it recommends is gone: this project has no
+     access to it, so Brave and this free path carry the searches (search.py).
+  4. The Programmable Search Engine below (cse_search) is the same free
+     pathway applied to the user's own curated engine.
 
 Its edge cases:
   * Special characters: the query is URL-encoded (quote_plus).

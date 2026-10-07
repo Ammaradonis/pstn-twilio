@@ -72,3 +72,4 @@ Google-search-engine-configuration-files/
 cookies.txt
 *.cookies.txt
 *cookies.txt
+.neon

@@ -89,8 +89,9 @@ class Fetcher:
     def __init__(self, cache: Cache, per_host_delay: float = 1.5, use_browser: bool = True,
                  chrome_profile_path: str | None = None, browser_cdp_url: str | None = None,
                  max_connections: int = 12, social_cookies: dict[str, Path] | None = None,
-                 social_daily_limit: int = 200) -> None:
+                 social_daily_limit: int = 200, respect_robots: bool = False) -> None:
         self.cache, self.per_host_delay, self.use_browser = cache, per_host_delay, use_browser
+        self.respect_robots = respect_robots
         self.chrome_profile_path = chrome_profile_path
         self.browser_cdp_url = browser_cdp_url
         # platform ("facebook" / "instagram") -> the user's cookies.txt export
@@ -145,8 +146,11 @@ class Fetcher:
         await self._close_browser()
 
     async def allowed(self, url: str) -> bool:
+        # Never fetch private or local addresses, whatever robots.txt says.
         if not await public_url(url):
             return False
+        if not self.respect_robots:
+            return True
         p = urlsplit(url)
         origin = f"{p.scheme}://{p.netloc}"
         if origin not in self._robots:

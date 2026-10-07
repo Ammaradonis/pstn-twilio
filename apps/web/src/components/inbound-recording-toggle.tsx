@@ -61,7 +61,7 @@ export function InboundRecordingToggle({
             {!loaded
               ? 'Recording setting unavailable until loaded.'
               : recordCall
-                ? 'Answered incoming calls to this number are recorded in this browser for free and downloaded when they end; calls of 90 seconds or more are also added to the call log.'
+                ? 'Answered incoming calls to this number are recorded in this browser for free. Calls of 90 seconds or more download when they end and are added to the call log; shorter ones are deleted.'
                 : 'Incoming calls to this number are not recorded.'}{' '}
             Changes apply to calls that start ringing after you change this setting.
           </p>

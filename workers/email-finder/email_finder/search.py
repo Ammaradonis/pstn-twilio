@@ -1,11 +1,17 @@
-"""Search provider chain: Google CSE → Brave / BEAVE → Vertex AI Search.
+"""Search provider chain: Brave / BEAVE → Vertex AI Search (only when configured).
 
 Provider priority (cheapest / most reliable first):
-  1. Google Custom Search Engine (free tier: 100 queries/day) — configured via
-     GOOGLE_CLOUD_API_KEY + GOOGLE_SEARCH_ENGINE_ID (or GOOGLE_CSE_ID).
-  2. Brave Search API / BEAVE_API_KEY (Brave spelling alias) — 300/day each.
-  3. Vertex AI Search (Google Cloud Discovery Engine) — unlimited per GCP quota;
-     uses the service account at GOOGLE_APPLICATION_CREDENTIALS.
+  1. Brave Search API / BEAVE_API_KEY (Brave spelling alias) — 300/day each.
+  2. Vertex AI Search (Google Cloud Discovery Engine) — only when a project and
+     an app or data store are configured; unlimited per GCP quota and billed per
+     query, so it stays last. Off unless VERTEX_AI_PROJECT is set.
+
+The Google Custom Search JSON API was removed from this chain: this project has
+no access to it (HTTP 403 "This project does not have the access to Custom
+Search JSON API"), and Google closed the API to new customers. It therefore
+never answered a query here and only cost one refused request per lookup. The
+Programmable Search Engine itself is untouched: google_free.py reads its public
+results page for free (see the CSE path there).
 
 BEAVE is a spelling of Brave, not a separate service. All credentials are sent
 only to the documented API endpoints.
@@ -30,7 +36,8 @@ class Result:
     title: str
     snippet: str
     extra: list[str] = field(default_factory=list)
-    # Which search found it: google (API), google-web (free), brave, vertex.
+    # Which search found it: brave, vertex, google-web, google-cse or
+    # google-business-profile (the free paths in google_free.py).
     provider: str = ""
 
     @property
@@ -110,30 +117,21 @@ class BraveSearch:
     """Compatibility name for the multi-provider search chain.
 
     Provider order (first that has quota and is not disabled wins):
-      1. google  — Google Custom Search JSON API (100 free/day)
-      2. brave   — Brave Search API (BRAVE_API_KEY or BEAVE_API_KEY alias)
-      3. vertex  — Vertex AI Search (unlimited; GCP billing applies)
+      1. brave   — Brave Search API (BRAVE_API_KEY or BEAVE_API_KEY alias)
+      2. vertex  — Vertex AI Search (only when a project and an app or data
+                   store are configured; GCP billing applies)
     """
 
     def __init__(self, api_key: str | None, cache: Cache, daily_limit: int,
                  beave_api_key: str | None = None, beave_daily_limit: int = 300,
-                 google_api_key: str | None = None, google_cx: str | None = None,
-                 google_daily_limit: int = 100,
                  vertex_project: str | None = None, vertex_data_store: str | None = None,
                  vertex_location: str = "global", extra_brave_keys: tuple[str, ...] = ()) -> None:
         self.cache = cache
         # Each entry: (provider_name, credential_or_None, daily_limit)
         # For vertex the "credential" field is unused (uses ADC); None is fine.
         self.providers: list[tuple[str, str | None, int]] = []
-        self.google_cx = google_cx
 
-        # 1. Google CSE — highest priority (free tier)
-        if google_api_key and google_cx:
-            self.providers.append(("google", google_api_key, google_daily_limit))
-        elif google_api_key:
-            log.info("GOOGLE_SEARCH_ENGINE_ID not set; Google CSE skipped.")
-
-        # 2. Brave / BEAVE: every distinct key, each with its own credit and
+        # 1. Brave / BEAVE: every distinct key, each with its own credit and
         #    daily budget; a key that runs out (402) is skipped for an hour.
         seen: set[str] = set()
         keys = ((beave_api_key, beave_daily_limit), (api_key, daily_limit),
@@ -143,7 +141,7 @@ class BraveSearch:
                 self.providers.append(("brave", key, limit))
                 seen.add(key)
 
-        # 3. Vertex AI Search (unlimited; only if project + data-store configured)
+        # 2. Vertex AI Search (unlimited, billed per query; only when configured)
         self._vertex: _VertexSearch | None = None
         if vertex_project and vertex_data_store:
             self._vertex = _VertexSearch(vertex_project, vertex_data_store, vertex_location)
@@ -161,7 +159,6 @@ class BraveSearch:
         return cls(
             settings.brave_api_key, cache, settings.brave_daily_limit,
             settings.beave_api_key, settings.beave_daily_limit,
-            settings.google_api_key, settings.google_cx, settings.google_daily_limit,
             vertex_project=getattr(settings, "vertex_project", None),
             vertex_data_store=getattr(settings, "vertex_data_store", None),
             vertex_location=getattr(settings, "vertex_location", "global"),
@@ -213,7 +210,7 @@ class BraveSearch:
                         break
                     self._last = time.monotonic()
                     try:
-                        res = await self._request(provider, credential, query, country, count)
+                        res = await self._request(credential, query, country, count)
                     except httpx.HTTPError:
                         log.warning("%s search network failure", provider)
                         self._disabled[counter] = time.monotonic() + 60
@@ -221,11 +218,11 @@ class BraveSearch:
                     if res.status_code == 200:
                         try:
                             data = res.json()
-                            items = data.get("items", []) if provider == "google" else data.get("web", {}).get("results", [])
+                            items = data.get("web", {}).get("results", [])
                             results = [Result(
-                                url=r.get("link" if provider == "google" else "url", ""),
+                                url=r.get("url", ""),
                                 title=_strip(r.get("title", "")),
-                                snippet=_strip(r.get("snippet" if provider == "google" else "description", "")),
+                                snippet=_strip(r.get("description", "")),
                                 extra=[_strip(s) for s in r.get("extra_snippets", []) or []],
                                 provider=provider,
                             ) for r in items]
@@ -252,13 +249,7 @@ class BraveSearch:
                 )
             return []
 
-    async def _request(self, provider: str, credential: str | None, query: str, country: str, count: int):
-        if provider == "google":
-            return await self._client.get("https://www.googleapis.com/customsearch/v1", params={
-                "key": credential, "cx": self.google_cx, "q": query,
-                "num": count, "gl": country.lower(), "safe": "active",
-            })
-        # brave / beave
+    async def _request(self, credential: str | None, query: str, country: str, count: int):
         return await self._client.get("https://api.search.brave.com/res/v1/web/search", params={
             "q": query, "count": count, "country": country, "search_lang": "en",
             "extra_snippets": "true", "safesearch": "moderate",
@@ -276,7 +267,5 @@ def _failure_reason(provider: str, res: httpx.Response) -> str:
         err = {}
     if provider == "brave" and res.status_code == 402:
         return "Brave credit exhausted, top up at api-dashboard.search.brave.com"
-    if provider == "google" and res.status_code == 403:
-        return "Google Custom Search API disabled or not permitted for this key"
     code = err.get("code") or err.get("status") or res.status_code
     return f"{provider.title()} HTTP {code}"

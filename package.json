@@ -27,6 +27,8 @@
   },
   "devDependencies": {
     "@eslint/js": "^9.18.0",
+    "@neon/config": "^1.8.4",
+    "@neon/env": "^1.5.1",
     "@types/node": "^22.10.5",
     "@typescript-eslint/eslint-plugin": "^8.20.0",
     "@typescript-eslint/parser": "^8.20.0",

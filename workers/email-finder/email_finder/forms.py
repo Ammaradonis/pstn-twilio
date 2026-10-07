@@ -14,9 +14,16 @@ from urllib.parse import urlsplit
 from .fetch import CHALLENGE, Fetcher
 from .urls import form_host, public_url
 
-SUCCESS = re.compile(r"your (?:response|message|submission|enquiry|inquiry) (?:has been|was) (?:recorded|sent|submitted|received)|"
-                     r"thank you for (?:contacting|your (?:message|enquiry|inquiry|submission))|"
-                     r"message sent successfully|we have received your", re.I)
+# Confirmations of the common form builders: Contact Form 7, WPForms, Gravity,
+# Elementor, Wix, Weebly, Shopify, HubSpot, GoDaddy, Jotform, Google Forms.
+SUCCESS = re.compile(r"your (?:response|message|submission|enquiry|inquiry|form) (?:has been|was|is) (?:successfully )?(?:recorded|sent|submitted|received)|"
+                     r"thanks? (?:you )?for (?:contacting|your (?:message|enquiry|inquiry|submission|interest)|submitting|reaching out|getting in touch|writing)|"
+                     r"(?:message|form|submission) (?:was |has been )?(?:sent|submitted) successfully|successfully (?:sent|submitted)|"
+                     r"we(?:'ve| have) received your|we(?:'ll| will) (?:be in touch|get back to you)", re.I)
+# Builders like Squarespace replace the form with a bare "Thank you!".
+THANKS = re.compile(r"\bthanks?\b|\bthank you\b", re.I)
+THANK_YOU_URL = re.compile(r"thank|success|submitted|confirm|/sent\b", re.I)
+CONFIRM_WAIT_STEPS = 20  # x 750 ms: slow WordPress mailers take several seconds
 CAPTCHA = re.compile(r"captcha|verify.*human|not a robot|security challenge", re.I)
 
 
@@ -28,20 +35,28 @@ class FormResult:
 
 def answer_field(label: str, kind: str, sender: dict, message: str, subject: str) -> str | None:
     """Only truthful sender/contact information and explicit business-inquiry answers."""
-    label = re.sub(r"[_\-]+", " ", label).lower()
+    label = re.sub(r"[_\-]+", " ", label).lower().strip()
     if CAPTCHA.search(label) or kind in {"password", "file", "date", "checkbox", "radio"}:
         return None
+    # The free-text box is where the message goes, even when its prompt mentions
+    # classes or trials ("Interested in a trial class? Let us know!"), unless it
+    # asks for a student's personal details.
+    if kind == "textarea" or re.search(r"message|comments?|how can we help|details of (?:your )?(?:enquiry|inquiry)|your (?:enquiry|inquiry)", label):
+        if re.search(r"\b(age|birth|medical|injur\w*|gender|belt|allerg\w*)\b", label):
+            return None
+        return message
     if re.search(r"\b(student|child|age|birth|belt|experience|medical|gender|class|trial|course)\b", label):
         return None
-    if re.search(r"message|comments?|how can we help|details of (?:your )?(?:enquiry|inquiry)|your (?:enquiry|inquiry)", label) or kind == "textarea":
-        return message
     if kind == "email" or re.search(r"e ?mail", label):
         return sender.get("email") or None
-    if kind == "tel" or re.search(r"phone|telephone|mobile", label):
+    if kind == "tel" or re.search(r"phone|telephone|mobile|\bcell\b|contact (?:no|number)", label):
         return sender.get("phone") or None
-    if re.search(r"first name|given name|firstname", label):
+    if re.search(r"contact (?:info|information|details)", label):
+        return sender.get("email") or None
+    # Name fields split into sub-labels ("Name * First / Last" in WPForms, Gravity).
+    if re.search(r"first name|given name|firstname|^first\b", label):
         return (sender.get("name") or "").split(" ")[0] or None
-    if re.search(r"last name|surname|lastname", label):
+    if re.search(r"last name|surname|lastname|^last\b", label):
         parts = (sender.get("name") or "").split(" ", 1)
         return parts[1] if len(parts) > 1 else None
     if re.search(r"company|organisation|organization|business name", label):
@@ -123,7 +138,9 @@ class FormSender:
                     forms = scope.locator("form")
                     candidates = []
                     for form in await forms.all():
-                        if await form.is_visible() and not await form.locator("input[type=password],input[type=file]").count():
+                        # A form whose fields float can have zero height; judge it by its fields.
+                        shown = await form.locator("textarea:visible,input:visible,[role=textbox]:visible").count()
+                        if shown and not await form.locator("input[type=password],input[type=file][required]").count():
                             count = await form.locator("textarea,[role=textbox]").count()
                             candidates.append((count, form))
                     if not candidates:
@@ -180,13 +197,20 @@ class FormSender:
                         if maxlength and maxlength.isdigit() and len(value) > int(maxlength):
                             return FormResult("MANUAL", "The form cannot fit the complete follow-up message.")
                         await control.fill(value, timeout=4000)
+                        if value == sender.get("phone") and not await control.evaluate("e => e.checkValidity()"):
+                            # Phone fields with a digits-only pattern (Shopify and others).
+                            for variant in _phone_variants(value):
+                                await control.fill(variant, timeout=4000)
+                                if await control.evaluate("e => e.checkValidity()"):
+                                    break
                         filled_message |= value == message
                     invalid = await form.evaluate("el => [...el.querySelectorAll('input,textarea,select')].some(e => e.offsetParent !== null && e.willValidate && !e.checkValidity())")
                     if invalid:
                         return FormResult("MANUAL", "The form has unresolved validation errors.")
                     submit = form.get_by_role("button", name=re.compile(r"^(submit|send|send message|send enquiry|send inquiry|submit form|submit message)$", re.I))
                     if not await submit.count():
-                        submit = form.locator("button[type=submit],input[type=submit]")
+                        # Builders such as Wix keep hidden duplicates; only a visible one counts.
+                        submit = form.locator("button[type=submit]:visible,input[type=submit]:visible")
                     # Google Forms uses role=button for Next and Submit.
                     next_button = form.get_by_role("button", name=re.compile(r"^next$", re.I))
                     if await next_button.count() and not await submit.count():
@@ -198,16 +222,16 @@ class FormSender:
                     if dry_run:
                         return FormResult("PREPARED", "Form filled with the complete subject and body; submission disabled.")
                     before = await scope.locator("body").inner_text()
+                    before_url = page.url
                     if not await arm():
                         return FormResult("MANUAL", "Submission lease expired or follow-up was cancelled.")
                     armed = True
                     # This is the only submit click. Never repeat after a timeout or lost response.
                     await submit.click(timeout=8000)
-                    for _ in range(8):
+                    for _ in range(CONFIRM_WAIT_STEPS):
                         await page.wait_for_timeout(750)
-                        after = await scope.locator("body").inner_text()
-                        confirmations = SUCCESS.findall(after)
-                        if confirmations and after != before and not SUCCESS.search(before):
+                        if _confirmed(before, await _body_text(scope, page), before_url, page.url,
+                                      await _form_gone(form)):
                             return FormResult("SENT")
                     return FormResult("MANUAL", "Submitted once, but no clear success confirmation. Check delivery before resending.")
                 return FormResult("MANUAL", "Form has too many steps; review required.")
@@ -217,3 +241,40 @@ class FormSender:
             finally:
                 if context:
                     await context.close()
+
+
+def _phone_variants(phone: str) -> list[str]:
+    """The same number in the shapes strict phone fields accept."""
+    digits = re.sub(r"\D", "", phone)
+    national = digits[1:] if len(digits) == 11 and digits.startswith("1") else digits
+    if digits.startswith("44"):
+        national = "0" + digits[2:]
+    return list(dict.fromkeys(v for v in (digits, national) if v and v != phone))
+
+
+async def _body_text(scope, page) -> str:
+    try:
+        return await scope.locator("body").inner_text(timeout=2000)
+    except Exception:
+        # An embedded form's frame can be replaced after submitting.
+        return await page.locator("body").inner_text(timeout=2000)
+
+
+async def _form_gone(form) -> bool:
+    try:
+        return not await form.locator("textarea:visible,input:visible").count()
+    except Exception:
+        return True
+
+
+def _confirmed(before: str, after: str, before_url: str, after_url: str, form_gone: bool) -> bool:
+    """Whether the page now confirms the one submission.
+
+    A confirmation must be new: page copy like "we'll get back to you" can be
+    there before submitting, so the number of confirmations has to grow.
+    """
+    if len(SUCCESS.findall(after)) > len(SUCCESS.findall(before)):
+        return True
+    if after_url != before_url and THANK_YOU_URL.search(after_url.split("?")[0]):
+        return True
+    return form_gone and len(THANKS.findall(after)) > len(THANKS.findall(before))

@@ -12,18 +12,20 @@ import {
 } from './recording-store';
 
 // Free call recording: the browser records each call it is on, from the
-// moment it is answered (see CallRecorder), saves the file to the downloads
-// folder when the call ends, and uploads it to the call log if it lasted at
-// least MIN_UPLOAD_SECONDS. Uploads that fail (no network, storage not set up
-// yet) wait in IndexedDB and are retried.
+// moment it is answered (see CallRecorder). A call that lasted at least
+// MIN_UPLOAD_SECONDS is saved to the downloads folder when it ends and
+// uploaded to the call log; a shorter one is deleted everywhere (memory,
+// IndexedDB, never downloaded) so cold-call hang-ups don't fill the disk.
+// Uploads that fail (no network, storage not set up yet) wait in IndexedDB
+// and are retried.
 
 export type BrowserRecordingState =
   | 'recording'
   | 'saving'
   | 'uploading'
   | 'uploaded'
-  // Too short for the call log; only the downloaded file exists.
-  | 'kept-local'
+  // Under MIN_UPLOAD_SECONDS: deleted, never downloaded or uploaded.
+  | 'discarded'
   | 'waiting'
   | 'failed';
 
@@ -51,7 +53,7 @@ export type BrowserRecordingMeta =
       callSid: string | null;
     };
 
-/** Shorter recordings stay on disk and are never uploaded (the API refuses them too). */
+/** Shorter recordings are deleted outright (and the API refuses them too). */
 export const MIN_UPLOAD_SECONDS = 90;
 const UPLOAD_RETRY_MS = 60_000;
 // A recording that is not finished and has had no audio for this long was
@@ -147,10 +149,8 @@ export function describeBrowserRecording(status: BrowserRecordingStatus): string
       return status.filename
         ? `Saved as ${status.filename} and added to the call log.`
         : 'Recording added to the call log.';
-    case 'kept-local':
-      return status.filename
-        ? `Saved as ${status.filename}. Under ${MIN_UPLOAD_SECONDS} seconds, so it is not added to the call log.`
-        : `Under ${MIN_UPLOAD_SECONDS} seconds, so it is not added to the call log.`;
+    case 'discarded':
+      return `Under ${MIN_UPLOAD_SECONDS} seconds, so the recording was deleted.`;
     default:
       return status.message ?? 'The recording could not be saved.';
   }
@@ -247,6 +247,12 @@ async function finishSession(id: string, call: RecordableCall): Promise<void> {
     endedAt: endedAt.toISOString(),
     updatedAt: Date.now(),
   };
+  if (durationSeconds(row) < MIN_UPLOAD_SECONDS) {
+    session.chunks.length = 0;
+    await forget(id);
+    setStatus(id, { state: 'discarded' });
+    return;
+  }
   const blob = await assemble(session.chunks, row);
   if (blob.size === 0) {
     void store.remove(id).catch(() => undefined);
@@ -330,8 +336,8 @@ async function upload(row: StoredBrowserRecording): Promise<'done' | 'retry' | '
       direction: row.direction,
       counterpart: row.counterpart,
       startedAt: row.startedAt,
-      filename: statuses.get(row.id)?.filename ?? null,
-      state: 'kept-local',
+      filename: null,
+      state: 'discarded',
     });
     return 'dropped';
   }

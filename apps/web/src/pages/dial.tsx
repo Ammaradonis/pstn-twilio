@@ -731,13 +731,13 @@ export function DialPage() {
                 {inCallMode
                   ? activeCallRecorded
                     ? activeCallBrowserRecorded
-                      ? 'Recording in this browser. The file downloads when the call ends.'
+                      ? 'Recording in this browser. If the call reaches 90 seconds, the file downloads when it ends.'
                       : 'The MP3 downloads automatically after the call ends.'
                     : 'Changes apply to your next call.'
                   : !recordCall
                     ? 'The call will not be recorded.'
                     : browserRecordingSupported
-                      ? 'Recorded in this browser for free. The file downloads when the call ends; calls of 90 seconds or more are also added to the call log.'
+                      ? 'Recorded in this browser for free. Calls of 90 seconds or more download when they end and are added to the call log; shorter ones are deleted.'
                       : 'The call is recorded and the MP3 downloads automatically when it ends.'}
               </p>
             </div>

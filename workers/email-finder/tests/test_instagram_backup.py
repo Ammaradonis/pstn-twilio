@@ -253,7 +253,7 @@ def test_a_robots_txt_bot_wall_is_not_a_crawl_ban(tmp_path, monkeypatch):
     answers = {"walled.example": 403, "down.example": 503, "busy.example": 429}
 
     async def run():
-        f = Fetcher(Cache(tmp_path / "c.db"))
+        f = Fetcher(Cache(tmp_path / "c.db"), respect_robots=True)
         await f._client.aclose()
         f._client = httpx.AsyncClient(transport=httpx.MockTransport(
             lambda r: httpx.Response(answers[r.url.host], text="<html>Forbidden</html>")))
@@ -261,6 +261,28 @@ def test_a_robots_txt_bot_wall_is_not_a_crawl_ban(tmp_path, monkeypatch):
         await f.close()
         return result
     assert asyncio.run(run()) == {"walled.example": True, "down.example": False, "busy.example": False}
+
+
+def test_robots_txt_is_skipped_by_default_but_private_addresses_stay_blocked(tmp_path, monkeypatch):
+    import httpx
+    import email_finder.fetch as fetch_module
+
+    async def public(url):
+        return "internal" not in url
+    monkeypatch.setattr(fetch_module, "public_url", public)
+    requested = []
+
+    async def run():
+        f = Fetcher(Cache(tmp_path / "c.db"))
+        await f._client.aclose()
+        f._client = httpx.AsyncClient(transport=httpx.MockTransport(
+            lambda r: requested.append(str(r.url)) or httpx.Response(200, text="User-agent: *\nDisallow: /")))
+        result = (await f.allowed("https://school.example/contact"),
+                  await f.allowed("http://internal.example/admin"))
+        await f.close()
+        return result
+    assert asyncio.run(run()) == (True, False)
+    assert requested == []  # no robots.txt request at all
 
 
 def test_a_missing_instagram_page_gets_two_tries_in_the_browser(tmp_path):

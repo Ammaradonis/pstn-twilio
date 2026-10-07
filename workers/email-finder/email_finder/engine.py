@@ -1218,7 +1218,6 @@ SEARCH_WORDS = {
     "google-cse": "your Programmable Search Engine",
     "instagram": "the school's Instagram profile",
     "google-web": "free Google search",
-    "google": "Google API search",
     "brave": "Brave search",
     "vertex": "Vertex AI search",
 }

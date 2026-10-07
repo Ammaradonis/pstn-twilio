@@ -21,24 +21,23 @@ from email_finder.urls import public_url
 from email_finder.sources import request_sources, directory_sites
 
 
-def test_google_first_brave_alias_fallback_no_unverified_service(tmp_path):
+def test_brave_keys_serve_the_chain_and_only_brave_is_contacted(tmp_path):
     async def run():
         calls = []
         def handler(request):
             calls.append(request)
-            if request.url.host == 'www.googleapis.com':
-                return httpx.Response(403)
+            # The Custom Search JSON API is gone: no other host is ever called.
             assert request.url.host == 'api.search.brave.com'
-            assert request.headers['X-Subscription-Token'] == 'fallback-secret'
+            assert request.headers['X-Subscription-Token'] == 'beave-key'
             return httpx.Response(200, json={'web': {'results': [{'url': 'https://dojo.org', 'title': 'Dojo', 'description': 'Contact'}]}})
-        search = BraveSearch('fallback-secret', Cache(tmp_path / 'c.db'), 10, 'fallback-secret', 10, 'google-secret', 'cx')
+        search = BraveSearch('fallback-secret', Cache(tmp_path / 'c.db'), 10, 'beave-key', 10)
         await search._client.aclose()
         search._client = httpx.AsyncClient(transport=httpx.MockTransport(handler))
-        assert len(search.providers) == 2
+        assert [p for p, _, _ in search.providers] == ['brave', 'brave']
         assert len(await search.search('dojo')) == 1
-        assert len(await search.search('dojo')) == 1
-        assert len(calls) == 2
-        assert calls[0].url.host == 'www.googleapis.com'
+        assert len(await search.search('dojo')) == 1  # cached: no second request
+        assert len(calls) == 1
+        assert calls[0].url.host == 'api.search.brave.com'
         await search.close()
     asyncio.run(run())
 

@@ -167,17 +167,22 @@ describe('recordCallInBrowser', () => {
     expect(api.calls.byOutboundIntent).not.toHaveBeenCalled();
   });
 
-  it('keeps a call under 90 seconds on disk only and never uploads it', async () => {
+  it('deletes a call under 90 seconds outright: no download, no upload, nothing stored', async () => {
+    const addChunk = vi.spyOn(store, 'addChunk');
     const call = fakeCall();
     recordCallInBrowser(call, META);
     call.emit('accept');
     await vi.waitFor(() => expect(recorderMock.instances).toHaveLength(1));
     recorderMock.instances[0]!.onChunk(0, new Blob(['opus'], { type: 'audio/webm' }));
+    await vi.waitFor(() => expect(addChunk).toHaveBeenCalled());
+    const recordingId = addChunk.mock.calls[0]![0];
     talkFor(89);
     call.emit('disconnect');
 
-    await vi.waitFor(() => expect(saveBlob).toHaveBeenCalledTimes(1));
+    await vi.waitFor(() => expect(recorderMock.instances[0]!.stop).toHaveBeenCalled());
     await vi.waitFor(async () => expect(await store.list()).toEqual([]));
+    expect(await store.chunks(recordingId)).toEqual([]);
+    expect(saveBlob).not.toHaveBeenCalled();
     expect(api.recordings.uploadBrowser).not.toHaveBeenCalled();
   });
 

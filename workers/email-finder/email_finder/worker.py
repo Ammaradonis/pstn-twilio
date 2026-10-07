@@ -166,8 +166,9 @@ async def run() -> bool:
         log.error("EMAIL_FINDER_WORKER_TOKEN is missing from the repo's .env; nothing to do.")
         return False
 
-    if settings.google_api_key and not settings.google_cx:
-        log.info("Google search key present, but search-engine ID missing; using Brave fallback.")
+    if not settings.google_cx:
+        log.info("No Programmable Search Engine ID (GOOGLE_SEARCH_ENGINE_ID); "
+                 "that free CSE path stays off.")
     # Fail at startup with a useful diagnosis rather than failing every row.
     try:
         await asyncio.to_thread(nlp.nlp)
@@ -185,6 +186,7 @@ async def run() -> bool:
         browser_cdp_url=settings.browser_cdp_url,
         social_cookies={"facebook": settings.facebook_cookies, "instagram": settings.instagram_cookies},
         social_daily_limit=settings.social_daily_limit,
+        respect_robots=settings.respect_robots,
     )
     signed = [n for n, f in (("Facebook", settings.facebook_cookies), ("Instagram", settings.instagram_cookies)) if f]
     if signed:

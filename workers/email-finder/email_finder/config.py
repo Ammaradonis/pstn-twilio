@@ -69,9 +69,13 @@ class Settings:
     max_site_pages: int
     use_browser: bool
     chrome_profile_path: str | None
-    google_api_key: str | None = None
+    # Honour each site's robots.txt on the plain-HTTP and headless paths. Off
+    # by default (the user's call, for speed): it costs a request per site.
+    respect_robots: bool = False
+    # The user's Programmable Search Engine ID. Its public results page is the
+    # free CSE path in google_free.py; there is no JSON API key any more (that
+    # API is closed to this project — see search.py).
     google_cx: str | None = None
-    google_daily_limit: int = 100
     # Every Brave key found (BEAVE_API_KEY, BEAVE_API_KEY2, ... then BRAVE_API_KEY...).
     brave_keys: tuple[str, ...] = ()
     browser_cdp_url: str | None = None
@@ -94,7 +98,8 @@ class Settings:
     # What the phone watches between lookups (ambient.py): the Reels session,
     # its engagement actions, and the caps that bound them.
     ambient: AmbientSettings = field(default_factory=ambient_settings)
-    # Vertex AI Search — unlimited fallback (GCP billing applies)
+    # Vertex AI Search — optional last-resort fallback (GCP billing applies);
+    # off unless a project and an app or data store are configured.
     vertex_project: str | None = None
     vertex_data_store: str | None = None
     vertex_location: str = "global"
@@ -105,12 +110,9 @@ def load_settings() -> Settings:
     except ValueError:
         delay = 1.5
 
-    # Google CSE — accept both env-var spellings used in env.txt
-    google_api_key = (
-        os.environ.get("GOOGLE_SEARCH_API_KEY")
-        or os.environ.get("GOOGLE_CLOUD_API_KEY")
-        or None
-    )
+    # The Programmable Search Engine (CSE) — accept both env-var spellings used
+    # in env.txt. GOOGLE_SEARCH_API_KEY is no longer read: the Custom Search
+    # JSON API refuses this project, so only the free CSE results page is used.
     google_cx = (
         os.environ.get("GOOGLE_SEARCH_CX")
         or os.environ.get("GOOGLE_CSE_ID")
@@ -118,16 +120,17 @@ def load_settings() -> Settings:
         or None
     )
 
-    # Vertex AI Search — project + data-store ID
+    # Vertex AI Search — project + app or data-store ID. Neither has a default:
+    # it is billed per query, so the provider is off unless both are set here.
     vertex_project = (
         os.environ.get("VERTEX_AI_PROJECT")
         or os.environ.get("GOOGLE_CLOUD_PROJECT")
-        or "local-gmail-510114"  # from env.txt "Project ID: local-gmail-510114"
+        or None
     )
     vertex_data_store = (
         os.environ.get("VERTEX_AI_DATA_STORE_ID")
         or os.environ.get("Vertex_AI_Search_APP_ID")  # env.txt key
-        or "sotftphone_1790865491347"  # from env.txt Vertex_AI_Search_APP_ID
+        or None
     )
     vertex_location = os.environ.get("VERTEX_AI_LOCATION") or "global"
     google_free = (os.environ.get("EMAIL_FINDER_GOOGLE_FREE") or "bare").strip().lower()
@@ -145,11 +148,11 @@ def load_settings() -> Settings:
         per_host_delay=delay,
         max_site_pages=max(4, _int("EMAIL_FINDER_MAX_SITE_PAGES", 10)),
         use_browser=os.environ.get("EMAIL_FINDER_USE_BROWSER", "1") != "0",
+        respect_robots=(os.environ.get("EMAIL_FINDER_RESPECT_ROBOTS") or "off").strip().lower()
+        in ("on", "1", "yes"),
         # Never automatically launch against the user's locked, default Chrome profile.
         chrome_profile_path=os.environ.get("EMAIL_FINDER_CHROME_PROFILE_PATH") or None,
-        google_api_key=google_api_key,
         google_cx=google_cx,
-        google_daily_limit=_int("EMAIL_FINDER_GOOGLE_DAILY_LIMIT", 100),
         brave_keys=_numbered_keys("BEAVE_API_KEY", "BRAVE_API_KEY"),
         browser_cdp_url=os.environ.get("EMAIL_FINDER_BROWSER_CDP_URL") or None,
         row_timeout=min(1000, max(60, _int("EMAIL_FINDER_ROW_TIMEOUT", 900))),

@@ -177,10 +177,9 @@ not logged, because Google puts its key in the query string.
 | --------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | EMAIL_FINDER_WORKER_TOKEN                                       | Shared secret with the API                                                                                                                                |
 | EMAIL_FINDER_API_BASE                                           | API origin; defaults to PUBLIC_BASE_URL                                                                                                                   |
-| GOOGLE_SEARCH_API_KEY / GOOGLE_CLOUD_API_KEY                    | Google search key                                                                                                                                         |
-| GOOGLE_SEARCH_CX / GOOGLE_CSE_ID                                | Google search-engine ID; OAuth client ID is not this                                                                                                      |
-| BEAVE_API_KEY / BRAVE_API_KEY                                   | Brave search fallback                                                                                                                                     |
-| EMAIL_FINDER_GOOGLE_DAILY_LIMIT                                 | Google request ceiling, default 100                                                                                                                       |
+| GOOGLE_SEARCH_ENGINE_ID / GOOGLE_SEARCH_CX / GOOGLE_CSE_ID      | Programmable Search Engine ID for the free CSE results page; OAuth client ID is not this                                                                  |
+| BEAVE_API_KEY / BRAVE_API_KEY                                   | Brave search keys, tried in order                                                                                                                         |
+| VERTEX_AI_PROJECT / VERTEX_AI_DATA_STORE_ID                     | Optional paid Vertex AI Search fallback; off unless both are set                                                                                          |
 | EMAIL_FINDER_GOOGLE_FREE                                        | Free Google before Brave: `bare` rows only (default), `all` rows, or `off`                                                                                |
 | EMAIL_FINDER_GOOGLE_FREE_DAILY_LIMIT                            | Free Google searches a day, default 150, 6-15 seconds apart                                                                                               |
 | EMAIL_FINDER_GOOGLE_COOKIES                                     | cookies.txt export that signs free Google in; default repo-root `cookies.txt`, `off` to disable                                                           |
@@ -208,10 +207,12 @@ not logged, because Google puts its key in the query string.
 | EMAIL_FINDER_CHROME_PROFILE_PATH                                | Optional dedicated automation profile                                                                                                                     |
 | EMAIL_FINDER_SENDER_NAME / EMAIL / PHONE / COMPANY / WEBSITE    | Optional truthful sender fields; use the EMAIL*FINDER_SENDER* prefix for each                                                                             |
 
-Google's API requires both a key and an engine ID and is unavailable to new
-customers; existing access is scheduled to end on January 1, 2027.
-See [Google's API overview](https://developers.google.com/custom-search/v1/overview)
-and [Brave's API reference](https://api-dashboard.search.brave.com/api-reference/web/search/get).
+The Custom Search JSON API is no longer part of the chain: Google closed it to
+new customers and this project has no access to it, so every call returned
+`403 This project does not have the access to Custom Search JSON API`. What
+replaces it is the free path: the Programmable Search Engine's public results
+page (the CSE path above) and free Google search. Brave carries the API traffic.
+See [Brave's API reference](https://api-dashboard.search.brave.com/api-reference/web/search/get).
 
 ## Social session setup
 
