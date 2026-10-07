@@ -99,3 +99,93 @@ def test_google_hosted_multistep_form(tmp_path, monkeypatch):
         finally:
             await fetcher.close()
     asyncio.run(run())
+
+
+# Shapes seen on real school sites in a dry run of 45 contact pages (2026-10-07).
+BASE_FIELDS = '''<label>Your name<input name="name" required></label>
+  <label>Your email<input type="email" name="email" required></label>'''
+SUBMIT_JS = '''<script>document.querySelector('form').onsubmit=async(e)=>{e.preventDefault();
+  const r=await fetch('/submit',{method:'POST',body:JSON.stringify(Object.fromEntries(new FormData(e.target)))});
+  const t=await r.text();
+  if(t.startsWith('REDIRECT:')) location.href=t.slice(9);
+  else if(t.startsWith('SLOW:')) setTimeout(()=>{document.body.innerHTML=t.slice(5)},8000);
+  else document.body.innerHTML=t;};</script>'''
+SHAPES = {
+    # A message prompt that mentions trial classes is still the message box.
+    'trial-prompt': (BASE_FIELDS + '<label>Dropping in? Interested in a trial class? Let us know!<textarea name="message"></textarea></label>'
+                     '<button type="submit">Send</button>', 'Your message has been sent', 'SENT'),
+    'split-name-contact-number': ('<fieldset><legend>Name</legend><label>First<input name="first" required></label>'
+                                  '<label>Last<input name="last" required></label></fieldset>'
+                                  '<label>Email<input type="email" name="email" required></label>'
+                                  '<label>Contact Number *<input name="number" required></label>'
+                                  '<label>Message<textarea name="message" required></textarea></label>'
+                                  '<button type="submit">Send</button>', 'Your message has been sent', 'SENT'),
+    'digits-only-phone': (BASE_FIELDS + '<label>Phone number<input type="tel" name="phone" pattern="[0-9\\-]*" required></label>'
+                          '<label>Comment<textarea name="message"></textarea></label><button type="submit">Send</button>',
+                          'Your message has been sent', 'SENT'),
+    'floated-form': ('<div style="height:0">' + BASE_FIELDS.replace('<label>', '<label style="float:left">') +
+                     '<label style="float:left">Message<textarea name="message"></textarea></label>'
+                     '<button style="float:left" type="submit">Send message</button></div>', 'Your message has been sent', 'SENT'),
+    'hidden-duplicate-submit': (BASE_FIELDS + '<label>Ask us anything<textarea name="message"></textarea></label>'
+                                '<button type="submit" style="display:none">Get In Touch</button><button type="submit">Get In Touch</button>',
+                                'Your message has been sent', 'SENT'),
+    'late-captcha': (BASE_FIELDS + '<label>Message<textarea name="message"></textarea></label>'
+                     '<span class="wpcf7-form-control wpcf7-recaptcha g-recaptcha" data-sitekey="x"></span>'
+                     '<button type="submit">Send</button>', 'Your message has been sent', 'MANUAL'),
+    # Confirmations: page copy already promising a reply does not block a new one.
+    'wpforms-copy': ('<p>Send us a message and we\'ll get back to you.</p>' + BASE_FIELDS +
+                     '<label>Message<textarea name="message"></textarea></label><button type="submit">Send</button>',
+                     "<p>Send us a message and we'll get back to you.</p><p>Thanks for contacting us! We will be in touch with you shortly.</p>", 'SENT'),
+    'squarespace-thank-you': (BASE_FIELDS + '<label>Message<textarea name="message"></textarea></label><button type="submit">Submit</button>',
+                              '<p>Thank you!</p>', 'SENT'),
+    'thank-you-redirect': (BASE_FIELDS + '<label>Message<textarea name="message"></textarea></label><button type="submit">Send</button>',
+                           'REDIRECT:https://school.test/thank-you/', 'SENT'),
+    'slow-mailer': (BASE_FIELDS + '<label>Message<textarea name="message"></textarea></label><button type="submit">Send</button>',
+                    'SLOW:Your message was sent successfully.', 'SENT'),
+    'error-after-submit': (BASE_FIELDS + '<label>Message<textarea name="message"></textarea></label><button type="submit">Send</button>',
+                           '<p>There was an error trying to send your message. Please try again later.</p>' + BASE_FIELDS, 'MANUAL'),
+}
+
+
+@pytest.mark.parametrize('shape', list(SHAPES))
+def test_real_world_form_shapes(tmp_path, monkeypatch, shape):
+    fields, reply, status = SHAPES[shape]
+
+    async def run():
+        async def allow(url): return True
+        monkeypatch.setattr(forms_module, 'public_url', allow)
+        fetcher = Fetcher(Cache(tmp_path / 'cache.db'))
+        sends, arms = [], []
+        page_html = f'<html><body><form id="contact">{fields}</form>{SUBMIT_JS}</body></html>'
+
+        async def guard(page):
+            async def route(r):
+                if r.request.method == 'POST':
+                    sends.append(r.request.post_data_json)
+                    await r.fulfill(status=200, content_type='text/html', body=reply)
+                elif r.request.url.endswith('/thank-you/'):
+                    await r.fulfill(status=200, content_type='text/html', body='<p>Great, we got it.</p>')
+                else:
+                    await r.fulfill(status=200, content_type='text/html', body=page_html)
+            await page.route('**/*', route)
+        fetcher.guard_page = guard
+
+        async def arm():
+            arms.append(1)
+            return True
+        try:
+            result = await FormSender(fetcher).send(TASK, arm)
+            assert result.status == status, result.notes
+            if shape == 'late-captcha':
+                assert not arms and not sends
+                return
+            assert len(sends) == 1  # exactly one submission, success or not
+            sent = sends[0]
+            assert sent['message'] == TASK['subject'] + '\n\n' + TASK['body']
+            if shape == 'split-name-contact-number':
+                assert (sent['first'], sent['last'], sent['number']) == ('Alex', 'Baker', TASK['sender']['phone'])
+            if shape == 'digits-only-phone':
+                assert sent['phone'] == '12025550123'
+        finally:
+            await fetcher.close()
+    asyncio.run(run())

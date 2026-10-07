@@ -147,9 +147,8 @@ class FormSender:
                         return FormResult("MANUAL", "No supported contact form found.")
                     candidates.sort(key=lambda f: -f[0])
                     form = candidates[0][1]
-                    for captcha in await form.locator('iframe[src*="recaptcha"],iframe[src*="hcaptcha"],iframe[src*="challenges.cloudflare.com"],.g-recaptcha,.h-captcha,.cf-turnstile').all():
-                        if await captcha.is_visible():
-                            return FormResult("MANUAL", "The form requires human verification.")
+                    if await _needs_human(form):
+                        return FormResult("MANUAL", "The form requires human verification.")
                     descriptors = await form.evaluate(FIELDS_JS)
                     host = (urlsplit(scope.url).hostname or "").lower()
                     overrides = self.answers.get(host, {})
@@ -219,6 +218,9 @@ class FormSender:
                         continue
                     if not filled_message or await submit.count() != 1:
                         return FormResult("MANUAL", "No unambiguous message field and Submit button found.")
+                    # Widgets often render seconds after the page; look again before submitting.
+                    if await _needs_human(form):
+                        return FormResult("MANUAL", "The form requires human verification.")
                     if dry_run:
                         return FormResult("PREPARED", "Form filled with the complete subject and body; submission disabled.")
                     before = await scope.locator("body").inner_text()
@@ -258,6 +260,24 @@ async def _body_text(scope, page) -> str:
     except Exception:
         # An embedded form's frame can be replaced after submitting.
         return await page.locator("body").inner_text(timeout=2000)
+
+
+async def _needs_human(form) -> bool:
+    """A checkbox/challenge CAPTCHA, including one whose widget has not drawn yet.
+
+    Contact Form 7 and others put an empty .g-recaptcha placeholder in the form
+    and draw the checkbox later, so the placeholder counts even while it has no
+    size. Invisible (score-based) reCAPTCHA needs no human and does not count.
+    """
+    widgets = form.locator(".g-recaptcha:not([data-size=invisible]),.h-captcha:not([data-size=invisible]),"
+                           ".cf-turnstile,.wpcf7-recaptcha:not([data-size=invisible])")
+    if await widgets.count():
+        return True
+    for frame in await form.locator('iframe[src*="recaptcha"],iframe[src*="hcaptcha"],'
+                                    'iframe[src*="challenges.cloudflare.com"]').all():
+        if await frame.is_visible():
+            return True
+    return False
 
 
 async def _form_gone(form) -> bool:
