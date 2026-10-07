@@ -223,8 +223,10 @@ describe('follow-up email choice', () => {
 describe('email templates', () => {
   it('has a 6-email sequence for every emailing status', () => {
     for (const name of Object.values(TAG_EMAIL_TEMPLATE)) {
-      expect(hasSequence(name), name).toBe(true);
-      expect(loadSequence(name), name).toHaveLength(6);
+      for (const region of ['US', 'UK'] as const) {
+        expect(hasSequence(name, region), `${region} ${name}`).toBe(true);
+        expect(loadSequence(name, region), `${region} ${name}`).toHaveLength(6);
+      }
     }
   });
 
@@ -324,6 +326,39 @@ describe('Google connection status', () => {
     await expect(service(other).getAccessToken('u1')).rejects.toBeInstanceOf(GoogleAuthError);
   });
 
+  it('checks each sequence is tied to the workbook with the right name', async () => {
+    const names: Record<string, string> = {
+      [cfg.conquestSheetId]: 'U.S. Conquest ',
+      [cfg.ukSheetId]: 'Old UK leads',
+    };
+    vi.spyOn(globalThis, 'fetch').mockImplementation(async (input) => {
+      const url = new URL(String(input));
+      const json = (body: object) => new Response(JSON.stringify(body), { status: 200 });
+      if (url.hostname === 'oauth2.googleapis.com') return json({ access_token: 'at' });
+      if (url.pathname === '/drive/v3/files') {
+        expect(url.searchParams.get('q')).toContain("name = 'The Official UK'");
+        return json({ files: [{ id: 'real-uk-id' }] });
+      }
+      const id = decodeURIComponent(url.pathname.split('/').pop()!);
+      return json({ name: names[id] });
+    });
+    const [us, uk] = await service().sequenceWorkbooks('u1');
+    expect(us).toMatchObject({
+      region: 'US',
+      expectedName: 'U.S. Conquest',
+      matches: true,
+      suggestedId: null,
+      demoNumber: '(667) 220-6726',
+    });
+    expect(uk).toMatchObject({
+      region: 'UK',
+      googleName: 'Old UK leads',
+      matches: false,
+      suggestedId: 'real-uk-id',
+      demoNumber: '02045726501',
+    });
+  });
+
   it('reports a Google outage without asking for a reconnect', async () => {
     tokenReply(503, { error: 'backend_error' });
     await expect(service().status('u1')).resolves.toMatchObject({
@@ -341,7 +376,7 @@ describe('voicemail not set up status', () => {
     expect(pickFollowUpTemplate([tag, 'Rang out'])).toMatchObject({
       template: 'voicemail-not-set-up',
     });
-    const [first] = loadSequence('voicemail-not-set-up');
+    const [first] = loadSequence('voicemail-not-set-up', 'US');
     expect(first!.subject).toBe('your voicemail box isnt set up yet');
     expect(first!.body).toContain('the voicemail box hasnt been set up yet');
   });

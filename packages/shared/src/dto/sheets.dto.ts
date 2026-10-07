@@ -94,6 +94,23 @@ export interface SheetsFollowUpDto {
 }
 
 /** Result of checking the "U.S. Conquest" addresses against the time zone resolver. */
+/** A workbook with its own follow-up sequence, as Google sees it right now. */
+export interface SheetsSequenceWorkbookDto {
+  region: 'US' | 'UK';
+  /** The name it should have in Google ("U.S. Conquest", "The Official UK"). */
+  expectedName: string;
+  /** The ID the API ties this sequence to. */
+  spreadsheetId: string;
+  /** Its name in Google Drive; null when Google couldn't find it. */
+  googleName: string | null;
+  /** googleName is expectedName (ignoring case, spaces and dots). */
+  matches: boolean;
+  /** When it doesn't: the ID of a spreadsheet that does have the expected name. */
+  suggestedId: string | null;
+  demoNumber: string;
+  error: string | null;
+}
+
 export interface SheetsTimeZoneCheckDto {
   tabs: number;
   addresses: number;

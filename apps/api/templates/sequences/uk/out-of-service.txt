@@ -1,0 +1,99 @@
+STATUS: out of service number
+
+==============================
+EMAIL 1
+Subject: heads up, your number is out of service
+
+Hey,
+
+Not even sure this is the right inbox but wanted to give you a heads up. I called {{called_number}} for {{school_name}} at {{call_time}} and got the number not recognised message. I called from {{my_number}}.
+
+{{call_note}}
+
+If you switched numbers the old one might still be listed somewhere. A parent who calls it will assume your closed.
+
+Unrelated, but I build phone agents for martial arts schools. Once your line is sorted, call the demo at 02045726501 and hear what callers could get.
+
+Reply with how the call went. And one thing. wich number are parents actually supposed to call?
+
+Ammar
+
+==============================
+EMAIL 2
+Subject: check the number on your google listing
+
+Hi,
+
+Not sure you saw my last one. The number I reached for {{school_name}} was out of service.
+
+You've got {{review_count}} reviews at {{rating}} stars. People are clearly still finding you on google. If thats where the old number is, some of them are calling a dead line right now.
+
+When you get a sec call 02045726501. Thats the demo of what I built.
+
+Reply with what you thought of the call, and one thing. where do most new students find you, google, your site, or word of mouth?
+
+Ammar
+
+==============================
+EMAIL 3
+Subject: parents think you closed
+
+Hey,
+
+When a parent hears number not recognised they dont dig further. They assume the {{category}} shut down and call the next one in {{city}}.
+
+If your open and busy thats a quiet leak you'd never see.
+
+Once your line is fixed, the demo at 02045726501 shows what could be answering it. Play a parent asking about trials.
+
+Reply with how it handled you, and one thing. when did you last call your own school from a phone that wasnt yours?
+
+Ammar
+
+==============================
+EMAIL 4
+Subject: did you move or switch providers
+
+Hi,
+
+Maybe you moved or switched providers. No big deal, happens to everybody.
+
+Just make sure the new number is everywhere. {{website}}, google, facebook, leaflets, the sign outside.
+
+When your ready, try 02045726501. Its a demo of an agent that answers every call, so a switch like this never costs you a parent.
+
+Reply with how the demo felt. Then one thing. how many places is your number listed that you'd have to update?
+
+Ammar
+
+==============================
+EMAIL 5
+Subject: a spare receptionist for {{school_name}}
+
+Hey,
+
+Thought I should tell you what this actually is. Its called MatBoss. matboss.online
+
+AI phone agent for martial arts schools plus a few automations. It answers your number, books trials, and tells you who called.
+
+If the new line is live at your school on {{street}}, it could be answering it this week. If your between numbers, even better timing.
+
+Demo 02045726501. Reply with what you thought and one thing. who at the school is in charge of the phone setup?
+
+Ammar
+
+==============================
+EMAIL 6
+Subject: last check in from me
+
+Hi,
+
+Last email. Hope the number is already fixed and I was just slow to notice. And if the school closed down, sorry for bugging you.
+
+If you want to hear what could answer the new line, matboss.online has it and the demo is 02045726501.
+
+If you try it, reply with how it went and one thing about how calls reach you now. Ill leave you alone after that.
+
+All the best out there in {{city}}.
+
+Ammar

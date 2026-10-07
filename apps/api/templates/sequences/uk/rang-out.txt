@@ -1,0 +1,101 @@
+STATUS: rang out
+
+==============================
+EMAIL 1
+Subject: it rang out at {{call_time}}
+
+Hey,
+
+I called {{school_name}} on {{called_number}} at {{call_time}} and it just rang and rang. No pickup, no voicemail. I called from {{my_number}} if you want to check your log.
+
+{{call_note}}
+
+Not a complaint. You were prolly on the mat. But a parent calling at that hour hears the exact same thing and just dials the next school on google.
+
+I built a phone agent for martial arts schools. Call the demo at 02045726501 and pretend your a parent asking about kids classes.
+
+Then reply and tell me how the call felt. After that, one thing. who is supposed to grab your phone while class is running?
+
+Ammar
+
+==============================
+EMAIL 2
+Subject: the mum who never calls twice
+
+Hi again,
+
+Still thinking about that call ringing out.
+
+Picture a mum who finally sits down after dinner. She googles {{category}} in {{city}} and calls the first 3 she sees. Whoever picks up gets the trial. She dosnt try the one that rang out a second time. She wont even remember wich one it was.
+
+You never find out she existed. Thats a kid who never makes it onto your mats.
+
+Call 02045726501 and ask it what a nervous parent would. my son is shy, is he gonna be ok. that kind of thing.
+
+Reply with how it handled you. Then one thing, just your gut number. how many calls a week do you think go unanswered?
+
+Ammar
+
+==============================
+EMAIL 3
+Subject: {{rating}} stars and a phone that rings out
+
+Hey,
+
+{{review_count}} reviews at {{rating}} stars on google. Thats not luck. People clearly love training at {{school_name}}.
+
+Thats why the ringing stuck with me. Your teaching isnt the problem. The phone is the only piece of your school a new family touches before they walk in the door.
+
+Try to break the demo at 02045726501. Ask about price, ask if a 5 year old can start, ask if they need a uniform.
+
+Reply with what it got right or wrong. Then one thing. what happens to a call that comes in on a sunday afternoon?
+
+Ammar
+
+==============================
+EMAIL 4
+Subject: not here to replace your receptionist
+
+Hi,
+
+Let me adress the obvious one. Most owners hear AI and picture a robot annoying thier parents.
+
+It isnt trying to replace you or anybody. It picks up the calls nobody can get to. The 5:30 kids class. The 9pm call after bedtime. The saturday everyone is at a competition. You opened a school to teach, not to sit by a phone.
+
+Only way to judge is to hear it. Call 02045726501 like a parent who just moved to {{city}} and knows nothing about martial arts.
+
+Reply with your honest take on the call. Then tell me one thing. how does a trial actually get booked at your school right now, step by step?
+
+Ammar
+
+==============================
+EMAIL 5
+Subject: finally putting a name on it
+
+Hey,
+
+I never told you what this is called. Its MatBoss. matboss.online
+
+AI phone agent built only for martial arts schools plus a few automations around it. It answers every call, books the trial, and sends you the details so its done before you walk off the mat.
+
+I went through {{website}}. A school on {{street}} with your reviews shouldnt be losing parents to a phone that rings out.
+
+If you havent tried it the demo is 02045726501. Reply with how it went and one thing. do you give prices on the phone or push people to come try a class first?
+
+Ammar
+
+==============================
+EMAIL 6
+Subject: closing the loop on {{school_name}}
+
+Hey,
+
+Last one from me, dont want to be that guy clogging your inbox.
+
+If the phone is covered and that rang out call was a one off, ignore me. Genuinely happy for you.
+
+If not, the demo stays live at 02045726501 and the rest is on matboss.online.
+
+Either way id love a reply. How the demo call went if you tried it, and one thing you think your school does worse on the phone then the gym down the road. No pitch after, promise.
+
+Ammar

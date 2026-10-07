@@ -21,6 +21,7 @@ import type {
   EmailFinderStatusDto,
   PushCallResultDto,
   SheetsConnectionStatusDto,
+  SheetsSequenceWorkbookDto,
   SheetsFollowUpDto,
   SheetsFollowUpMessageDto,
   SheetsSpreadsheetDto,
@@ -356,6 +357,7 @@ export const api = {
     listSpreadsheets: () => request<SheetsSpreadsheetDto[]>('/sheets/spreadsheets'),
     listTabs: (spreadsheetId: string) =>
       request<SheetTabDto[]>(`/sheets/tabs/${encodeURIComponent(spreadsheetId)}`),
+    sequences: () => request<SheetsSequenceWorkbookDto[]>('/sheets/sequences'),
     push: (body: PushCallResultDto) =>
       request<SheetsStatusDto>('/sheets/push', { method: 'POST', body }),
     followUps: () => request<SheetsFollowUpDto[]>('/sheets/follow-ups'),

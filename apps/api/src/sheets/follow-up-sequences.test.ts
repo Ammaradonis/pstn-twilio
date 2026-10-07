@@ -6,6 +6,7 @@ import { FollowUpRenderer } from './follow-up-renderer.service';
 import {
   DEMO_NUMBERS,
   loadSequence,
+  REGIONS,
   renderSequenceEmail,
   SEQUENCE_VARIABLES,
   sequenceDueAt,
@@ -80,31 +81,73 @@ const UK_CTX: FollowUpContext = {
 };
 
 describe('sequence files', () => {
-  it('has 6 emails per status, only known variables, and the demo line in every email', () => {
-    for (const key of Object.values(TAG_EMAIL_TEMPLATE)) {
-      const emails = loadSequence(key);
-      expect(
-        emails.map((e) => e.step),
-        key,
-      ).toEqual([1, 2, 3, 4, 5, 6]);
-      for (const email of emails) {
-        const used = [...`${email.subject}${email.body}`.matchAll(/\{\{(\w+)\}\}/g)].map(
-          (m) => m[1],
-        );
-        for (const name of used) expect(SEQUENCE_VARIABLES, `${key} ${email.step}`).toContain(name);
-        expect(email.body, `${key} ${email.step}`).toContain('(667) 220-6726');
-        expect(email.subject).not.toMatch(/^Subject:/);
+  it('has 6 emails per status in each region, each pushing only its own demo line', () => {
+    for (const region of REGIONS) {
+      for (const key of Object.values(TAG_EMAIL_TEMPLATE)) {
+        const emails = loadSequence(key, region);
+        expect(
+          emails.map((e) => e.step),
+          `${region} ${key}`,
+        ).toEqual([1, 2, 3, 4, 5, 6]);
+        for (const email of emails) {
+          const where = `${region} ${key} ${email.step}`;
+          const text = `${email.subject}\n${email.body}`;
+          const used = [...text.matchAll(/\{\{(\w+)\}\}/g)].map((m) => m[1]);
+          for (const name of used) expect(SEQUENCE_VARIABLES, where).toContain(name);
+          expect(email.body, where).toContain(DEMO_NUMBERS[region]);
+          expect(text, where).not.toContain(DEMO_NUMBERS[region === 'US' ? 'UK' : 'US']);
+          expect(email.subject).not.toMatch(/^Subject:/);
+        }
       }
     }
   });
 
+  it('writes the UK copy in British English, otherwise as the US copy', () => {
+    const american =
+      /\b(mom|moms|fall|vacation|cell|carriers?|programs?|favor|organized|figured|buddy|sucks|busy signal|front desk|desk person|fill out|filled out)\b|\{\{state\}\}/i;
+    for (const key of Object.values(TAG_EMAIL_TEMPLATE)) {
+      const us = loadSequence(key, 'US');
+      const uk = loadSequence(key, 'UK');
+      uk.forEach((email, i) => {
+        const where = `${key} ${email.step}`;
+        expect(`${email.subject}\n${email.body}`, where).not.toMatch(american);
+        // Same email, same lead details: only US states become UK towns.
+        const vars = (e: { subject: string; body: string }) =>
+          new Set([...`${e.subject}${e.body}`.matchAll(/\{\{(\w+)\}\}/g)].map((m) => m[1]));
+        const usVars = vars(us[i]!);
+        if (usVars.delete('state')) usVars.add('city');
+        expect(vars(email), where).toEqual(usVars);
+      });
+    }
+    expect(loadSequence('rang-out', 'UK')[1]!.subject).toBe('the mum who never calls twice');
+    expect(loadSequence('voicemail', 'UK')[5]!.body).toContain(
+      'Hope autumn is treating you well out there in {{city}}.',
+    );
+    expect(loadSequence('line-busy', 'UK')[0]!.subject).toBe(
+      'got the engaged tone on {{called_number}}',
+    );
+    expect(loadSequence('has-receptionist', 'UK')[3]!.body).toContain(
+      'Receptionists go off sick, go on holiday, quit right in the middle of the September rush.',
+    );
+    expect(loadSequence('out-of-service', 'UK')[0]!.body).toContain(
+      'got the number not recognised message',
+    );
+  });
+
   it('keeps the copy exactly as written, typos included', () => {
-    const [first, second] = loadSequence('rang-out');
+    const [first, second] = loadSequence('rang-out', 'US');
     expect(first!.subject).toBe('it rang out at {{call_time}}');
     expect(first!.body.startsWith('Hey,\n\nI called {{school_name}} on {{called_number}}')).toBe(
       true,
     );
     expect(second!.body).toContain('She dosnt try the one that rang out a second time.');
+    // The UK copy keeps the same typos.
+    expect(loadSequence('rang-out', 'UK')[1]!.body).toContain(
+      'Picture a mum who finally sits down after dinner.',
+    );
+    expect(loadSequence('rang-out', 'UK')[1]!.body).toContain(
+      'She dosnt try the one that rang out a second time.',
+    );
   });
 });
 
@@ -217,7 +260,7 @@ describe('rendering', () => {
   const ukVars = buildSequenceVars(UK_ROW, UK_CTX, 'UK');
 
   it('fills email 1 for U.S. Conquest with the US demo line', () => {
-    const email = renderSequenceEmail(loadSequence('rang-out')[0]!, usVars, 'US')!;
+    const email = renderSequenceEmail(loadSequence('rang-out', 'US')[0]!, usVars)!;
     expect(email.subject).toBe('it rang out at 3:28pm on Saturday');
     expect(email.body).toContain(
       'I called Guetho Texas BJJ on (806) 803-9393 at 3:28pm on Saturday and it just rang and rang.',
@@ -231,8 +274,8 @@ describe('rendering', () => {
 
   it('uses exactly 02045726501 for The Official UK, in subjects too', () => {
     for (const key of Object.values(TAG_EMAIL_TEMPLATE)) {
-      for (const template of loadSequence(key)) {
-        const email = renderSequenceEmail(template, ukVars, 'UK')!;
+      for (const template of loadSequence(key, 'UK')) {
+        const email = renderSequenceEmail(template, ukVars)!;
         expect(email.body, `${key} ${template.step}`).toContain(DEMO_NUMBERS.UK);
         expect(`${email.subject}\n${email.body}`).not.toContain('(667) 220-6726');
         expect(`${email.subject}\n${email.body}`).not.toMatch(/\{\{/);
@@ -242,8 +285,8 @@ describe('rendering', () => {
 
   it('keeps U.S. Conquest on (667) 220-6726 in every email, never the UK line', () => {
     for (const key of Object.values(TAG_EMAIL_TEMPLATE)) {
-      for (const template of loadSequence(key)) {
-        const email = renderSequenceEmail(template, usVars, 'US')!;
+      for (const template of loadSequence(key, 'US')) {
+        const email = renderSequenceEmail(template, usVars)!;
         expect(email.body, `${key} ${template.step}`).toContain(DEMO_NUMBERS.US);
         expect(`${email.subject}\n${email.body}`).not.toContain(DEMO_NUMBERS.UK);
       }
@@ -264,37 +307,34 @@ describe('rendering', () => {
   });
 
   it('drops the empty note line and never repeats a UK town', () => {
-    const email = renderSequenceEmail(
-      loadSequence('has-ai')[5]!,
-      { ...ukVars, call_note: '' },
-      'UK',
-    )!;
+    const email = renderSequenceEmail(loadSequence('has-ai', 'UK')[5]!, {
+      ...ukVars,
+      call_note: '',
+    })!;
     expect(email.body).toContain('parents in Southampton ask your AI');
     expect(email.body).not.toContain('Southampton, Southampton');
-    const first = renderSequenceEmail(
-      loadSequence('voicemail')[0]!,
-      { ...ukVars, call_note: '' },
-      'UK',
-    )!;
+    const first = renderSequenceEmail(loadSequence('voicemail', 'UK')[0]!, {
+      ...ukVars,
+      call_note: '',
+    })!;
     expect(first.body).not.toMatch(/\n\n\n/);
   });
 
   it('says "in <town>" when the lead has no street', () => {
     const vars: SequenceVars = { ...ukVars, street: '' };
-    const email = renderSequenceEmail(loadSequence('rang-out')[4]!, vars, 'UK')!;
+    const email = renderSequenceEmail(loadSequence('rang-out', 'UK')[4]!, vars)!;
     expect(email.body).toContain('A school in Southampton with your reviews');
-    const busy = renderSequenceEmail(
-      loadSequence('line-busy')[4]!,
-      { ...usVars, street: '' },
-      'US',
-    )!;
+    const busy = renderSequenceEmail(loadSequence('line-busy', 'US')[4]!, {
+      ...usVars,
+      street: '',
+    })!;
     expect(busy.body).toContain('For a school in Texas thats alot of parents');
   });
 
   it('skips an email whose data is missing instead of leaving a blank', () => {
     const vars: SequenceVars = { ...usVars, rating: '' };
-    expect(renderSequenceEmail(loadSequence('rang-out')[2]!, vars, 'US')).toBeNull();
-    expect(renderSequenceEmail(loadSequence('rang-out')[0]!, vars, 'US')).not.toBeNull();
+    expect(renderSequenceEmail(loadSequence('rang-out', 'US')[2]!, vars)).toBeNull();
+    expect(renderSequenceEmail(loadSequence('rang-out', 'US')[0]!, vars)).not.toBeNull();
   });
 
   it('schedules emails on days 2, 4, 7, 10, 14 and 21 after the call', () => {
@@ -365,6 +405,29 @@ describe('FollowUpRenderer', () => {
     });
     expect(email!.body).toContain('She googles martial arts school in Amarillo');
     expect(sheets.readLeadRow).not.toHaveBeenCalled();
+  });
+
+  it("sends each workbook's pushes its own sequence", async () => {
+    const { renderer: r } = renderer();
+    const us = await r.render(pushLog({ sequenceStep: 2 }) as never, 'u1');
+    expect(us).toMatchObject({ region: 'US', subject: 'the mom who never calls twice' });
+    expect(us!.body).toContain('Call (667) 220-6726 and ask it what a nervous parent would.');
+    const ukPush = {
+      sequenceStep: 2,
+      spreadsheetId: 'uk-sheet',
+      rowData: UK_ROW,
+      destinationE164: UK_CTX.destinationE164,
+      cellValue: UK_CTX.cellValue,
+      timeZone: UK_CTX.timeZone,
+    };
+    const uk = await r.render(pushLog(ukPush) as never, 'u1');
+    expect(uk).toMatchObject({ region: 'UK', subject: 'the mum who never calls twice' });
+    expect(uk!.body).toContain('Picture a mum who finally sits down after dinner.');
+    expect(uk!.body).toContain('Call 02045726501 and ask it what a nervous parent would.');
+    expect(uk!.body).not.toContain('(667) 220-6726');
+    // Any other workbook (a single-state or single-nation one) goes by the lead's number.
+    const other = await r.render(pushLog({ ...ukPush, spreadsheetId: 'scotland' }) as never, 'u1');
+    expect(other).toMatchObject({ region: 'UK', subject: 'the mum who never calls twice' });
   });
 
   it('reads the row once for pushes made before snapshots, and keeps it', async () => {

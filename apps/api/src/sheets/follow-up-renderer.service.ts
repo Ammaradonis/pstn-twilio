@@ -44,16 +44,19 @@ export class FollowUpRenderer {
     fromStep = log.sequenceStep,
   ): Promise<RenderedFollowUp | null> {
     const key = log.emailTemplate;
-    if (!key || !hasSequence(key)) throw new Error(`No follow-up sequence for "${key ?? ''}".`);
-    const row = await this.rowFor(log, userId);
+    // The workbook the call was pushed to picks the sequence (US or UK copy).
     const region = regionFor(log, {
       usSheetId: this.cfg.conquestSheetId,
       ukSheetId: this.cfg.ukSheetId,
     });
+    if (!key || !hasSequence(key, region)) {
+      throw new Error(`No ${region} follow-up sequence for "${key ?? ''}".`);
+    }
+    const row = await this.rowFor(log, userId);
     const vars = buildSequenceVars(row, log, region);
-    const emails = loadSequence(key);
+    const emails = loadSequence(key, region);
     for (let step = Math.max(1, fromStep); step <= SEQUENCE_LENGTH; step++) {
-      const rendered = renderSequenceEmail(emails[step - 1]!, vars, region);
+      const rendered = renderSequenceEmail(emails[step - 1]!, vars);
       if (rendered) return { ...rendered, step, region };
       this.logger.warn(`Skipping email ${step} of "${key}" for push ${log.id}: missing lead data.`);
     }

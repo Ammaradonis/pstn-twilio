@@ -1,0 +1,97 @@
+STATUS: has an AI
+
+==============================
+EMAIL 1
+Subject: an AI answered your line
+
+Hey,
+
+Called {{school_name}} at {{call_time}} on {{called_number}} and an AI picked up. I called from {{my_number}} so you can pull the recording if you keep them.
+
+{{call_note}}
+
+Respect for being ahead of most schools on this.
+
+I build one only for martial arts schools. Up for a side by side? Call yours, then call mine at 02045726501. Same questions both times.
+
+Reply with wich one you'd rather be the parent on. And one thing. how often do you actually listen to what your AI tells callers?
+
+Ammar
+
+==============================
+EMAIL 2
+Subject: does yours know the belt system
+
+Hi,
+
+Alot of AI receptionists are built for dentists and plumbers and then pointed at gyms.
+
+Ask yours the difference between the little ones class and juniors. Ask if a 12 year old can join the adult class. Ask about grading fees.
+
+Then ask mine the same at 02045726501.
+
+Reply with how they compared, and one thing. what did yours say the last time someone asked about price?
+
+Ammar
+
+==============================
+EMAIL 3
+Subject: the wierd questions are the real test
+
+Hey,
+
+Any AI can handle the easy stuff. The real test is when a parent asks something off the wall.
+
+My kid has ADHD, will he be ok. Can I watch the first class. Do you do birthday parties.
+
+Try those on 02045726501. Then on your own line.
+
+Reply with what happened on both. Then one thing. when your AI dosnt know an answer, does it transfer, take a message, or guess?
+
+Ammar
+
+==============================
+EMAIL 4
+Subject: answered or actually booked
+
+Hi,
+
+Answering is step one. Booking the trial is the part that pays a {{category}}.
+
+{{rating}} stars on {{review_count}} reviews tells me once a family walks in, your team closes. The question is how many callers get booked by the AI vs told someone will call them back.
+
+Call 02045726501 and ask to book a trial this week.
+
+Reply with how far it got you. And one thing. how many calls last month did your AI turn into booked trials?
+
+Ammar
+
+==============================
+EMAIL 5
+Subject: built for dojos not dentists
+
+Hey,
+
+Didnt send a link untill now. Its MatBoss. matboss.online
+
+AI phone agent built only for martial arts schools plus automations around it. It knows kids vs adult programmes, handles the nervous parent questions, and books the trial.
+
+I looked at {{website}} and the programmes you run on {{street}}. Theres alot of detail there a generic AI would fumble.
+
+Demo 02045726501. Reply with how it stacked up against yours, and one thing you wish your current AI did better.
+
+Ammar
+
+==============================
+EMAIL 6
+Subject: happy to lose this one
+
+Hi,
+
+Last email. If yours beats mine, tell me. I mean it, I'd rather know.
+
+matboss.online and 02045726501 are there if you ever want to compare again.
+
+Reply with your verdict on the side by side, and one thing parents in {{city}} ask your AI that it struggles with. That helps me more then anything.
+
+Ammar

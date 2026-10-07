@@ -1,0 +1,93 @@
+STATUS: not interested
+
+==============================
+EMAIL 1
+Subject: heard you on the not interested
+
+Hey,
+
+Called {{school_name}} at {{call_time}} on {{called_number}} and you told me not interested. Respect that completely. I called from {{my_number}} in case you wanna match it up.
+
+{{call_note}}
+
+Not trying to change your mind. I'd just value your opinion as someone running a real school.
+
+Call the demo at 02045726501 and pretend your a parent. Takes 2 minutes.
+
+Then reply with what you'd hate about it if it answered your phone. And one thing. how do calls get handled now while your on the mat?
+
+Ammar
+
+==============================
+EMAIL 2
+Subject: you might not need this
+
+Hi,
+
+Honestly some schools dont need what I built. If someone always answers, calls get returned within the hour, and trials get booked on the spot, your good.
+
+Alot of {{category}} owners I talk to beleive thats them. Then they check the call log.
+
+If you want to be sure, call 02045726501 so you know what the other option sounds like.
+
+Reply with your take on the demo and one thing. how many calls did {{school_name}} miss last week? check the log, dont guess.
+
+Ammar
+
+==============================
+EMAIL 3
+Subject: rip it apart for me
+
+Hey,
+
+Different ask this time. I want someone who knows the business to tear this apart.
+
+{{rating}} stars and {{review_count}} reviews tells me you know exactly what parents want. Call 02045726501 and ask it the hardest question a parent ever asked you.
+
+Reply with where it messed up. Then tell me one thing it would need to know about your school to not embarass you on the phone.
+
+Ammar
+
+==============================
+EMAIL 4
+Subject: not a sales email
+
+Hi,
+
+No pitch here. Im talking to owners around {{city}} to learn how schools really handle the phone.
+
+If you've got 2 minutes call the demo at 02045726501 so we're talking about the same thing. Then reply with your honest reaction.
+
+And one thing. what happens to a parent who calls on a saturday afternoon? I keep hearing totally different answers.
+
+Ammar
+
+==============================
+EMAIL 5
+Subject: in case you ever change your mind
+
+Hey,
+
+Not pushing. Just leaving this so you have it. What I built is called MatBoss. matboss.online
+
+AI phone agent for martial arts schools plus automations that stop leads slipping. It answers, books trials, and fills you in after.
+
+I checked {{website}} and your school on {{street}}. Looks like a school that gets plenty of calls.
+
+Demo is 02045726501. If you try it, reply with how it went and one thing you'd change about how new students book at your school.
+
+Ammar
+
+==============================
+EMAIL 6
+Subject: I'll close your file
+
+Hi,
+
+Last one. I'll take your no as final and stop emailing after this.
+
+If anything changes, matboss.online and the demo at 02045726501 will still be there.
+
+One favour before I go. Reply with a sentence on the demo if you called it, and one thing your school could do better on the phone. Even something small. Ill learn from it either way.
+
+Ammar

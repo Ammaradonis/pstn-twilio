@@ -49,6 +49,13 @@ export function SettingsSheets() {
   });
   const isConnected = status.data?.connected ?? false;
 
+  const sequences = useQuery({
+    queryKey: ['sheets', 'sequences'],
+    queryFn: () => api.sheets.sequences(),
+    enabled: isConnected && !status.data?.needsReconnect,
+    staleTime: 5 * 60_000,
+  });
+
   const followUps = useQuery({
     queryKey: ['sheets', 'follow-ups'],
     queryFn: () => api.sheets.followUps(),
@@ -183,6 +190,52 @@ ${message.body}`);
           </div>
         )}
       </div>
+
+      {isConnected && !status.data?.needsReconnect && (
+        <div className="space-y-2 rounded border border-slate-200 bg-white p-4">
+          <h2 className="text-sm font-semibold text-slate-700">Follow-up sequences</h2>
+          <p className="text-xs text-slate-600">
+            Each workbook has its own 72 emails. Calls pushed to any other spreadsheet go by the
+            school&apos;s number: UK numbers get the UK emails, the rest get the US ones.
+          </p>
+          {sequences.isLoading && <p className="text-xs text-slate-400">Checking with Google…</p>}
+          {sequences.isError && <p className="text-xs text-rose-700">{sequences.error.message}</p>}
+          <ul className="space-y-2">
+            {sequences.data?.map((w) => (
+              <li key={w.region} className="text-xs">
+                <p className="font-medium text-slate-800">
+                  {w.expectedName} → {w.region} emails, demo line {w.demoNumber}
+                </p>
+                {w.matches ? (
+                  <p className="text-emerald-700">
+                    Tied to <span className="font-mono">{w.spreadsheetId}</span>, which Google names
+                    &ldquo;{w.googleName}&rdquo;.
+                  </p>
+                ) : (
+                  <p className="text-amber-800">
+                    The ID <span className="font-mono">{w.spreadsheetId}</span>{' '}
+                    {w.googleName
+                      ? `is "${w.googleName}" in Google, not "${w.expectedName}".`
+                      : `couldn't be found in Google${w.error ? ` (${w.error})` : ''}.`}{' '}
+                    {w.suggestedId ? (
+                      <>
+                        &ldquo;{w.expectedName}&rdquo; is{' '}
+                        <span className="font-mono">{w.suggestedId}</span>: set{' '}
+                        <span className="font-mono">
+                          {w.region === 'US' ? 'US_CONQUEST_SHEET_ID' : 'UK_OFFICIAL_SHEET_ID'}
+                        </span>{' '}
+                        to it on the API.
+                      </>
+                    ) : (
+                      `No spreadsheet named "${w.expectedName}" was found either.`
+                    )}
+                  </p>
+                )}
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
 
       {isConnected && (
         <div className="space-y-2 rounded border border-slate-200 bg-white p-4">
@@ -322,8 +375,10 @@ ${message.body}`);
             emailType, emailSource, decisionMaker and contactForm columns.
           </li>
           <li>
-            Follow-up emails go to the address in the row&apos;s email column, 48 hours after the
-            call, using the template of the first status you picked that sends email. Booked a demo
+            Follow-up emails go to the address in the row&apos;s email column: a sequence of 6, on
+            days 2, 4, 7, 10, 14 and 21 after the call, for the first status you picked that sends
+            email. U.S. Conquest gets the US sequence (demo line (667) 220-6726), The Official UK
+            the UK one in British wording (demo line 02045726501); a reply stops it. Booked a demo
             cancels it; Not available and Handles calls himself don&apos;t send email on their own.
             A school already emailed in the last 30 days isn&apos;t emailed again. Schools with only
             a contact form receive the same subject and body through that form after research is
@@ -332,11 +387,12 @@ ${message.body}`);
           </li>
         </ul>
         <p className="text-xs text-slate-500">
-          Templates: <span className="font-mono">apps/api/templates/cold-email/</span>{' '}
+          Sequences: <span className="font-mono">apps/api/templates/sequences/us/</span> and{' '}
+          <span className="font-mono">apps/api/templates/sequences/uk/</span>{' '}
           {Object.values(TAG_EMAIL_TEMPLATE).join(', ')}. Placeholders:{' '}
           <span className="font-mono">
             {
-              '{{schoolName}} {{customNote}} {{callerNumber}} {{phoneNumber}} {{callDay}} {{localTime}}'
+              '{{school_name}} {{website}} {{rating}} {{review_count}} {{category}} {{street}} {{city}} {{state}} {{called_number}} {{my_number}} {{call_time}} {{call_note}}'
             }
           </span>
           .

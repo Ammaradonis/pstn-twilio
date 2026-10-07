@@ -194,7 +194,7 @@ async function main(): Promise<void> {
             ctx,
             regionFor(ctx, { usSheetId: US_SHEET, ukSheetId: UK_SHEET }),
           );
-          const emails = loadSequence(key).map((email) => renderSequenceEmail(email, vars, region));
+          const emails = loadSequence(key, region).map((email) => renderSequenceEmail(email, vars));
           if (emails.some((e) => !e)) continue;
           sequences.push({
             region,

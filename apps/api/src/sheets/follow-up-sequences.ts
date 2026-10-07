@@ -1,14 +1,14 @@
 /**
- * Follow-up email sequences: 6 emails per call status, written in
- * apps/api/templates/sequences/<status key>.txt exactly as the copywriter
- * delivered them (typos and plain punctuation are on purpose).
+ * Follow-up email sequences: 6 emails per call status, one set per region,
+ * in apps/api/templates/sequences/<us|uk>/<status key>.txt (typos and plain
+ * punctuation are on purpose).
+ *
+ *   us/  U.S. Conquest, as the copywriter delivered it: demo line (667) 220-6726.
+ *   uk/  The Official UK: the same emails in British wording (mum, autumn,
+ *        engaged tone, programme…) with the demo line written 02045726501.
  *
  * File format: "STATUS: …", then blocks separated by a line of "=" signs,
  * each "EMAIL <n>", "Subject: …", a blank line and the body.
- *
- * The text is written for U.S. Conquest, whose demo line is (667) 220-6726.
- * The Official UK sends the same emails with its own demo line, written
- * exactly as 02045726501.
  */
 
 import { existsSync, readFileSync } from 'fs';
@@ -22,10 +22,10 @@ export const SEQUENCE_DAYS = [2, 4, 7, 10, 14, 21] as const;
 export const MIN_GAP_MS = 20 * 60 * 60 * 1000;
 
 export type Region = 'US' | 'UK';
+export const REGIONS: readonly Region[] = ['US', 'UK'];
 
-const US_DEMO_NUMBER = '(667) 220-6726';
 export const DEMO_NUMBERS: Record<Region, string> = {
-  US: US_DEMO_NUMBER,
+  US: '(667) 220-6726',
   UK: '02045726501',
 };
 
@@ -65,27 +65,47 @@ const SEQUENCE_DIRS = [
 
 const cache = new Map<string, SequenceEmail[]>();
 
-export function sequenceDir(): string | null {
-  return SEQUENCE_DIRS.find((dir) => existsSync(join(dir, 'rang-out.txt'))) ?? null;
+/** The folder holding a region's sequences ("…/sequences/uk"). */
+export function sequenceDir(region: Region): string | null {
+  const sub = region.toLowerCase();
+  const base = SEQUENCE_DIRS.find((dir) => existsSync(join(dir, sub, 'rang-out.txt')));
+  return base ? join(base, sub) : null;
 }
 
-export function hasSequence(key: string): boolean {
-  const dir = sequenceDir();
+export function hasSequence(key: string, region: Region): boolean {
+  const dir = sequenceDir(region);
   return Boolean(dir && /^[a-z-]+$/.test(key) && existsSync(join(dir, `${key}.txt`)));
 }
 
-/** The 6 emails for a status key such as "rang-out". */
-export function loadSequence(key: string): SequenceEmail[] {
-  const cached = cache.get(key);
+/**
+ * The 6 emails a region sends for a status key such as "rang-out". Each
+ * email must push that region's demo line and never the other one, so a
+ * copy edit can't send UK schools to the US line or the reverse.
+ */
+export function loadSequence(key: string, region: Region): SequenceEmail[] {
+  const name = `${region.toLowerCase()}/${key}`;
+  const cached = cache.get(name);
   if (cached) return cached;
-  const dir = sequenceDir();
-  if (!dir) throw new Error('Follow-up sequences are missing from the API build.');
-  if (!hasSequence(key)) throw new Error(`No follow-up sequence for "${key}".`);
-  const emails = parseSequence(readFileSync(join(dir, `${key}.txt`), 'utf8'));
+  if (!sequenceDir(region)) throw new Error('Follow-up sequences are missing from the API build.');
+  if (!hasSequence(key, region)) throw new Error(`No follow-up sequence for "${name}".`);
+  const emails = parseSequence(readFileSync(join(sequenceDir(region)!, `${key}.txt`), 'utf8'));
   if (emails.length !== SEQUENCE_LENGTH) {
-    throw new Error(`Sequence "${key}" has ${emails.length} emails, expected ${SEQUENCE_LENGTH}.`);
+    throw new Error(`Sequence "${name}" has ${emails.length} emails, expected ${SEQUENCE_LENGTH}.`);
   }
-  cache.set(key, emails);
+  for (const email of emails) {
+    const text = `${email.subject}\n${email.body}`;
+    if (!email.body.includes(DEMO_NUMBERS[region])) {
+      throw new Error(`Sequence "${name}" email ${email.step} lacks ${DEMO_NUMBERS[region]}.`);
+    }
+    for (const other of REGIONS.filter((r) => r !== region)) {
+      if (text.includes(DEMO_NUMBERS[other])) {
+        throw new Error(
+          `Sequence "${name}" email ${email.step} pushes ${DEMO_NUMBERS[other]}, the ${other} demo line.`,
+        );
+      }
+    }
+  }
+  cache.set(name, emails);
   return emails;
 }
 
@@ -112,7 +132,6 @@ export function parseSequence(raw: string): SequenceEmail[] {
 export function renderSequenceEmail(
   email: SequenceEmail,
   vars: SequenceVars,
-  region: Region,
 ): { subject: string; body: string } | null {
   email = adaptToVars(email, vars);
   const used = new Set(
@@ -129,10 +148,7 @@ export function renderSequenceEmail(
     }
   }
   const fill = (text: string) =>
-    text
-      .replace(/\{\{(\w+)\}\}/g, (_, name: SequenceVariable) => vars[name]?.trim() ?? '')
-      .split(US_DEMO_NUMBER)
-      .join(DEMO_NUMBERS[region]);
+    text.replace(/\{\{(\w+)\}\}/g, (_, name: SequenceVariable) => vars[name]?.trim() ?? '');
   const body = fill(email.body)
     // An empty {{call_note}} on its own line leaves a gap; close it.
     .replace(/\n[ \t]*\n(?:[ \t]*\n)+/g, '\n\n')

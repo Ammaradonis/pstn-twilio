@@ -6,6 +6,7 @@
  *  DELETE /api/sheets                          disconnect
  *  GET    /api/sheets/spreadsheets             all spreadsheets in the account
  *  GET    /api/sheets/tabs/:spreadsheetId      tabs of one spreadsheet
+ *  GET    /api/sheets/sequences                the US/UK workbooks each sequence is tied to
  *  POST   /api/sheets/push                     post-call status push
  *  GET    /api/sheets/follow-ups               recent follow-up emails
  *  POST   /api/sheets/follow-ups/:id/cancel    cancel a pending email
@@ -107,6 +108,11 @@ export class SheetsController {
   @Get('tabs/:spreadsheetId')
   tabs(@Req() req: AuthedRequest, @Param('spreadsheetId') spreadsheetId: string) {
     return userFacing(this.sheets.listSheetTabs(req.user.id, spreadsheetId));
+  }
+
+  @Get('sequences')
+  sequences(@Req() req: AuthedRequest) {
+    return userFacing(this.sheets.sequenceWorkbooks(req.user.id));
   }
 
   @Post('push')

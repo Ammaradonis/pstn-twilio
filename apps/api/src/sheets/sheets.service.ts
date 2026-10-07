@@ -23,6 +23,7 @@ import {
   type SheetsConnectionStatusDto,
   type SheetsEmailStatus,
   type SheetsFollowUpDto,
+  type SheetsSequenceWorkbookDto,
   type SheetsSpreadsheetDto,
   type SheetsStatusDto,
   type SheetsTimeZoneCheckDto,
@@ -38,6 +39,7 @@ import {
 } from '../common/secret-box';
 import { PrismaService } from '../prisma/prisma.service';
 
+import { DEMO_NUMBERS, type Region } from './follow-up-sequences';
 import { rowRecord, type RowData } from './follow-up-vars';
 import {
   cityKey,
@@ -241,6 +243,64 @@ export class SheetsService {
     const token = await this.getAccessToken(userId);
     const tabs = await this.fetchTabs(token, spreadsheetId);
     return tabs.map(({ sheetId, title }) => ({ sheetId, title }));
+  }
+
+  /**
+   * The two workbooks with their own follow-up sequence, checked against
+   * Google: the configured ID should be the spreadsheet with that name. When
+   * it isn't, a spreadsheet that does have the name is suggested.
+   */
+  async sequenceWorkbooks(userId: string): Promise<SheetsSequenceWorkbookDto[]> {
+    const token = await this.getAccessToken(userId);
+    const workbooks: { region: Region; expectedName: string; spreadsheetId: string }[] = [
+      {
+        region: 'US',
+        expectedName: this.cfg.conquestSheetName,
+        spreadsheetId: this.cfg.conquestSheetId,
+      },
+      { region: 'UK', expectedName: this.cfg.ukSheetName, spreadsheetId: this.cfg.ukSheetId },
+    ];
+    return Promise.all(
+      workbooks.map(async (w) => {
+        let googleName: string | null = null;
+        let error: string | null = null;
+        try {
+          const file = await this.google<{ name?: string; trashed?: boolean }>(
+            token,
+            `https://www.googleapis.com/drive/v3/files/${encodeURIComponent(w.spreadsheetId)}?fields=name,trashed`,
+            `find ${w.expectedName}`,
+          );
+          googleName = file.trashed ? null : (file.name ?? null);
+          if (file.trashed) error = `${file.name ?? 'This spreadsheet'} is in the Drive bin.`;
+        } catch (err) {
+          error = (err as Error).message;
+        }
+        const matches = googleName !== null && sameSheetName(googleName, w.expectedName);
+        let suggestedId: string | null = null;
+        if (!matches) {
+          const url = new URL('https://www.googleapis.com/drive/v3/files');
+          url.searchParams.set(
+            'q',
+            `name = '${w.expectedName.replace(/'/g, "\\'")}' and mimeType='application/vnd.google-apps.spreadsheet' and trashed=false`,
+          );
+          url.searchParams.set('fields', 'files(id,name)');
+          const found = await this.google<{ files?: { id: string }[] }>(
+            token,
+            url.toString(),
+            `search for ${w.expectedName}`,
+          ).catch(() => ({ files: [] as { id: string }[] }));
+          suggestedId = found.files?.[0]?.id ?? null;
+        }
+        return {
+          ...w,
+          googleName,
+          matches,
+          suggestedId,
+          demoNumber: DEMO_NUMBERS[w.region],
+          error,
+        };
+      }),
+    );
   }
 
   // ── Post-call push ────────────────────────────────────────────────────────
@@ -723,6 +783,12 @@ export class SheetsService {
     }
     return body as { access_token: string };
   }
+}
+
+/** "U.S. Conquest " and "us conquest" are the same workbook name. */
+export function sameSheetName(a: string, b: string): boolean {
+  const squash = (s: string) => s.toLowerCase().replace(/[^a-z0-9]/g, '');
+  return squash(a) === squash(b);
 }
 
 // ── Row helpers ───────────────────────────────────────────────────────────────
