@@ -15,6 +15,7 @@ import { MessagesModule } from './messages/messages.module';
 import { NumbersModule } from './numbers/numbers.module';
 import { PrismaModule } from './prisma/prisma.module';
 import { RealtimeModule } from './realtime/realtime.module';
+import { RecordingsModule } from './recordings/recordings.module';
 import { RedisModule } from './redis/redis.module';
 import { SheetsModule } from './sheets/sheets.module';
 import { TwilioModule } from './twilio/twilio.module';
@@ -36,6 +37,7 @@ import { WebhooksModule } from './webhooks/webhooks.module';
     RedisModule,
     TwilioModule,
     RealtimeModule,
+    RecordingsModule,
     NumbersModule,
     MessagesModule,
     VoiceModule,

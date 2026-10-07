@@ -9,6 +9,14 @@ export interface TwilioRecordingMedia {
   contentType: string;
 }
 
+export class TwilioRecordingMediaError extends Error {
+  constructor(readonly status: number) {
+    super(`Twilio recording media request failed: ${status}`);
+  }
+}
+
+const RECORDING_CALLBACK_EVENTS = ['in-progress', 'completed', 'absent'];
+
 @Injectable()
 export class TwilioService implements OnModuleInit {
   private readonly logger = new Logger(TwilioService.name);
@@ -131,7 +139,7 @@ export class TwilioService implements OnModuleInit {
       headers: { Authorization: `Basic ${auth}` },
     });
     if (!response.ok) {
-      throw new Error(`Twilio recording media request failed: ${response.status}`);
+      throw new TwilioRecordingMediaError(response.status);
     }
     if (!response.body) {
       throw new Error('Twilio recording media response has no body');
@@ -143,6 +151,33 @@ export class TwilioService implements OnModuleInit {
       stream: Readable.fromWeb(response.body as Parameters<typeof Readable.fromWeb>[0]),
       contentType: response.headers.get('content-type') ?? 'audio/mpeg',
     };
+  }
+
+  /** Deletes a recording from Twilio. True when it is gone, including already deleted. */
+  async deleteRecording(recordingSid: string): Promise<boolean> {
+    try {
+      await this.client.recordings(recordingSid).remove();
+      return true;
+    } catch (err) {
+      if ((err as { status?: number }).status === 404) return true;
+      throw err;
+    }
+  }
+
+  /**
+   * Starts a dual-channel recording of a call that is already up, reported to
+   * the same status callback as <Dial record>. Returns the recording SID.
+   */
+  async startCallRecording(callSid: string): Promise<string> {
+    const recording = await this.client.calls(callSid).recordings.create({
+      recordingChannels: 'dual',
+      recordingTrack: 'both',
+      trim: 'do-not-trim',
+      recordingStatusCallback: `${this.webhookBaseUrl}/webhooks/twilio/voice/recording`,
+      recordingStatusCallbackMethod: 'POST',
+      recordingStatusCallbackEvent: RECORDING_CALLBACK_EVENTS,
+    });
+    return recording.sid;
   }
 
   private recordingMediaBaseUrl(recordingSid: string): string {

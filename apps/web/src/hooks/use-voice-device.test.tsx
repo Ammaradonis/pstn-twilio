@@ -37,7 +37,16 @@ vi.mock('../lib/api-client', () => ({
       prepareOutbound: vi.fn(),
     },
     calls: { byOutboundIntent: vi.fn() },
+    recordings: { startTwilioBackup: vi.fn().mockResolvedValue({}) },
   },
+}));
+
+const browserRecordingMock = vi.hoisted(() => ({
+  record: vi.fn((_call: unknown, _meta: unknown) => true),
+}));
+
+vi.mock('../lib/browser-recordings', () => ({
+  recordCallInBrowser: (call: unknown, meta: unknown) => browserRecordingMock.record(call, meta),
 }));
 
 vi.mock('@twilio/voice-sdk', () => {
@@ -934,6 +943,72 @@ describe('useVoiceDevice', () => {
       },
     });
     expect(current!.incoming).toBeNull();
+  });
+
+  describe('recording answered incoming calls', () => {
+    const PARENT_SID = 'CA' + 'a'.repeat(32);
+
+    async function answer(customParameters: Array<[string, string]>) {
+      render(<Harness onChange={(voice) => (current = voice)} />);
+      await act(async () => {
+        await current!.init();
+        await Promise.resolve();
+      });
+      const device = voiceSdkMock.instances[0]!;
+      const handlers = new Map<string, () => void>();
+      const call = {
+        on: vi.fn((event: string, handler: () => void) => handlers.set(event, handler)),
+        isMuted: vi.fn().mockReturnValue(false),
+        accept: vi.fn(),
+        parameters: { From: '+15552223333', CallSid: 'CA' + 'b'.repeat(32) },
+        customParameters: new Map(customParameters),
+      };
+      act(() => device.emit('incoming', call));
+      await act(async () => {
+        await current!.accept();
+      });
+      return { call, handlers };
+    }
+
+    beforeEach(() => {
+      browserRecordingMock.record.mockReset();
+      browserRecordingMock.record.mockReturnValue(true);
+      vi.mocked(api.recordings.startTwilioBackup).mockClear();
+    });
+
+    it('records the call in the browser under the inbound call, before accepting it', async () => {
+      const { call } = await answer([
+        ['parentCallSid', PARENT_SID],
+        ['recordCall', 'true'],
+      ]);
+
+      expect(browserRecordingMock.record).toHaveBeenCalledWith(call, {
+        direction: 'inbound',
+        counterpart: '+15552223333',
+        callSid: PARENT_SID,
+      });
+      expect(browserRecordingMock.record.mock.invocationCallOrder[0]).toBeLessThan(
+        call.accept.mock.invocationCallOrder[0]!,
+      );
+      expect(api.recordings.startTwilioBackup).not.toHaveBeenCalled();
+    });
+
+    it('does not record when the number has recording off', async () => {
+      await answer([
+        ['parentCallSid', PARENT_SID],
+        ['recordCall', 'false'],
+      ]);
+      expect(browserRecordingMock.record).not.toHaveBeenCalled();
+    });
+
+    it('has Twilio record the call when this browser cannot', async () => {
+      browserRecordingMock.record.mockReturnValue(false);
+      const { handlers } = await answer([['parentCallSid', PARENT_SID]]);
+
+      expect(api.recordings.startTwilioBackup).not.toHaveBeenCalled();
+      act(() => handlers.get('accept')?.());
+      expect(api.recordings.startTwilioBackup).toHaveBeenCalledWith(PARENT_SID);
+    });
   });
 
   describe('on an Android phone', () => {

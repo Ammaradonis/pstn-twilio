@@ -16,7 +16,6 @@ import { VoiceAppContext, VoiceExperienceGuard } from './voice-app.context';
 import { VoiceAppController, VoiceAppPushActionsController } from './voice-app.controller';
 import { VoiceAppService } from './voice-app.service';
 import { VoicePushService } from './voice-push.service';
-import { VoicemailTranscriber } from './voicemail-transcriber.service';
 
 /**
  * The phone-style app for users whose experience is "voice". Its call
@@ -35,7 +34,6 @@ import { VoicemailTranscriber } from './voicemail-transcriber.service';
     VoiceExperienceGuard,
     VoiceAppContext,
     VoicePushService,
-    VoicemailTranscriber,
     VoiceAppCallsService,
     VoiceAppSettingsService,
     VoiceAppContactsService,

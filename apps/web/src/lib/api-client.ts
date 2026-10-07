@@ -7,6 +7,7 @@ import type {
   AuditLogDto,
   AvailableNumberDto,
   CallDto,
+  CallRecordingDto,
   DiagnosticReportDto,
   HealthStatusDto,
   LastDialDto,
@@ -123,6 +124,44 @@ export async function request<T>(path: string, opts: RequestOptions = {}): Promi
   // NestJS sends a handler's `null` as a 200 with an empty body.
   const text = await res.text();
   return (text ? JSON.parse(text) : null) as T;
+}
+
+// Sends a file as the raw request body, e.g. a call recorded in the browser.
+export async function requestUpload<T>(
+  path: string,
+  file: Blob,
+  opts: Pick<RequestOptions, 'query' | 'timeoutMs'> = {},
+): Promise<T> {
+  const headers: Record<string, string> = {
+    Accept: 'application/json',
+    'Content-Type': file.type || 'application/octet-stream',
+  };
+  const token = getToken();
+  if (token) headers.Authorization = `Bearer ${token}`;
+
+  const res = await fetch(`${BASE_URL}${path}${buildQuery(opts.query)}`, {
+    method: 'POST',
+    credentials: 'include',
+    headers,
+    body: file,
+    ...(opts.timeoutMs ? { signal: AbortSignal.timeout(opts.timeoutMs) } : {}),
+  });
+
+  if (!res.ok) {
+    let payload: unknown = null;
+    let message = `POST ${path} failed: ${res.status}`;
+    try {
+      payload = await res.json();
+      const m = (payload as { message?: unknown })?.message;
+      if (typeof m === 'string') message = m;
+      else if (Array.isArray(m) && typeof m[0] === 'string') message = m[0];
+    } catch {
+      // empty/non-json body — keep default message
+    }
+    handleAuthFailure(res.status);
+    throw new ApiError(res.status, message, payload);
+  }
+  return (await res.json()) as T;
 }
 
 export async function requestBlob(path: string): Promise<Blob> {
@@ -260,6 +299,25 @@ export const api = {
         method: 'POST',
         body: { note },
       }),
+  },
+
+  recordings: {
+    // A call recorded in the browser. uploadId is chosen by the browser so a
+    // retried upload is recognized instead of stored twice.
+    uploadBrowser: (
+      input: { uploadId: string; callSid: string; startedAt: string; durationSeconds: number },
+      audio: Blob,
+    ) =>
+      requestUpload<CallRecordingDto>('/recordings/browser', audio, {
+        query: input,
+        timeoutMs: 120_000,
+      }),
+    // Has Twilio record the rest of a live call as a backup copy.
+    startTwilioBackup: (callSid: string) =>
+      request<{ recordingSid: string | null; alreadyRecording: boolean }>(
+        '/recordings/twilio-backup',
+        { method: 'POST', body: { callSid } },
+      ),
   },
 
   voicemail: {

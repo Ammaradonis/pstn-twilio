@@ -33,6 +33,8 @@ export function mapCallRecording(row: CallRecording): CallRecordingDto {
     channels: row.channels,
     source: row.source,
     track: row.track,
+    contentType: row.contentType,
+    storedAt: row.storedAt?.toISOString() ?? null,
     startedAt: row.startedAt?.toISOString() ?? null,
     createdAt: row.createdAt.toISOString(),
   };

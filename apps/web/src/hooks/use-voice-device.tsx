@@ -2,6 +2,7 @@ import type { OutboundCallPreparationDto } from '@pstn-twilio/shared';
 import { useCallback, useEffect, useState } from 'react';
 
 import { api } from '../lib/api-client';
+import { recordCallInBrowser } from '../lib/browser-recordings';
 
 type ConnectionState = 'idle' | 'pending' | 'ringing' | 'open' | 'closed';
 
@@ -25,6 +26,8 @@ type VoiceCall = {
   reject?: () => void;
   disconnect?: () => void;
   sendDigits?: (digits: string) => void;
+  getLocalStream?: () => MediaStream | undefined;
+  getRemoteStream?: () => MediaStream | undefined;
 };
 
 type VoiceDeviceRegistrationState = 'destroyed' | 'unregistered' | 'registering' | 'registered';
@@ -1470,6 +1473,7 @@ async function acceptIncomingCall(): Promise<void> {
       return;
     }
     attachCallListeners(conn);
+    recordIncomingCall(conn, runtime.state.incoming?.from);
     conn.accept?.({ audioConstraints: audio, rtcConstraints: { audio } });
     setRuntimeState({ incoming: null });
   } catch (err) {
@@ -1481,6 +1485,25 @@ async function acceptIncomingCall(): Promise<void> {
       ...(isDenied ? { micPermission: 'denied' as const } : {}),
     });
   }
+}
+
+// Answered incoming calls are recorded in this browser unless the number's
+// setting is off (the inbound TwiML says which). A browser that cannot record
+// asks Twilio to record the call instead.
+function recordIncomingCall(conn: VoiceCall, from: string | undefined): void {
+  if (conn.customParameters?.get('recordCall') === 'false') return;
+  const parentCallSid = conn.customParameters?.get('parentCallSid') ?? null;
+  const recording = recordCallInBrowser(conn, {
+    direction: 'inbound',
+    counterpart: from ?? '',
+    callSid: parentCallSid,
+  });
+  if (recording) return;
+  const callSid = parentCallSid ?? conn.parameters?.CallSid;
+  if (!callSid) return;
+  conn.on?.('accept', () => {
+    api.recordings.startTwilioBackup(callSid).catch(() => undefined);
+  });
 }
 
 function rejectIncomingCall(): void {

@@ -57,7 +57,6 @@ function build(
     call?: Record<string, unknown> | null;
     contactName?: string | null;
     redisGet?: string | null;
-    transcriber?: { enabled: boolean; transcribe: ReturnType<typeof vi.fn> };
   } = {},
 ) {
   const callRow = opts.call === null ? null : inboundCall(opts.call ?? {});
@@ -138,10 +137,6 @@ function build(
     settings: vi.fn().mockResolvedValue(settings(opts.settings)),
     contactName: vi.fn().mockResolvedValue(opts.contactName ?? null),
   };
-  const transcriber = opts.transcriber ?? {
-    enabled: true,
-    transcribe: vi.fn().mockResolvedValue('Hi, call me back.'),
-  };
   const service = new VoiceAppCallsService(
     prisma as never,
     twilio as never,
@@ -149,9 +144,8 @@ function build(
     realtime as never,
     push as never,
     ctx as never,
-    transcriber as never,
   );
-  return { service, prisma, redis, realtime, push, ctx, legsUpdate, multi, transcriber };
+  return { service, prisma, redis, realtime, push, ctx, legsUpdate, multi };
 }
 
 const VERIFIED_FORWARD = {
@@ -215,6 +209,8 @@ describe('VoiceAppCallsService.inboundTwiml', () => {
     );
     expect(xml).toContain('<Identity>user_u1</Identity>');
     expect(xml).toContain(`<Parameter name="parentCallSid" value="${PARENT}"/>`);
+    // Answering devices record the call in the browser by default.
+    expect(xml).toContain('<Parameter name="recordCall" value="true"/>');
     expect(xml).toContain('<Parameter name="callerName" value="Ana"/>');
     expect(xml).toContain(
       `url="https://api.example.com/webhooks/twilio/voice-app/screen?fid=f1&amp;parent=${PARENT}"`,
@@ -448,11 +444,8 @@ describe('VoiceAppCallsService ring here and decline', () => {
 });
 
 describe('VoiceAppCallsService voicemail callbacks', () => {
-  it('stores the voicemail and notifies once', async () => {
-    // The transcript's own notification is covered below.
-    const { service, prisma, push, redis } = build({
-      transcriber: { enabled: true, transcribe: vi.fn().mockResolvedValue(null) },
-    });
+  it('stores the voicemail and notifies once, without transcribing it', async () => {
+    const { service, prisma, push, redis } = build();
     const params = {
       CallSid: PARENT,
       RecordingSid: 'RE1',
@@ -468,75 +461,17 @@ describe('VoiceAppCallsService voicemail callbacks', () => {
           source: 'voicemail',
           status: RecordingStatus.COMPLETED,
           durationSeconds: 23,
-          transcriptStatus: 'in-progress',
         }),
       }),
     );
     expect(push.sendToUser).toHaveBeenCalledWith(
       'u1',
-      expect.objectContaining({ type: 'voicemail', body: '0:23 · Transcribing…' }),
+      expect.objectContaining({ type: 'voicemail', body: '0:23' }),
       expect.anything(),
     );
     redis.client.set.mockResolvedValue(null);
     await service.voicemailRecording(params);
     expect(push.sendToUser).toHaveBeenCalledTimes(1);
-  });
-
-  it('transcribes the voicemail and updates the notification with the text', async () => {
-    const { service, prisma, push, transcriber } = build();
-    await service.voicemailRecording({
-      CallSid: PARENT,
-      RecordingSid: 'RE5',
-      RecordingStatus: 'completed',
-      RecordingDuration: '9',
-    });
-    await vi.waitFor(() =>
-      expect(prisma.callRecording.update).toHaveBeenCalledWith(
-        expect.objectContaining({
-          where: { twilioRecordingSid: 'RE5' },
-          data: { transcript: 'Hi, call me back.', transcriptStatus: 'completed' },
-        }),
-      ),
-    );
-    expect(transcriber.transcribe).toHaveBeenCalledWith('RE5');
-    await vi.waitFor(() =>
-      expect(push.sendToUser).toHaveBeenLastCalledWith(
-        'u1',
-        expect.objectContaining({ body: 'Hi, call me back.', tag: `call-${PARENT}`, silent: true }),
-        expect.anything(),
-      ),
-    );
-  });
-
-  it('marks the transcript failed when Deepgram fails', async () => {
-    const { service, prisma } = build({
-      transcriber: { enabled: true, transcribe: vi.fn().mockRejectedValue(new Error('502')) },
-    });
-    await service.transcribeVoicemail('RE6');
-    expect(prisma.callRecording.update).toHaveBeenCalledWith(
-      expect.objectContaining({ data: { transcript: null, transcriptStatus: 'failed' } }),
-    );
-  });
-
-  it('skips transcription when no transcriber is configured', async () => {
-    const { service, prisma, push, transcriber } = build({
-      transcriber: { enabled: false, transcribe: vi.fn() },
-    });
-    await service.voicemailRecording({
-      CallSid: PARENT,
-      RecordingSid: 'RE7',
-      RecordingStatus: 'completed',
-      RecordingDuration: '65',
-    });
-    expect(prisma.callRecording.upsert).toHaveBeenCalledWith(
-      expect.objectContaining({ create: expect.objectContaining({ transcriptStatus: null }) }),
-    );
-    expect(push.sendToUser).toHaveBeenCalledWith(
-      'u1',
-      expect.objectContaining({ body: '1:05' }),
-      expect.anything(),
-    );
-    expect(transcriber.transcribe).not.toHaveBeenCalled();
   });
 
   it('does not notify an empty recording', async () => {

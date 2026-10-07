@@ -17,19 +17,24 @@ describe('inbound recording preference', () => {
       recordCall: false,
     });
   });
-  it('starts off and only opts in after the user toggles and the server confirms', async () => {
-    vi.mocked(api.voice.setRecordingPreference).mockResolvedValue({
+  it('starts on and only turns off after the user toggles and the server confirms', async () => {
+    vi.mocked(api.voice.recordingPreference).mockResolvedValue({
       numberId: 'pn1',
       recordCall: true,
     });
+    vi.mocked(api.voice.setRecordingPreference).mockResolvedValue({
+      numberId: 'pn1',
+      recordCall: false,
+    });
     render(<InboundRecordingToggle numberId="pn1" inCall={false} />);
     const toggle = screen.getByRole('switch', { name: 'Record call' });
-    expect(toggle).toHaveAttribute('aria-checked', 'false');
+    expect(toggle).toHaveAttribute('aria-checked', 'true');
     await waitFor(() => expect(toggle).toBeEnabled());
+    expect(screen.getByText(/recorded in this browser for free/)).toBeInTheDocument();
     expect(api.voice.setRecordingPreference).not.toHaveBeenCalled();
     fireEvent.click(toggle);
-    await waitFor(() => expect(toggle).toHaveAttribute('aria-checked', 'true'));
-    expect(api.voice.setRecordingPreference).toHaveBeenCalledWith('pn1', true);
+    await waitFor(() => expect(toggle).toHaveAttribute('aria-checked', 'false'));
+    expect(api.voice.setRecordingPreference).toHaveBeenCalledWith('pn1', false);
   });
   it('retains the confirmed setting if saving fails', async () => {
     vi.mocked(api.voice.setRecordingPreference).mockRejectedValue(new Error('Could not save'));

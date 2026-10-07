@@ -4,10 +4,14 @@ import { BadRequestException, ForbiddenException, NotFoundException } from '@nes
 import { CallDirection, CallStatus, RecordingStatus, UserRole } from '@prisma/client';
 import { describe, expect, it, vi } from 'vitest';
 
+import { RecordingMediaService } from '../recordings/recording-media.service';
+
 import { decodeCursor, encodeCursor } from './calls.mapper';
 import { CallsService } from './calls.service';
 
-function buildService(overrides: { prisma?: any; twilio?: any; audit?: any; realtime?: any } = {}) {
+function buildService(
+  overrides: { prisma?: any; twilio?: any; audit?: any; realtime?: any; storage?: any } = {},
+) {
   const prisma = overrides.prisma ?? {
     phoneNumber: { findUnique: vi.fn() },
     call: { findUnique: vi.fn(), findMany: vi.fn(), findFirst: vi.fn(), update: vi.fn() },
@@ -18,12 +22,15 @@ function buildService(overrides: { prisma?: any; twilio?: any; audit?: any; real
   };
   const audit = overrides.audit ?? { log: vi.fn().mockResolvedValue(undefined) };
   const realtime = overrides.realtime ?? { callStatusUpdated: vi.fn() };
+  const storage = overrides.storage ?? { get: vi.fn() };
+  const media = new RecordingMediaService(prisma, twilio, storage);
   return {
-    service: new CallsService(prisma, twilio, audit, realtime),
+    service: new CallsService(prisma, twilio, audit, realtime, media),
     prisma,
     twilio,
     audit,
     realtime,
+    storage,
   };
 }
 
@@ -467,6 +474,78 @@ describe('CallsService.getRecordingMedia', () => {
     expect(media.contentType).toBe('audio/mpeg');
     expect(media.filename).toBe('RE1.mp3');
     expect(media.stream).toBeInstanceOf(Readable);
+  });
+
+  it('serves an archived or browser recording from storage, not Twilio', async () => {
+    const prisma = {
+      phoneNumber: { findUnique: vi.fn().mockResolvedValue({ id: 'pn1', userId: 'u1' }) },
+      call: {
+        findUnique: vi.fn().mockResolvedValue({
+          ...baseCall,
+          recordings: [
+            {
+              id: 'rec2',
+              twilioCallSid: 'CA1',
+              twilioRecordingSid: null,
+              status: RecordingStatus.COMPLETED,
+              source: 'browser',
+              storageKey: 'recordings/2026/10/CA1/rec2.webm',
+            },
+          ],
+        }),
+      },
+    };
+    const twilio = { client: { calls: vi.fn() }, fetchRecordingMedia: vi.fn() };
+    const storage = {
+      get: vi.fn().mockResolvedValue({
+        stream: Readable.from(Buffer.from('webm-bytes')),
+        contentType: 'audio/webm',
+      }),
+    };
+    const { service } = buildService({ prisma, twilio, storage });
+
+    const media = await service.getRecordingMedia(
+      { userId: 'u1', role: UserRole.OWNER },
+      'pn1',
+      'c1',
+      'rec2',
+    );
+
+    expect(storage.get).toHaveBeenCalledWith('recordings/2026/10/CA1/rec2.webm');
+    expect(twilio.fetchRecordingMedia).not.toHaveBeenCalled();
+    expect(media.contentType).toBe('audio/webm');
+    expect(media.filename).toBe('rec2.webm');
+  });
+
+  it('falls back to storage when the archiver deleted the Twilio copy mid-request', async () => {
+    const prisma = {
+      phoneNumber: { findUnique: vi.fn().mockResolvedValue({ id: 'pn1', userId: 'u1' }) },
+      call: { findUnique: vi.fn().mockResolvedValue(baseCall) },
+      callRecording: {
+        findUnique: vi.fn().mockResolvedValue({ storageKey: 'recordings/2026/10/CA1/RE1.mp3' }),
+      },
+    };
+    const twilio = {
+      client: { calls: vi.fn() },
+      fetchRecordingMedia: vi.fn().mockRejectedValue(new Error('404')),
+    };
+    const storage = {
+      get: vi.fn().mockResolvedValue({
+        stream: Readable.from(Buffer.from('mp3-bytes')),
+        contentType: 'audio/mpeg',
+      }),
+    };
+    const { service } = buildService({ prisma, twilio, storage });
+
+    const media = await service.getRecordingMedia(
+      { userId: 'u1', role: UserRole.OWNER },
+      'pn1',
+      'c1',
+      'rec1',
+    );
+
+    expect(storage.get).toHaveBeenCalledWith('recordings/2026/10/CA1/RE1.mp3');
+    expect(media.filename).toBe('RE1.mp3');
   });
 });
 

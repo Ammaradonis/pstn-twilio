@@ -54,7 +54,7 @@ function buildService(overrides: { prisma?: any; twilio?: any; audit?: any; redi
 }
 
 describe('inbound recording preference', () => {
-  it('defaults to off and preserves other number tags on explicit opt-in', async () => {
+  it('defaults to on and preserves other number tags when turned off', async () => {
     const { service, prisma, audit } = buildService();
     prisma.phoneNumber.findUnique.mockResolvedValue({
       id: 'pn1',
@@ -64,17 +64,17 @@ describe('inbound recording preference', () => {
     const actor = { userId: 'u1', role: UserRole.OWNER };
     expect(await service.getRecordingPreference(actor, 'pn1')).toEqual({
       numberId: 'pn1',
-      recordCall: false,
+      recordCall: true,
     });
-    await service.setRecordingPreference(actor, 'pn1', true);
+    await service.setRecordingPreference(actor, 'pn1', false);
     expect(prisma.phoneNumber.update).toHaveBeenCalledWith({
       where: { id: 'pn1' },
-      data: { tags: { label: 'Keep me', recordInboundCalls: true } },
+      data: { tags: { label: 'Keep me', recordInboundInBrowser: false } },
     });
     expect(audit.log).toHaveBeenCalledWith(
       expect.objectContaining({
         action: 'voice.inbound_recording_preference_updated',
-        metadata: { recordCall: true },
+        metadata: { recordCall: false },
       }),
     );
   });

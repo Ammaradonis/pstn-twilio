@@ -58,6 +58,19 @@ vi.mock('../lib/recording-downloads', () => ({
   watchRecordingDownload: vi.fn(),
 }));
 
+// jsdom cannot record audio; tests opt in to a browser that can.
+const browserRecordingMock = vi.hoisted(() => ({
+  supported: false,
+  record: vi.fn((_call: unknown, _meta: unknown) => true),
+}));
+
+vi.mock('../lib/browser-recordings', () => ({
+  describeBrowserRecording: () => '',
+  isBrowserRecordingSupported: () => browserRecordingMock.supported,
+  recordCallInBrowser: (call: unknown, meta: unknown) => browserRecordingMock.record(call, meta),
+  useBrowserRecordingStatus: () => null,
+}));
+
 vi.mock('../lib/realtime', () => ({
   getSocket: () => ({ on: vi.fn(), off: vi.fn() }),
 }));
@@ -98,6 +111,11 @@ vi.mock('../lib/api-client', () => {
       },
       numbers: {
         get: vi.fn(() => new Promise(() => {})),
+      },
+      recordings: {
+        startTwilioBackup: vi
+          .fn()
+          .mockResolvedValue({ recordingSid: 'RE9', alreadyRecording: false }),
       },
       sheets: {
         status: vi
@@ -148,6 +166,9 @@ describe('DialPage dialpad', () => {
   beforeEach(() => {
     resetVoiceMock();
     window.localStorage.removeItem('pstn-twilio.record-calls');
+    window.localStorage.removeItem('pstn-twilio.twilio-backup');
+    browserRecordingMock.supported = false;
+    browserRecordingMock.record.mockClear();
     for (const key of Object.keys(window.localStorage)) {
       if (key.startsWith('pstn-twilio.post-call.')) window.localStorage.removeItem(key);
     }
@@ -338,6 +359,105 @@ describe('DialPage dialpad', () => {
 
     await waitFor(() => expect(voiceMock.current.makeCall).toHaveBeenCalled());
     expect(watchRecordingDownload).not.toHaveBeenCalled();
+  });
+
+  describe('in a browser that can record calls', () => {
+    const CALL_SID = 'CA0123456789abcdef0123456789abcdef';
+    const prepared = (recordCall: boolean) => ({
+      outboundIntentId: 'intent1',
+      selectedNumberId: 'pn1',
+      selectedCallerId: '+15552222222',
+      destinationNumber: '+12547024877',
+      identity: 'user_u1_number_pn1',
+      expiresAt: '2026-09-14T12:02:00.000Z',
+      recordCall,
+    });
+
+    beforeEach(() => {
+      browserRecordingMock.supported = true;
+      vi.mocked(api.recordings.startTwilioBackup).mockClear();
+    });
+
+    async function placeCall() {
+      fireEvent.change(screen.getByLabelText(/destination/i), {
+        target: { value: '+12547024877' },
+      });
+      fireEvent.click(screen.getByRole('button', { name: 'Call' }));
+      await waitFor(() => expect(voiceMock.current.makeCall).toHaveBeenCalled());
+    }
+
+    it('records in the browser and keeps a Twilio backup without downloading it twice', async () => {
+      const call = { on: vi.fn(), parameters: { CallSid: CALL_SID } };
+      voiceMock.current.makeCall = vi.fn(async (_numberId, _destination, options) => {
+        options?.onPrepared?.(prepared(true));
+        return call;
+      });
+      await renderDial();
+
+      expect(screen.getByRole('switch', { name: /twilio backup copy/i })).toBeChecked();
+      await placeCall();
+
+      expect(voiceMock.current.makeCall).toHaveBeenCalledWith(
+        'pn1',
+        '+12547024877',
+        expect.objectContaining({ recordCall: true }),
+      );
+      await waitFor(() =>
+        expect(browserRecordingMock.record).toHaveBeenCalledWith(call, {
+          direction: 'outbound',
+          counterpart: '+12547024877',
+          numberId: 'pn1',
+          outboundIntentId: 'intent1',
+        }),
+      );
+      expect(watchRecordingDownload).not.toHaveBeenCalled();
+    });
+
+    it('leaves Twilio out when the backup copy is off, and remembers it', async () => {
+      voiceMock.current.makeCall = vi.fn(async (_numberId, _destination, options) => {
+        options?.onPrepared?.(prepared(false));
+        return { on: vi.fn() };
+      });
+      const view = await renderDial();
+
+      fireEvent.click(screen.getByRole('switch', { name: /twilio backup copy/i }));
+      await placeCall();
+
+      expect(voiceMock.current.makeCall).toHaveBeenCalledWith(
+        'pn1',
+        '+12547024877',
+        expect.objectContaining({ recordCall: false }),
+      );
+      await waitFor(() => expect(browserRecordingMock.record).toHaveBeenCalled());
+
+      view.unmount();
+      await renderDial();
+      expect(screen.getByRole('switch', { name: /twilio backup copy/i })).not.toBeChecked();
+    });
+
+    it('backs up a live call on Twilio when asked', async () => {
+      voiceMock.current.makeCall = vi.fn(async (_numberId, _destination, options) => {
+        options?.onPrepared?.(prepared(false));
+        return { on: vi.fn(), parameters: { CallSid: CALL_SID } };
+      });
+      window.localStorage.setItem('pstn-twilio.twilio-backup', 'false');
+      const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+      const page = () => (
+        <QueryClientProvider client={client}>
+          <DialPage />
+        </QueryClientProvider>
+      );
+      const view = renderBase(page());
+      await screen.findByText(/Caller ID:/);
+      await placeCall();
+
+      voiceMock.current = { ...voiceMock.current, active: true, connectionState: 'open' };
+      view.rerender(page());
+      fireEvent.click(await screen.findByRole('button', { name: 'Back up this call' }));
+
+      await waitFor(() => expect(api.recordings.startTwilioBackup).toHaveBeenCalledWith(CALL_SID));
+      expect(await screen.findByText('Twilio is also recording this call.')).toBeInTheDocument();
+    });
   });
 
   it('locks the recording toggle during a call', () => {

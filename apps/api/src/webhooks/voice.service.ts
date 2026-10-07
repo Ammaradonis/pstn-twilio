@@ -15,6 +15,7 @@ import twilio from 'twilio';
 import { AGENT_FALLBACK_QUERY, VAPI_TWILIO_INBOUND_URL } from '../ai-calls/inbound-calls.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { RealtimeService } from '../realtime/realtime.service';
+import { recordsInboundCalls } from '../recordings/inbound-recording';
 import { RedisService } from '../redis/redis.service';
 import { TwilioService } from '../twilio/twilio.service';
 import { VoiceAppCallsService } from '../voice-app/voice-app-calls.service';
@@ -193,9 +194,8 @@ export class VoiceWebhookService {
       }`,
       method: 'POST',
       timeLimit: 3600,
-      ...((phoneNumber.tags as Record<string, unknown> | null)?.recordInboundCalls === true
-        ? this.recordingDialAttributes()
-        : { record: 'do-not-record' as const }),
+      // The browser that answers records the call (see recordCall below).
+      record: 'do-not-record',
     });
     const client = dial.client({
       statusCallback: `${this.twilio.webhookBaseUrl}/webhooks/twilio/voice/status`,
@@ -206,6 +206,9 @@ export class VoiceWebhookService {
     // All of the user's numbers ring the same browser identity; tell the
     // incoming-call popup which of them was dialed.
     client.parameter({ name: 'calledNumber', value: phoneNumber.phoneNumberE164 });
+    // The browser files its recording under this call, not its own leg.
+    client.parameter({ name: 'parentCallSid', value: callSid });
+    client.parameter({ name: 'recordCall', value: String(recordsInboundCalls(phoneNumber.tags)) });
     return response.toString();
   }
 
@@ -774,6 +777,8 @@ function toCallRecordingDto(recording: CallRecording) {
     channels: recording.channels,
     source: recording.source,
     track: recording.track,
+    contentType: recording.contentType,
+    storedAt: recording.storedAt?.toISOString() ?? null,
     startedAt: recording.startedAt?.toISOString() ?? null,
     createdAt: recording.createdAt.toISOString(),
   };

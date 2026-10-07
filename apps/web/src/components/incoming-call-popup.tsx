@@ -12,6 +12,7 @@
 import { useEffect, useState } from 'react';
 
 import { useVoiceDevice } from '../hooks/use-voice-device';
+import { useBrowserRecordingStatus } from '../lib/browser-recordings';
 import { formatPhone } from '../lib/format';
 
 // Android vibrates with the ringtone. Chrome allows it once the app has been
@@ -53,6 +54,8 @@ function callerLabel(from: string | undefined): string {
 
 export function IncomingCallPopup() {
   const voice = useVoiceDevice();
+  const recording = useBrowserRecordingStatus();
+  const recordingNow = recording?.direction === 'inbound' && recording.state === 'recording';
   const { init, destroy } = voice;
   const [answering, setAnswering] = useState(false);
   const [answered, setAnswered] = useState<AnsweredCall | null>(null);
@@ -199,6 +202,7 @@ export function IncomingCallPopup() {
               <p className="truncate text-sm font-semibold">{answered.from}</p>
               <p className="text-xs text-slate-300">
                 {answered.connectedAt ? formatElapsed(now - answered.connectedAt) : 'Connecting…'}
+                {recordingNow && <span className="text-rose-300"> · Recording</span>}
               </p>
             </div>
             <button

@@ -33,3 +33,19 @@ export function callRecordingFilename(input: {
   const digits = (input.counterpart ?? '').replace(/\D/g, '');
   return `${input.prefix ?? 'call'}-${digits || 'unknown'}-${when}.${input.extension ?? 'mp3'}`;
 }
+
+// File extension for a stored recording; recordings still at Twilio are MP3.
+export function recordingExtension(contentType: string | null | undefined): string {
+  const type = (contentType ?? '').split(';')[0]!.trim();
+  if (type === 'audio/webm') return 'webm';
+  if (type === 'audio/ogg') return 'ogg';
+  if (type === 'audio/mp4') return 'm4a';
+  return 'mp3';
+}
+
+// How a recording was made, for labels next to it.
+export function recordingSourceLabel(source: string | null | undefined): string {
+  if (source === 'browser') return 'Browser';
+  if (source === 'voicemail') return 'Voicemail';
+  return 'Twilio';
+}

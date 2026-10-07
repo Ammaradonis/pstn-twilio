@@ -11,12 +11,12 @@ import twilio from 'twilio';
 import { mapCall } from '../calls/calls.mapper';
 import { PrismaService } from '../prisma/prisma.service';
 import { RealtimeService } from '../realtime/realtime.service';
+import { recordsInboundCalls } from '../recordings/inbound-recording';
 import { RedisService } from '../redis/redis.service';
 import { TwilioService } from '../twilio/twilio.service';
 
 import { VoiceAppContext, doNotDisturbActive, spokenNumber } from './voice-app.context';
 import { VoicePushService } from './voice-push.service';
-import { VoicemailTranscriber } from './voicemail-transcriber.service';
 
 const VOICE = 'Polly.Joanna';
 const DEFAULT_GREETING =
@@ -65,7 +65,6 @@ export class VoiceAppCallsService {
     private readonly realtime: RealtimeService,
     private readonly push: VoicePushService,
     private readonly ctx: VoiceAppContext,
-    private readonly transcriber: VoicemailTranscriber,
   ) {}
 
   isVoiceUser(userId: string | null | undefined): Promise<boolean> {
@@ -253,7 +252,6 @@ export class VoiceAppCallsService {
     if (!callSid || !recordingSid) return;
     const call = await this.findCall(callSid);
     const userId = call?.phoneNumber?.userId ?? null;
-    const settings = userId ? await this.ctx.settings(userId) : null;
     const status =
       params.RecordingStatus === 'completed'
         ? RecordingStatus.COMPLETED
@@ -261,7 +259,6 @@ export class VoiceAppCallsService {
           ? RecordingStatus.ABSENT
           : RecordingStatus.IN_PROGRESS;
     const duration = parseSeconds(params.RecordingDuration);
-    const transcribe = Boolean(settings?.voicemailTranscribe && this.transcriber.enabled);
 
     await this.prisma.callRecording.upsert({
       where: { twilioRecordingSid: recordingSid },
@@ -281,7 +278,6 @@ export class VoiceAppCallsService {
         durationSeconds: duration,
         channels: 1,
         source: 'voicemail',
-        transcriptStatus: transcribe ? 'in-progress' : null,
         rawPayload: params as never,
         startedAt: new Date(),
       },
@@ -295,64 +291,19 @@ export class VoiceAppCallsService {
       .set(VOICEMAIL_NOTIFIED_KEY(recordingSid), '1', 'EX', 24 * 60 * 60, 'NX')
       .catch(() => 'OK');
     if (first !== 'OK') return;
-    if (transcribe) void this.transcribeVoicemail(recordingSid);
     const name = await this.ctx.contactName(userId, call.fromE164);
     await this.push.sendToUser(
       userId,
       {
         type: 'voicemail',
         title: `Voicemail from ${name ?? displayPhone(call.fromE164)}`,
-        body: transcribe
-          ? `${formatDuration(duration ?? 0)} · Transcribing…`
-          : formatDuration(duration ?? 0),
+        body: formatDuration(duration ?? 0),
         tag: `call-${callSid}`,
         url: '/voice/voicemail',
         renotify: true,
       },
       { ttl: 24 * 60 * 60, urgency: 'normal' },
     );
-  }
-
-  /** Writes the voicemail's text and updates the notification with it. Never throws. */
-  async transcribeVoicemail(recordingSid: string): Promise<void> {
-    let text: string | null = null;
-    let ok = false;
-    try {
-      text = await this.transcriber.transcribe(recordingSid);
-      ok = true;
-    } catch (err) {
-      this.logger.warn(
-        `Voicemail ${recordingSid} transcription failed: ${err instanceof Error ? err.message : 'unknown'}`,
-      );
-    }
-    try {
-      const recording = await this.prisma.callRecording.update({
-        where: { twilioRecordingSid: recordingSid },
-        data: { transcript: text, transcriptStatus: ok ? 'completed' : 'failed' },
-        include: { call: { include: { phoneNumber: true } } },
-      });
-      const userId = recording.call?.phoneNumber?.userId;
-      if (!userId || !recording.call) return;
-      this.realtime.voiceAppSync(userId, ['voicemail']);
-      if (!text) return;
-      const name = await this.ctx.contactName(userId, recording.call.fromE164);
-      await this.push.sendToUser(
-        userId,
-        {
-          type: 'voicemail',
-          title: `Voicemail from ${name ?? displayPhone(recording.call.fromE164)}`,
-          body: text.length > 180 ? `${text.slice(0, 177)}…` : text,
-          tag: `call-${recording.twilioCallSid}`,
-          url: '/voice/voicemail',
-          silent: true,
-        },
-        { ttl: 24 * 60 * 60, urgency: 'normal' },
-      );
-    } catch (err) {
-      this.logger.warn(
-        `Saving voicemail ${recordingSid} transcript failed: ${err instanceof Error ? err.message : 'unknown'}`,
-      );
-    }
   }
 
   /** The device that opened from a notification asks the call to ring again. */
@@ -447,7 +398,8 @@ export class VoiceAppCallsService {
       response.say({ voice: VOICE }, DEFAULT_GREETING);
     }
 
-    // Text comes from Deepgram after the recording completes (see transcribeVoicemail).
+    // Twilio records it (no browser is on the call); the archiver then moves
+    // it to our storage like every other recording.
     response.record({
       action: this.webhookUrl('voicemail-done'),
       method: 'POST',
@@ -500,6 +452,10 @@ export class VoiceAppCallsService {
       client.identity(this.twilio.voiceIdentity(userId));
       client.parameter({ name: 'calledNumber', value: phoneNumber.phoneNumberE164 });
       client.parameter({ name: 'parentCallSid', value: callSid });
+      client.parameter({
+        name: 'recordCall',
+        value: String(recordsInboundCalls(phoneNumber.tags)),
+      });
       if (callerName) client.parameter({ name: 'callerName', value: callerName });
     }
     for (const forwarding of forwards) {

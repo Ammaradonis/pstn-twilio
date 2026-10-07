@@ -24,6 +24,7 @@ import {
 import { useLocation, useNavigate } from 'react-router-dom';
 
 import { setSdkIncomingSound, useVoiceDevice } from '../../hooks/use-voice-device';
+import { useBrowserRecordingStatus } from '../../lib/browser-recordings';
 import { getSocket } from '../../lib/realtime';
 import { useBootstrap, useContactLookup, useContacts, voiceKeys } from '../hooks/use-voice-data';
 import { KEYPAD_LETTERS, searchContacts } from '../lib/contacts';
@@ -571,6 +572,11 @@ function InCallScreen({
   const [digits, setDigits] = useState('');
   const [speaker, setSpeaker] = useState(false);
   const now = useNow(Boolean(call.connectedAt));
+  const recording = useBrowserRecordingStatus();
+  const recordingNow =
+    call.direction === 'incoming' &&
+    recording?.direction === 'inbound' &&
+    recording.state === 'recording';
   const speakerInput = voice.microphoneInputs.find((m) => /speaker/i.test(m.label));
   const earpieceInput = voice.microphoneInputs.find((m) => /earpiece/i.test(m.label));
 
@@ -637,6 +643,7 @@ function InCallScreen({
         {name ? <p className="mt-1 text-gv-muted">{formatNumber(call.number)}</p> : null}
         <p className={`mt-2 text-sm ${call.connectedAt ? 'text-gv-green' : 'text-gv-muted'}`}>
           {status}
+          {recordingNow && <span className="text-gv-red"> · Recording</span>}
         </p>
         {voice.error ? <p className="mt-3 max-w-sm text-xs text-gv-red">{voice.error}</p> : null}
       </div>
