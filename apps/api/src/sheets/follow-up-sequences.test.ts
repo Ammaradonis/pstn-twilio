@@ -1,3 +1,4 @@
+import type { ConfigService } from '@nestjs/config';
 import { TAG_EMAIL_TEMPLATE } from '@pstn-twilio/shared';
 import { describe, expect, it, vi } from 'vitest';
 
@@ -22,6 +23,8 @@ import {
   type FollowUpContext,
 } from './follow-up-vars';
 import { SheetsFollowUpService } from './sheets-follow-up.service';
+import { SheetsConfig } from './sheets.config';
+import { GoogleAuthError } from './sheets.service';
 
 const SHEETS = { usSheetId: 'us-sheet', ukSheetId: 'uk-sheet' };
 
@@ -237,6 +240,29 @@ describe('rendering', () => {
     }
   });
 
+  it('keeps U.S. Conquest on (667) 220-6726 in every email, never the UK line', () => {
+    for (const key of Object.values(TAG_EMAIL_TEMPLATE)) {
+      for (const template of loadSequence(key)) {
+        const email = renderSequenceEmail(template, usVars, 'US')!;
+        expect(email.body, `${key} ${template.step}`).toContain(DEMO_NUMBERS.US);
+        expect(`${email.subject}\n${email.body}`).not.toContain(DEMO_NUMBERS.UK);
+      }
+    }
+  });
+
+  it('maps the two workbooks to their own demo lines by spreadsheet ID', () => {
+    const cfg = new SheetsConfig({ get: () => undefined } as unknown as ConfigService);
+    const sheets = { usSheetId: cfg.conquestSheetId, ukSheetId: cfg.ukSheetId };
+    expect(sheets.usSheetId).not.toBe(sheets.ukSheetId);
+    // Even a number that looks like the other country follows its workbook.
+    expect(regionFor({ spreadsheetId: cfg.conquestSheetId, destinationE164: '+447' }, sheets)).toBe(
+      'US',
+    );
+    expect(regionFor({ spreadsheetId: cfg.ukSheetId, destinationE164: '+1806' }, sheets)).toBe(
+      'UK',
+    );
+  });
+
   it('drops the empty note line and never repeats a UK town', () => {
     const email = renderSequenceEmail(
       loadSequence('has-ai')[5]!,
@@ -379,14 +405,14 @@ describe('FollowUpRenderer', () => {
 });
 
 describe('SheetsFollowUpService sequence sweep', () => {
-  function sweepService(log: ReturnType<typeof pushLog>) {
+  function sweepService(...logs: ReturnType<typeof pushLog>[]) {
     const prisma = {
       sheetsPushLog: {
         updateMany: vi.fn().mockResolvedValue({ count: 1 }),
         findMany: vi
           .fn()
           .mockResolvedValueOnce([]) // research
-          .mockResolvedValueOnce([log]),
+          .mockResolvedValueOnce(logs),
         update: vi.fn().mockResolvedValue({}),
       },
       emailFinderRow: { findMany: vi.fn().mockResolvedValue([]) },
@@ -443,6 +469,41 @@ describe('SheetsFollowUpService sequence sweep', () => {
     gmail.hasReplyFrom.mockRejectedValue(new Error('Gmail search failed: 500'));
     await service.sweep(new Date());
     expect(gmail.send).toHaveBeenCalledTimes(1);
+  });
+
+  it('holds the sequence while Google access is revoked, without using up attempts', async () => {
+    const log = pushLog({ emailAttempts: 1 });
+    const other = pushLog({ id: 'log2', emailTo: 'info@other.test' });
+    const { service, prisma, gmail } = sweepService(log, other);
+    gmail.send.mockRejectedValue(
+      new GoogleAuthError('Google access was revoked or expired. Reconnect in Settings.'),
+    );
+    const now = new Date(US_CTX.callEndedAt.getTime() + 2 * 86400_000);
+    await service.sweep(now);
+    expect(prisma.sheetsPushLog.update.mock.calls.at(-1)![0].data).toEqual({
+      emailStatus: 'PENDING',
+      emailAttempts: 1,
+      emailDueAt: new Date(now.getTime() + 3600_000),
+      emailError: 'Google access was revoked or expired. Reconnect in Settings.',
+    });
+    // The same account's next email waits without another failing try.
+    expect(gmail.send).toHaveBeenCalledTimes(1);
+    expect(prisma.sheetsPushLog.updateMany).toHaveBeenCalledWith({
+      where: { id: 'log2', emailStatus: 'PENDING' },
+      data: { emailDueAt: new Date(now.getTime() + 3600_000) },
+    });
+  });
+
+  it('gives up on an email once Google stayed disconnected 3 days past its day', async () => {
+    const log = pushLog();
+    const { service, prisma, gmail } = sweepService(log);
+    gmail.send.mockRejectedValue(new GoogleAuthError('Google access was revoked or expired.'));
+    // Email 1 was due 2 days after the call.
+    await service.sweep(new Date(US_CTX.callEndedAt.getTime() + 5 * 86400_000 + 60_000));
+    expect(prisma.sheetsPushLog.update.mock.calls.at(-1)![0].data).toMatchObject({
+      emailStatus: 'FAILED',
+      emailError: expect.stringContaining('disconnected for over 3 days'),
+    });
   });
 
   it('finishes the sequence after email 6', async () => {

@@ -71,6 +71,10 @@ export interface SheetsConnectionStatusDto {
   configured: boolean;
   /** API settings still to be set (e.g. GOOGLE_CLOUD_CLIENT_SECRET). */
   missing: string[];
+  /** Connected, but Google no longer accepts the saved access: connect again. */
+  needsReconnect?: boolean;
+  /** Why the connection isn't working right now, if it isn't. */
+  problem?: string | null;
 }
 
 export interface SheetsFollowUpDto {

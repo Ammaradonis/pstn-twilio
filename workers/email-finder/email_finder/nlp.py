@@ -15,8 +15,10 @@ Email context classifier:
 
 from __future__ import annotations
 
+import contextlib
 import functools
 import re
+import threading
 from dataclasses import dataclass
 
 import spacy
@@ -246,12 +248,33 @@ def _plausible(name: str) -> bool:
     return not any(p in bad for p in pieces)
 
 
+# One text at a time. The pipeline's vocabulary is shared, and the thread of a
+# row that ran out of time keeps going after its coroutine is cancelled.
+_people_lock = threading.Lock()
+
+
 def people(text: str, limit_chars: int = 60_000) -> list[Person]:
-    """People named in the text, with the strongest role found near each."""
-    doc = nlp()(text[:limit_chars])
-    matches = list(role_matcher()(doc))
+    """People named in the text, with the strongest role found near each.
+
+    Runs inside a spaCy memory zone. Without one, every new word of every page
+    stayed in the vocabulary for the life of the worker (several MB per long
+    page) until even a 1 MB array failed: "Unable to allocate 1.06 MiB for an
+    array with shape (2907, 96) and data type float32".
+    """
+    with _people_lock:
+        model = nlp()
+        # Built outside the zone, so they outlive it.
+        matcher, weights = role_matcher(), _role_weights()
+        zone = model.memory_zone() if hasattr(model, "memory_zone") else contextlib.nullcontext()
+        with zone:
+            # Only plain strings leave the zone: the Doc is freed with it.
+            return _people(model(text[:limit_chars]), matcher, weights)
+
+
+def _people(doc, matcher: PhraseMatcher, role_weights: dict[tuple[str, ...], float]) -> list[Person]:
+    matches = list(matcher(doc))
     # Prefer "assistant instructor" over its nested "instructor" role.
-    roles = [(doc[s:e], _role_weights()[tuple(t.lower_ for t in doc[s:e])]) for _, s, e in matches
+    roles = [(doc[s:e], role_weights[tuple(t.lower_ for t in doc[s:e])]) for _, s, e in matches
              if not any(s2 <= s and e <= e2 and e2 - s2 > e - s for _, s2, e2 in matches)]
     entities = [e for e in doc.ents if e.label_ == "PERSON"]
     # Only a role in the same sentence and within eight tokens can qualify.

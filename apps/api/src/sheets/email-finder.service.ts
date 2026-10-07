@@ -253,6 +253,12 @@ export class EmailFinderService implements OnModuleDestroy, OnModuleInit {
       },
       data: { status: 'PENDING', attempts: 0, writtenAt: null },
     });
+    // A row that failed on the worker's side (an exception, or the PC running
+    // out of memory) says nothing about the school: research it again.
+    await this.prisma.emailFinderRow.updateMany({
+      where: { jobId: job.id, status: 'FAILED', notes: { startsWith: 'error:' } },
+      data: { status: 'PENDING', attempts: 0, writtenAt: null },
+    });
 
     for (let i = 0; i < queued.length; i += 1000) {
       await this.prisma.emailFinderRow.createMany({

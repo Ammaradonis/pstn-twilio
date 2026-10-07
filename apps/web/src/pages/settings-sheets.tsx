@@ -115,11 +115,36 @@ ${message.body}`);
           <p className="text-sm text-slate-400">Checking…</p>
         ) : isConnected ? (
           <div className="space-y-2">
-            <p className="text-sm text-emerald-700">
-              Connected as{' '}
-              <span className="font-mono text-xs">{status.data?.email ?? 'unknown'}</span>.
-              Follow-up emails are sent from this address.
-            </p>
+            {status.data?.needsReconnect ? (
+              <div className="space-y-2 rounded border border-amber-300 bg-amber-50 px-3 py-2 text-sm text-amber-900">
+                <p>
+                  Google no longer accepts the access saved for{' '}
+                  <span className="font-mono text-xs">{status.data.email ?? 'this account'}</span>.
+                  Status pushes stop working and follow-up emails wait (up to 3 days) until you
+                  connect again.
+                </p>
+                {status.data.problem && <p className="text-xs">{status.data.problem}</p>}
+                <button
+                  type="button"
+                  onClick={() => connect.mutate()}
+                  disabled={connect.isPending}
+                  className="rounded bg-amber-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-amber-700 disabled:opacity-60"
+                >
+                  {connect.isPending ? 'Opening Google…' : 'Reconnect Google'}
+                </button>
+              </div>
+            ) : (
+              <p className="text-sm text-emerald-700">
+                Connected as{' '}
+                <span className="font-mono text-xs">{status.data?.email ?? 'unknown'}</span>.
+                Follow-up emails are sent from this address.
+              </p>
+            )}
+            {!status.data?.needsReconnect && status.data?.problem && (
+              <p className="text-xs text-amber-800">
+                Google couldn&apos;t be reached just now: {status.data.problem}
+              </p>
+            )}
             <button
               type="button"
               onClick={() => {

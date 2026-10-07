@@ -93,6 +93,13 @@ RETRY_WHEN_GOOGLE_STALLS = 600
 RETRY_WHEN_PHONE_UNAVAILABLE = 1800
 # google_free.py's wording when free search is paused after Google refused.
 PAUSED = re.compile(r"paused|resumes in", re.I)
+# A row that runs out of time is researched again this much later, with its
+# pages and searches served from the cache.
+RETRY_AFTER_TIME_LIMIT = 1800
+# Time allowed to score what a timed-out row already collected.
+SALVAGE_SECONDS = 60
+# The worker restarts after this, so memory starts clean; the row is retried.
+RETRY_AFTER_OUT_OF_MEMORY = 300
 
 # Google Forms host patterns
 GOOGLE_FORMS_HOSTS = ("docs.google.com", "forms.gle")
@@ -137,6 +144,8 @@ class Finding:
     # Verified details for the sheet's empty cells: websiteUrl, phoneNumber,
     # facebookUrl, instagramUrl, youtubeUrl, twitterUrl, linkedinUrl, tiktokUrl.
     enrichment: dict[str, str] = field(default_factory=dict)
+    # The row hit its time limit (see Engine.find).
+    timed_out: bool = False
 
     @property
     def status(self) -> str:
@@ -170,11 +179,27 @@ class Engine:
         self.max_site_pages = max_site_pages
         self.scoring = scoring if scoring is not None else load_weights()
         self.people_executor = people_executor
+        # Set when a row ran out of memory: the worker restarts to free it.
+        self.out_of_memory = False
 
-    async def find(self, row: Row) -> Finding:
+    async def find(self, row: Row, timeout: float | None = None, last_try: bool = False) -> Finding:
+        """Research one row. With a timeout, a row that runs out of time keeps
+        what it found so far (see _Job.salvage); `last_try` closes it with that
+        instead of scheduling another attempt."""
         job = _Job(self, row)
         try:
-            return await job.run()
+            if timeout is None:
+                return await job.run()
+            try:
+                return await asyncio.wait_for(job.run(), timeout)
+            except asyncio.TimeoutError:
+                return await job.salvage(last_try)
+        except MemoryError as err:
+            # The PC, not the row: retried after the worker restarts.
+            self.out_of_memory = True
+            log.error("Out of memory researching %s (%s); the worker will restart", row.title, err)
+            return Finding(notes=["This PC ran out of memory; the worker restarts and retries this row"],
+                           retry_after=RETRY_AFTER_OUT_OF_MEMORY, research_complete=False)
         except Exception as err:  # noqa: BLE001
             log.exception("row failed: %s", row.title)
             return Finding(notes=[f"error: {err}"])
@@ -231,6 +256,47 @@ class _Job:
         finding = await self._run()
         self._finalize_enrichment()
         return finding
+
+    async def salvage(self, last_try: bool) -> Finding:
+        """What a row that ran out of time had found.
+
+        The whole Finding used to be thrown away, so a slow row (social pages,
+        phone lookups and paced free Google searches add up) started over every
+        30 minutes and could time out forever. The addresses it collected are
+        scored as usual and the best one is written now. With none, the row is
+        retried from the cache; on its last try it is closed with what it has.
+        """
+        f = self.finding
+        f.timed_out = True
+        f.research_complete = last_try  # cut short: complete only on the last try
+        if last_try:
+            f.retry_after = None
+        best = None
+        try:
+            best = await asyncio.wait_for(self._decide(), SALVAGE_SECONDS)
+        except MemoryError:
+            raise
+        except Exception as err:  # noqa: BLE001 - a slow DNS check or spaCy run
+            log.info("No time to score what %s had found (%s)", self.row.title, type(err).__name__)
+        try:
+            await asyncio.wait_for(self._finish(best), SALVAGE_SECONDS)
+        except MemoryError:
+            raise
+        except Exception as err:  # noqa: BLE001
+            log.info("No time to name the decision maker for %s (%s)", self.row.title, type(err).__name__)
+            if best:
+                f.email, f.email_type, f.confidence, f.source_url = best.email, best.kind, best.score, best.url
+                f.retry_after = None
+        self._finalize_enrichment()
+        if f.email or f.contact_form_url:
+            log.info("%s ran out of time; keeping what it found", self.row.title)
+        elif last_try:
+            f.notes.append("Research ran out of time on every try; closed with what it found")
+        else:
+            f.research_complete = False
+            f.retry_after = max(f.retry_after or 0, RETRY_AFTER_TIME_LIMIT)
+            f.notes.append("Research time limit reached; will resume using cached pages")
+        return f
 
     def _finalize_enrichment(self) -> None:
         """The details reported for the sheet's empty cells, once the row is done."""
@@ -303,11 +369,7 @@ class _Job:
                     await stage()
                     best = await self._decide()
             except (SearchBudgetExhausted, SearchUnavailable) as err:
-                self.finding.research_complete = False
-                now = datetime.now(timezone.utc)
-                midnight = (now + timedelta(days=1)).replace(hour=0, minute=0, second=5, microsecond=0)
-                self.finding.retry_after = min(86400, max(60, int((midnight - now).total_seconds()))) if isinstance(err, SearchBudgetExhausted) else 7200
-                self.finding.notes.append(str(err))
+                best = await self._paid_search_down(err, had_free_pass=free_route)
         elif not best and not free_route:
             self.finding.research_complete = False
             self.finding.notes.append("Search not configured; website-only research")
@@ -318,6 +380,34 @@ class _Job:
 
         await self._finish(best)
         return self.finding
+
+    async def _paid_search_down(self, err: Exception, had_free_pass: bool) -> _Scored | None:
+        """The paid chain is out: Brave credit exhausted, the Google API
+        disabled for the key, or the day's allowance spent. A row that hasn't
+        had a free Google pass gets one now, instead of waiting hours for
+        credit that only a top-up brings back. Deferred only if free Google
+        can't cover it either."""
+        best = None
+        google = self.e.google
+        free_ready = (google is not None and google.enabled and self.e.google_mode != "off"
+                      and not self._google_blocked and not getattr(google, "paused_for", lambda: 0)())
+        if not had_free_pass and free_ready:
+            log.info("Paid search unavailable for %s (%s); free Google takes over", self.row.title, err)
+            best = await self._google_pass()
+            if not best and self.social:
+                await self._scrape_social_profiles()
+                best = await self._decide()
+            if self._google_answered and not (self._google_blocked or self._google_stalled):
+                return best  # Google ran every search the paid chain would have
+        self.finding.research_complete = False
+        if isinstance(err, SearchBudgetExhausted):
+            now = datetime.now(timezone.utc)
+            midnight = (now + timedelta(days=1)).replace(hour=0, minute=0, second=5, microsecond=0)
+            self.finding.retry_after = min(86400, max(60, int((midnight - now).total_seconds())))
+        else:
+            self.finding.retry_after = 7200
+        self.finding.notes.append(str(err))
+        return best
 
     async def _google_business_profile(self) -> None:
         """The school's own Facebook/Instagram pages from its Google Business

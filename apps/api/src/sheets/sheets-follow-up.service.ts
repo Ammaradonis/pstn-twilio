@@ -16,11 +16,16 @@ import { PrismaService } from '../prisma/prisma.service';
 import { FollowUpRenderer } from './follow-up-renderer.service';
 import { SEQUENCE_LENGTH, sequenceDueAt } from './follow-up-sequences';
 import { GmailService } from './gmail.service';
+import { GoogleAuthError } from './sheets.service';
 import { nationalDigits } from './sheets.util';
 
 const SWEEP_MS = 5 * 60_000;
 const MAX_ATTEMPTS = 4;
 const RETRY_DELAY_MS = 30 * 60_000;
+// Google access revoked or expired: emails wait for a reconnect rather than
+// using up their attempts, checked hourly, for at most 3 days past their day.
+const AUTH_HOLD_MS = 60 * 60_000;
+const MAX_AUTH_LATE_MS = 3 * 24 * 60 * 60_000;
 // A row stuck in SENDING means the process died mid-send. The email may have
 // gone out, so it is marked failed rather than retried (no double emails).
 const STUCK_SENDING_MS = 15 * 60_000;
@@ -68,7 +73,18 @@ export class SheetsFollowUpService implements OnModuleInit, OnModuleDestroy {
         take: 20,
         include: { connection: { select: { userId: true } } },
       });
-      for (const log of due) await this.send(log, now);
+      // Users whose Google access just failed: their other emails wait too.
+      const held = new Set<string>();
+      for (const log of due) {
+        if (held.has(log.connection.userId)) {
+          await this.prisma.sheetsPushLog.updateMany({
+            where: { id: log.id, emailStatus: 'PENDING' },
+            data: { emailDueAt: new Date(now.getTime() + AUTH_HOLD_MS) },
+          });
+          continue;
+        }
+        if ((await this.send(log, now)) === 'auth') held.add(log.connection.userId);
+      }
     } catch (err) {
       this.logger.error(`Follow-up sweep failed: ${(err as Error).message}`);
     } finally {
@@ -153,7 +169,7 @@ export class SheetsFollowUpService implements OnModuleInit, OnModuleDestroy {
       connection: { userId: string };
     },
     now: Date,
-  ): Promise<void> {
+  ): Promise<'auth' | void> {
     const claimed = await this.prisma.sheetsPushLog.updateMany({
       where: { id: log.id, emailStatus: 'PENDING' },
       data: { emailStatus: 'SENDING', emailAttempts: { increment: 1 } },
@@ -211,6 +227,30 @@ export class SheetsFollowUpService implements OnModuleInit, OnModuleDestroy {
       );
     } catch (err) {
       const message = (err as Error).message.slice(0, 500);
+      if (err instanceof GoogleAuthError) {
+        // Thrown before anything reached Gmail, and no retry helps until
+        // Google is reconnected, so this attempt isn't counted.
+        const plannedAt = sequenceDueAt(log.callEndedAt, log.sequenceStep, log.callEndedAt);
+        const tooLate = now.getTime() - plannedAt.getTime() > MAX_AUTH_LATE_MS;
+        await this.prisma.sheetsPushLog.update({
+          where: { id: log.id },
+          data: tooLate
+            ? {
+                emailStatus: 'FAILED',
+                emailError: `${message} Not sent: Google stayed disconnected for over 3 days.`,
+              }
+            : {
+                emailStatus: 'PENDING',
+                emailAttempts: log.emailAttempts,
+                emailDueAt: new Date(now.getTime() + AUTH_HOLD_MS),
+                emailError: message,
+              },
+        });
+        this.logger.warn(
+          `Follow-up email for push ${log.id} ${tooLate ? 'not sent' : 'waits for Google'}: ${message}`,
+        );
+        return 'auth';
+      }
       const attempts = log.emailAttempts + 1;
       await this.prisma.sheetsPushLog.update({
         where: { id: log.id },

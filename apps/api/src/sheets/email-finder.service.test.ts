@@ -9,6 +9,42 @@ import { EmailFinderService, cleanEnrichment, fingerprint } from './email-finder
 import { findColumns, type SheetsService } from './sheets.service';
 import { normalizeHeader } from './sheets.util';
 
+describe('selecting a tab', () => {
+  it("researches again the rows that failed on the worker's side, not the school's", async () => {
+    const prisma = {
+      emailFinderJob: { upsert: vi.fn().mockResolvedValue({ id: 'job', status: 'RUNNING' }) },
+      emailFinderRow: {
+        findMany: vi.fn().mockResolvedValue([]),
+        updateMany: vi.fn().mockResolvedValue({ count: 0 }),
+        createMany: vi.fn(),
+      },
+    };
+    const sheets = {
+      getAccessToken: vi.fn().mockResolvedValue('t'),
+      fetchRows: vi.fn().mockResolvedValue([['title'], ['Tiger Dojo']]),
+    };
+    const redis = { client: { set: vi.fn() } };
+    const service = new EmailFinderService(
+      prisma as unknown as PrismaService,
+      sheets as unknown as SheetsService,
+      redis as unknown as RedisService,
+      {} as RealtimeService,
+    );
+    const internals = service as unknown as Record<string, unknown>;
+    internals.writeToSheet = vi.fn();
+    internals.scheduleFlush = vi.fn();
+    internals.finishIfComplete = vi.fn();
+    vi.spyOn(service, 'status').mockResolvedValue({} as never);
+
+    await service.start('u', 'spreadsheet', 'Sheet1');
+    // "error: Unable to allocate 1.06 MiB…" was a full PC, not a dead end.
+    expect(prisma.emailFinderRow.updateMany).toHaveBeenCalledWith({
+      where: { jobId: 'job', status: 'FAILED', notes: { startsWith: 'error:' } },
+      data: { status: 'PENDING', attempts: 0, writtenAt: null },
+    });
+  });
+});
+
 describe('email finder row identity and writes', () => {
   it('distinguishes same-name schools with no phone or website by address', () => {
     const cols = findColumns(['title', 'address']);

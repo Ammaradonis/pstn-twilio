@@ -15,6 +15,11 @@ depend on the worker.
 - Search Google first when both its API key and Programmable Search Engine ID
   are configured. Otherwise use Brave. The user's `BEAVE_API_KEY` is a Brave
   key alias, sent only to Brave's documented endpoint.
+- When every paid search is out (the Google API disabled for the key, Brave
+  credit exhausted, the day's allowance spent), a row that hasn't had a free
+  Google pass gets one instead of waiting for credit. It is deferred (2 hours,
+  or until UTC midnight for a spent allowance) only if free Google can't
+  answer either.
 - Rows with nothing to go on (no website, no Facebook/Instagram, nothing from a
   listing) are searched on free Google first, in headless Edge (or Chrome) with
   its own profile in `.cache/google-profile`, following
@@ -231,6 +236,14 @@ Close/stop the research worker before preparing its dedicated session. Session
 cookies stay in the ignored local `.cache/browser-profile` folder. Do not share it.
 
 ## Recovery, limits and evaluation
+
+A row that reaches `EMAIL_FINDER_ROW_TIMEOUT` keeps the best address it had
+already found. With none, it is retried 30 minutes later from cached pages and
+searches; the third time-out closes it with what it has (a contact form, or
+not found). spaCy reads each page inside a memory zone, so a long run no longer
+accumulates every word it has seen; if the PC still runs out of memory, the row
+is retried and the worker restarts itself. Rows that failed on a worker error
+are queued again when their tab is selected.
 
 SQLite caches searches and pages, stores daily request reservations and keeps an
 outbox of completed research/results awaiting API acknowledgment. The API

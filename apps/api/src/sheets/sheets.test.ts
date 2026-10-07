@@ -5,13 +5,15 @@ import {
   TAG_EMAIL_TEMPLATE,
   type CallStatusTag,
 } from '@pstn-twilio/shared';
-import { describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
+
+import { encryptSecret } from '../common/secret-box';
 
 import { hasSequence, loadSequence } from './follow-up-sequences';
 import { encodeMessage } from './gmail.service';
 import { parseUsAddress, resolveTimeZone } from './sheets-timezone.service';
 import { SheetsConfig } from './sheets.config';
-import { buildCellValue } from './sheets.service';
+import { buildCellValue, GoogleAuthError, SheetsService } from './sheets.service';
 import {
   a1,
   cellHasPhone,
@@ -262,6 +264,72 @@ describe('Sheets OAuth client', () => {
     expect(cfg.oauthRedirectUri).toBe(
       'https://api.bestsoftphone.site/webhooks/google-sheets/oauth/callback',
     );
+  });
+});
+
+describe('Google connection status', () => {
+  const KEY = Buffer.alloc(32, 7).toString('base64');
+  const cfg = new SheetsConfig({
+    get: (key: string) =>
+      ({
+        GOOGLE_CLOUD_CLIENT_ID: 'client',
+        GOOGLE_CLOUD_CLIENT_SECRET: 'secret',
+        TOKEN_ENCRYPTION_KEY: KEY,
+        JWT_SECRET: 'j',
+      })[key],
+  } as unknown as ConfigService);
+  const service = (refreshTokenEncrypted = encryptSecret('refresh-1', KEY)) =>
+    new SheetsService(
+      {
+        googleSheetsConnection: {
+          findUnique: vi.fn().mockResolvedValue({
+            googleEmail: 'ammar.webalchemist@gmail.com',
+            refreshTokenEncrypted,
+          }),
+        },
+      } as never,
+      cfg,
+      {} as never,
+    );
+  const tokenReply = (status: number, body: object) =>
+    vi.spyOn(globalThis, 'fetch').mockResolvedValue(new Response(JSON.stringify(body), { status }));
+
+  afterEach(() => vi.restoreAllMocks());
+
+  it('is healthy when Google refreshes the saved access', async () => {
+    const fetch = tokenReply(200, { access_token: 'at', expires_in: 3600 });
+    await expect(service().status('u1')).resolves.toMatchObject({
+      connected: true,
+      email: 'ammar.webalchemist@gmail.com',
+      needsReconnect: false,
+      problem: null,
+    });
+    const body = fetch.mock.calls[0]![1]!.body as URLSearchParams;
+    expect(body.get('grant_type')).toBe('refresh_token');
+    expect(body.get('refresh_token')).toBe('refresh-1');
+  });
+
+  it('asks for a reconnect when Google revoked or expired the access', async () => {
+    tokenReply(400, {
+      error: 'invalid_grant',
+      error_description: 'Token has been expired or revoked.',
+    });
+    const status = await service().status('u1');
+    expect(status).toMatchObject({ connected: true, needsReconnect: true });
+    expect(status.problem).toMatch(/revoked or expired\. Reconnect/);
+  });
+
+  it('asks for a reconnect when the saved access cannot be decrypted', async () => {
+    const other = encryptSecret('refresh-1', Buffer.alloc(32, 9).toString('base64'));
+    await expect(service(other).getAccessToken('u1')).rejects.toBeInstanceOf(GoogleAuthError);
+  });
+
+  it('reports a Google outage without asking for a reconnect', async () => {
+    tokenReply(503, { error: 'backend_error' });
+    await expect(service().status('u1')).resolves.toMatchObject({
+      needsReconnect: false,
+      problem: 'Google token request failed: backend_error',
+    });
   });
 });
 

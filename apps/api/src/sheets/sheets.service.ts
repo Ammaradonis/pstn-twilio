@@ -85,6 +85,14 @@ export class SheetsUnavailableError extends Error {
   }
 }
 
+/** Google refused the stored access: nothing works until it's reconnected. */
+export class GoogleAuthError extends SheetsUnavailableError {
+  constructor(msg: string) {
+    super(msg);
+    this.name = 'GoogleAuthError';
+  }
+}
+
 @Injectable()
 export class SheetsService {
   private readonly logger = new Logger(SheetsService.name);
@@ -100,11 +108,26 @@ export class SheetsService {
 
   async status(userId: string): Promise<SheetsConnectionStatusDto> {
     const conn = await this.prisma.googleSheetsConnection.findUnique({ where: { userId } });
+    // A stored connection isn't proof Google still accepts it: refresh the
+    // token (cached for an hour) so a revoked or expired grant shows here
+    // instead of as failed pushes and follow-ups.
+    let problem: string | null = null;
+    let needsReconnect = false;
+    if (conn && this.cfg.isConfigured()) {
+      try {
+        await this.getAccessToken(userId);
+      } catch (err) {
+        problem = (err as Error).message;
+        needsReconnect = err instanceof GoogleAuthError;
+      }
+    }
     return {
       connected: Boolean(conn),
       email: conn?.googleEmail ?? null,
       configured: this.cfg.isConfigured(),
       missing: this.cfg.missing(),
+      needsReconnect,
+      problem,
     };
   }
 
@@ -636,7 +659,14 @@ export class SheetsService {
     const conn = await this.prisma.googleSheetsConnection.findUnique({ where: { userId } });
     if (!conn) throw new SheetsUnavailableError('Google Sheets is not connected.');
     this.requireConfigured();
-    const rt = decryptSecret(conn.refreshTokenEncrypted, this.cfg.tokenEncryptionKey!);
+    let rt: string;
+    try {
+      rt = decryptSecret(conn.refreshTokenEncrypted, this.cfg.tokenEncryptionKey!);
+    } catch {
+      throw new GoogleAuthError(
+        'The saved Google access can no longer be read (TOKEN_ENCRYPTION_KEY changed). Reconnect in Settings → Google Sheets & Gmail.',
+      );
+    }
     const tokens = await this.tokenRequest({ grant_type: 'refresh_token', refresh_token: rt });
     this.accessTokens.set(userId, {
       token: tokens.access_token,
@@ -675,10 +705,20 @@ export class SheetsService {
       error_description?: string;
     };
     if (!res.ok || !body.access_token) {
+      if (body.error === 'invalid_grant') {
+        // Also what Google says every 7 days while the OAuth consent screen is
+        // in "Testing": publishing the app (it can stay unverified) ends that.
+        throw new GoogleAuthError(
+          'Google access was revoked or expired. Reconnect in Settings → Google Sheets & Gmail.',
+        );
+      }
+      if (body.error === 'invalid_client' || body.error === 'unauthorized_client') {
+        throw new GoogleAuthError(
+          `Google rejected the OAuth client (${body.error}): check GOOGLE_CLOUD_CLIENT_ID and GOOGLE_CLOUD_CLIENT_SECRET on the API.`,
+        );
+      }
       throw new SheetsUnavailableError(
-        body.error === 'invalid_grant'
-          ? 'Google access was revoked or expired. Reconnect in Settings → Google Sheets & Gmail.'
-          : `Google token request failed: ${body.error_description ?? body.error ?? res.status}`,
+        `Google token request failed: ${body.error_description ?? body.error ?? res.status}`,
       );
     }
     return body as { access_token: string };

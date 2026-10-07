@@ -35,7 +35,7 @@ import httpx
 
 from .cache import Cache
 from .config import CACHE_DIR, load_settings
-from .engine import Engine, Finding, Row
+from .engine import RETRY_AFTER_TIME_LIMIT, SALVAGE_SECONDS, Engine, Finding, Row
 from .fetch import Fetcher
 from .forms import FormSender
 from .android import Galaxy, find_adb
@@ -53,6 +53,9 @@ CACHE_MAINTENANCE_SECONDS = 3600
 # A restart waits until the code has been unchanged this long (an edit or
 # git pull in progress shouldn't restart the worker halfway through).
 CODE_SETTLE_SECONDS = 30
+# A row that hits its time limit this many times is closed with what it found.
+MAX_ROW_TIMEOUTS = 3
+ROW_TIMEOUTS_NS = "row-timeouts"
 
 
 def setup_logging() -> None:
@@ -310,10 +313,19 @@ async def run() -> bool:
             log.error("API is outdated: deploy the email finder recovery migration and API build.")
             return
         row = to_row(item["input"])
+        timeouts = int(cache.get(ROW_TIMEOUTS_NS, item["id"]) or 0)
         try:
-            finding = await asyncio.wait_for(engine.find(row), timeout=settings.row_timeout)
+            # The engine applies the time limit itself and keeps what a slow row
+            # found; this outer limit only catches a row stuck past that.
+            finding = await asyncio.wait_for(
+                engine.find(row, timeout=settings.row_timeout, last_try=timeouts + 1 >= MAX_ROW_TIMEOUTS),
+                timeout=settings.row_timeout + 2 * SALVAGE_SECONDS + 30,
+            )
         except asyncio.TimeoutError:
-            finding = Finding(notes=["Research time limit reached; will resume using cached pages"], retry_after=1800, research_complete=False)
+            finding = Finding(notes=["Research time limit reached; will resume using cached pages"],
+                              retry_after=RETRY_AFTER_TIME_LIMIT, research_complete=False, timed_out=True)
+        if finding.timed_out:
+            cache.set(ROW_TIMEOUTS_NS, item["id"], timeouts + 1, 30 * 86400)
         result = to_result(item["id"], finding, item["leaseToken"])
         log.info("Research finished: %s (%s) row=%s%s%s", result["status"],
                  finding.email_type or "unresolved", item["id"],
@@ -387,6 +399,11 @@ async def run() -> bool:
                 await _sleep(stop, backoff)
                 continue
             await asyncio.gather(*(research(item) for item in batch))
+            if engine.out_of_memory:
+                # A fresh process is the only reliable way to get the memory back.
+                log.warning("Restarting the worker to free memory; the affected row is retried.")
+                restart = True
+                break
     finally:
         stop.set()
         beat.cancel()

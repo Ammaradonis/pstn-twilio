@@ -91,6 +91,15 @@ export function SpreadsheetPicker({
 
   return (
     <div className="flex flex-wrap gap-2 items-end">
+      {statusQuery.data?.needsReconnect && (
+        <p className="w-full text-xs text-amber-700">
+          Google no longer accepts the saved access, so pushes and follow-up emails are on hold.{' '}
+          <Link to="/settings/sheets" className="underline hover:text-amber-900">
+            Reconnect in Settings
+          </Link>
+          .
+        </p>
+      )}
       {/* Spreadsheet selector */}
       <div className="flex flex-col gap-1 min-w-0 flex-1">
         <label htmlFor="spreadsheet-picker" className="text-xs font-medium text-slate-600">
