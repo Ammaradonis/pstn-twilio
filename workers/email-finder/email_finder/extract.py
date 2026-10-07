@@ -328,6 +328,9 @@ def _is_profile(url: str) -> bool:
         "reel", "explore", "hashtag",
         "policy.php", "privacy", "policies", "terms", "legal", "help",
         "login", "login.php", "recover", "accounts", "developers",
+        # Meta's own boilerplate pages: linked from every footer, so a crawl or a
+        # panel turns them up constantly and they are never a school's profile.
+        "cookies", "cookie", "settings", "about", "careers", "safety",
     }
 
 

@@ -88,6 +88,9 @@ SOURCE_BASE = {"mailto": 40, "app-contact": 40, "jsonld": 38, "cf_decode": 36, "
 # A bare row whose free Google pass couldn't answer (the browser was slow or
 # torn down) waits this long and is researched again; Brave is not paid for it.
 RETRY_WHEN_GOOGLE_STALLS = 600
+# A known profile the phone couldn't read (busy, limited for the day, restarting)
+# waits this long instead of being closed as "no address here".
+RETRY_WHEN_PHONE_UNAVAILABLE = 1800
 # google_free.py's wording when free search is paused after Google refused.
 PAUSED = re.compile(r"paused|resumes in", re.I)
 
@@ -557,9 +560,17 @@ class _Job:
         profile lists are read too.
         """
         urls = sorted(self.social)
-        facebook = [u for u in urls if host_matches(_host(u), {"facebook.com", "fb.com", "m.facebook.com"})][:3]
+        # Only real profiles: Meta's own pages (policy.php, privacy, login …) and
+        # Facebook's share/reel/dialog paths turn up in search results and in
+        # panels, and reading one wastes a page load and can park the phone on a
+        # page that has nothing to do with the school.
+        facebook = [u for u in urls
+                    if host_matches(_host(u), {"facebook.com", "fb.com", "m.facebook.com"})
+                    and _is_profile(u)][:3]
         instagram = list(dict.fromkeys(
-            instagram_profile_url(u) for u in urls if host_matches(_host(u), {"instagram.com"})))[:3]
+            u for u in (instagram_profile_url(v) for v in urls
+                        if host_matches(_host(v), {"instagram.com"}))
+            if _is_profile(u)))[:3]
         for url in facebook:
             if url in self._scraped:
                 continue
@@ -606,7 +617,8 @@ class _Job:
             await self._follow_profile_links(links)
         # A Facebook page the Instagram profile links to (one round, no further hops).
         for url in sorted(self.social - set(facebook) - self._scraped)[:1]:
-            if host_matches(_host(url), {"facebook.com", "fb.com", "m.facebook.com"}) and not await self._decide():
+            if (host_matches(_host(url), {"facebook.com", "fb.com", "m.facebook.com"})
+                    and _is_profile(url) and not await self._decide()):
                 self._scraped.add(url)
                 page = await self.e.fetcher.fetch_fb_profile(url)
                 if page and not page.blocked:
@@ -631,7 +643,20 @@ class _Job:
         else:
             found = await galaxy.facebook(url)
         if found.blocked:
+            # The phone could not read a profile we know is real. That is not an
+            # answer of "no address here": without this the row was written to
+            # the sheet as NOT_FOUND and never tried again, even though the phone
+            # was merely busy, limited for the day, or mid-restart. A profile app
+            # that is genuinely paused (a login wall, a checkpoint) needs the
+            # user, so that defers for longer.
             log.info("Galaxy A20e didn't look at %s (%s)", url, found.blocked)
+            if not must_match:
+                # A guessed handle is the exception: the phone refusing it is
+                # useful information and the row carries on.
+                self.finding.research_complete = False
+                self.finding.retry_after = (_phone_pause_seconds(galaxy, app)
+                                            or RETRY_WHEN_PHONE_UNAVAILABLE)
+                self.finding.notes.append(f"Galaxy A20e didn't look at {url} ({found.blocked})")
             return
         if found.missing:
             log.info("Instagram says %s doesn't exist (tried twice on the Galaxy A20e)", url)
@@ -1237,7 +1262,8 @@ def _describe_spot(c: Candidate, site_host: str | None, own_domains: set[str]) -
 PROFILE_COLUMNS = {"facebook": "facebookUrl", "instagram": "instagramUrl", "youtube": "youtubeUrl",
                    "twitter": "twitterUrl", "x": "twitterUrl", "linkedin": "linkedinUrl", "tiktok": "tiktokUrl"}
 FACEBOOK_NOT_HANDLES = {"profile.php", "pages", "p", "people", "groups", "share", "sharer.php", "watch",
-                        "events", "pg", "home.php", "story.php", "permalink.php", "photo.php", "reel"}
+                        "events", "pg", "home.php", "story.php", "permalink.php", "photo.php", "reel",
+                        "policy.php", "privacy", "terms", "legal", "help"}
 # Instagram's own pages and Meta's: never a school's website.
 META_HOSTS = {"instagram.com", "facebook.com", "fb.com", "fb.me", "threads.net", "threads.com", "meta.com",
               "meta.ai", "whatsapp.com", "apple.com", "play.google.com"}
@@ -1267,10 +1293,29 @@ def _same_address(a: str, b: str) -> bool:
     return bool(num_a and num_a == num_b and fuzz.token_set_ratio(name_a, name_b) >= 85)
 
 
+def _phone_pause_seconds(galaxy, app: str) -> float | None:
+    """Seconds the phone's app is paused for, if it says so.
+
+    A pause is the phone deliberately left alone (a login wall, a checkpoint), so
+    a row waiting on it should wait about that long rather than retrying into a
+    wall every few minutes.
+    """
+    try:
+        paused = float(galaxy.paused_for(app) or 0)
+    except Exception:  # noqa: BLE001 - a stand-in without the method, or a bad state
+        return None
+    return paused if paused > 0 else None
+
+
 def _facebook_handle(url: str) -> str | None:
     """The page name in facebook.com/<name>, the likeliest Instagram handle."""
     first = urlsplit(url if "//" in url else "https://" + url).path.strip("/").split("/")[0]
     if first.lower() in FACEBOOK_NOT_HANDLES or not re.fullmatch(r"[A-Za-z0-9._]{3,30}", first):
+        return None
+    # facebook.com/<digits> is a page ID, not a vanity name, so the same string
+    # is not an Instagram handle. Guessing one wastes a profile load and can
+    # hand the phone an unrelated account.
+    if re.fullmatch(r"[0-9.]+", first):
         return None
     return first.lower()
 
