@@ -378,3 +378,49 @@ def test_an_export_is_imported_once_so_rotated_cookies_are_kept(tmp_path):
         await google.close()
     asyncio.run(run())
     assert added == [["one"], ["two-new"]]
+
+
+def test_the_cse_robot_check_pauses_only_the_cse_and_is_spotted_fast(tmp_path):
+    """Its results page draws a reCAPTCHA where results go (seen 2026-10-07)."""
+    class CsePage:
+        def __init__(self, rows, text):
+            self.rows, self.text, self.url, self.polls, self.visits = rows, text, "https://cse.google.com/cse", 0, []
+
+        async def goto(self, url, **kwargs):
+            self.visits.append(url)
+
+        async def wait_for_timeout(self, ms):
+            pass
+
+        async def evaluate(self, js):
+            if "innerText" in js and "gsc" not in js:
+                return self.text
+            self.polls += 1
+            return self.rows
+
+    async def run():
+        google = GoogleFreeSearch(Cache(tmp_path / "c.db"), gap=(0, 0), cse_id="engine")
+        robot = CsePage(None, " Please verify that you are not a robot. Learn more. © 2026 Google")
+
+        async def tab():
+            return robot
+        google._tab = tab
+        with pytest.raises(GoogleBlocked, match="paused for 30 min"):
+            await google.cse_search('"Tiger Dojo" Austin')
+        assert robot.polls == 1  # stopped at the first look, not after 8 s
+        assert robot.visits[-1] == "about:blank"
+        assert google.paused_for() == 0  # free Google search keeps going
+        with pytest.raises(GoogleBlocked, match="Programmable Search Engine paused, resumes"):
+            await google.cse_search("Tiger Dojo Austin")
+        assert len(robot.visits) == 2  # the paused call never loaded the page
+
+        answer = CsePage([{"url": "https://tigerdojo.com", "title": "Tiger Dojo", "snippet": "Austin"}], "Tiger Dojo")
+
+        async def answering_tab():
+            return answer
+        google._tab = answering_tab
+        google.cache.set("search-state", "cse-pause", {"until": 0, "step": 3}, 3600)
+        assert (await google.cse_search("Tiger Dojo Austin"))[0].url == "https://tigerdojo.com"
+        assert google.cache.get("search-state", "cse-pause")["step"] == 0
+        await google.close()
+    asyncio.run(run())

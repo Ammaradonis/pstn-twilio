@@ -78,6 +78,11 @@ RESULTS_NS = "search-google"
 PANEL_NS = "search-google-panel"
 CSE_NS = "search-cse"
 CSE_PROVIDER = "google-cse"
+# The engine's own pause: its results page draws a reCAPTCHA ("Please verify
+# that you are not a robot") where the results go. That only stops this path,
+# not free Google search, and backs off like Google's: 30 min doubling to 8 h.
+CSE_PAUSE = "cse-pause"
+CSE_BLOCKED_TEXT = re.compile(r"verify that you are not a robot", re.I)
 # The user's Programmable Search Engine (context.xml / annotations.xml in
 # Google-search-engine-configuration-files): its public results page, read in
 # the same browser, since the JSON API is closed to new customers.
@@ -215,6 +220,18 @@ class GoogleFreeSearch:
         state = self.cache.get(STATE_NS, "google-pause") or {}
         return max(0.0, float(state.get("until", 0)) - time.time())
 
+    def cse_paused_for(self) -> float:
+        state = self.cache.get(STATE_NS, CSE_PAUSE) or {}
+        return max(0.0, float(state.get("until", 0)) - time.time())
+
+    def _cse_pause(self, why: str) -> GoogleBlocked:
+        state = self.cache.get(STATE_NS, CSE_PAUSE) or {}
+        step = min(int(state.get("step", 0)) + 1, MAX_PAUSE_STEPS)
+        seconds = min(LONGEST_PAUSE, FIRST_PAUSE * 2 ** (step - 1))
+        self.cache.set(STATE_NS, CSE_PAUSE, {"until": time.time() + seconds, "step": step}, 30 * 86400)
+        log.warning("Programmable Search Engine paused for %d min: %s", seconds // 60, why)
+        return GoogleBlocked(f"{why}; paused for {seconds // 60} min")
+
     async def cse_search(self, query: str) -> list[Result]:
         """Results from the user's Programmable Search Engine (only the
         directories, federations and listings it was set up with)."""
@@ -227,6 +244,9 @@ class GoogleFreeSearch:
                 return [Result(**r) for r in cached]
             if self.paused_for():
                 raise GoogleBlocked(f"paused, resumes in {int(self.paused_for() / 60) + 1} min")
+            if self.cse_paused_for():
+                raise GoogleBlocked(f"Programmable Search Engine paused, resumes in "
+                                    f"{int(self.cse_paused_for() / 60) + 1} min")
             if not self.cache.reserve("google-cse", self.cse_daily_limit):
                 raise GoogleBlocked("daily Programmable Search Engine limit reached")
             await self._pace()
@@ -240,10 +260,16 @@ class GoogleFreeSearch:
                     rows = await page.evaluate(_CSE_JS)
                     if rows is not None:
                         break
+                    # Its challenge shows within a second; don't wait out the 8 s.
+                    if CSE_BLOCKED_TEXT.search(await page.evaluate("document.body ? document.body.innerText : ''")):
+                        break
                 visible = await page.evaluate("document.body ? document.body.innerText : ''")
                 if BLOCKED_URL.search(page.url) or BLOCKED_TEXT.search(visible):
                     await self._close_browser()
                     raise self._pause("the Programmable Search Engine page asked for a CAPTCHA")
+                if rows is None and CSE_BLOCKED_TEXT.search(visible):
+                    await page.goto("about:blank")  # stop the challenge's scripts; never solved
+                    raise self._cse_pause("the Programmable Search Engine asked to verify you are not a robot")
                 if rows is None:
                     raise GoogleUnavailable("the Programmable Search Engine page didn't load its results")
             except GoogleUnavailable:
@@ -256,6 +282,7 @@ class GoogleFreeSearch:
             results = [Result(url=r["url"], title=_squash(r["title"]), snippet=_squash(r["snippet"])[:1500],
                               provider=CSE_PROVIDER) for r in rows]
             self.cache.set(CSE_NS, query, [r.__dict__ for r in results], SEARCH_TTL)
+            self.cache.set(STATE_NS, CSE_PAUSE, {"until": 0, "step": 0}, 30 * 86400)
             return results
 
     async def business_profile(self, query: str, country: str = "US") -> dict | None:
