@@ -26,6 +26,7 @@ import { mapMessage } from '../messages/messages.mapper';
 import { MessagesService } from '../messages/messages.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { RealtimeService } from '../realtime/realtime.service';
+import { RecordingMediaService } from '../recordings/recording-media.service';
 import { TwilioService } from '../twilio/twilio.service';
 
 import { VoiceAppSettingsService } from './voice-app-settings.service';
@@ -58,6 +59,7 @@ export class VoiceAppService {
     private readonly settings: VoiceAppSettingsService,
     private readonly push: VoicePushService,
     private readonly ctx: VoiceAppContext,
+    private readonly media: RecordingMediaService,
   ) {}
 
   async bootstrap(actor: VoiceActor): Promise<VoiceAppBootstrapDto> {
@@ -178,8 +180,12 @@ export class VoiceAppService {
     if (recording.status !== RecordingStatus.COMPLETED) {
       throw new BadRequestException('This voicemail is still being saved');
     }
-    const media = await this.twilio.fetchRecordingMedia(recording.twilioRecordingSid);
-    return { ...media, filename: `voicemail-${recording.id}.mp3` };
+    const media = await this.media.open(recording);
+    return {
+      stream: media.stream,
+      contentType: media.contentType,
+      filename: `voicemail-${recording.id}.${media.extension}`,
+    };
   }
 
   async markVoicemailHeard(userId: string, id: string): Promise<void> {

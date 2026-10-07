@@ -16,25 +16,35 @@ import { readPersistedSpreadsheet, SpreadsheetPicker } from '../components/sprea
 import { VoiceRecovery } from '../components/voice-recovery';
 import { useVoiceDevice } from '../hooks/use-voice-device';
 import { api, ApiError } from '../lib/api-client';
+import {
+  describeBrowserRecording,
+  isBrowserRecordingSupported,
+  recordCallInBrowser,
+  useBrowserRecordingStatus,
+} from '../lib/browser-recordings';
+import type { RecordableCall } from '../lib/call-recorder';
 import { formatDate, formatPhone } from '../lib/format';
 import { watchRecordingDownload } from '../lib/recording-downloads';
 
 const DIALPAD_KEYS = ['1', '2', '3', '4', '5', '6', '7', '8', '9', '*', '0', '#', '+'] as const;
 const RECORD_CALLS_STORAGE_KEY = 'pstn-twilio.record-calls';
+// Whether Twilio also records calls the browser records. On while browser
+// recordings are being compared against Twilio's; turn it off once they hold up.
+const TWILIO_BACKUP_STORAGE_KEY = 'pstn-twilio.twilio-backup';
 
-// Calls were always recorded before this setting existed, so recording stays
+// Calls were always recorded before these settings existed, so recording stays
 // on until the user turns it off.
-function readRecordCallsPreference(): boolean {
+function readBooleanPreference(key: string): boolean {
   try {
-    return window.localStorage.getItem(RECORD_CALLS_STORAGE_KEY) !== 'false';
+    return window.localStorage.getItem(key) !== 'false';
   } catch {
     return true;
   }
 }
 
-function writeRecordCallsPreference(value: boolean): void {
+function writeBooleanPreference(key: string, value: boolean): void {
   try {
-    window.localStorage.setItem(RECORD_CALLS_STORAGE_KEY, String(value));
+    window.localStorage.setItem(key, String(value));
   } catch {
     // Not persisted; the toggle still applies to this page.
   }
@@ -126,8 +136,21 @@ export function DialPage() {
   const [pageError, setPageError] = useState<string | null>(null);
   const [sentTones, setSentTones] = useState('');
   const [repeatDialWarning, setRepeatDialWarning] = useState<LastDialDto | null>(null);
-  const [recordCall, setRecordCall] = useState<boolean>(readRecordCallsPreference);
+  const [recordCall, setRecordCall] = useState<boolean>(() =>
+    readBooleanPreference(RECORD_CALLS_STORAGE_KEY),
+  );
+  const [twilioBackup, setTwilioBackup] = useState<boolean>(() =>
+    readBooleanPreference(TWILIO_BACKUP_STORAGE_KEY),
+  );
+  const [browserRecordingSupported] = useState(isBrowserRecordingSupported);
   const [activeCallRecorded, setActiveCallRecorded] = useState(false);
+  const [activeCallBrowserRecorded, setActiveCallBrowserRecorded] = useState(false);
+  const [activeCallTwilioRecorded, setActiveCallTwilioRecorded] = useState(false);
+  const [backupBusy, setBackupBusy] = useState(false);
+  const [backupError, setBackupError] = useState<string | null>(null);
+  const activeCallRef = useRef<RecordableCall | null>(null);
+  const latestRecording = useBrowserRecordingStatus();
+  const browserRecording = latestRecording?.direction === 'outbound' ? latestRecording : null;
 
   // Google Sheets target for post-call status pushes, remembered across visits.
   const [spreadsheetId, setSpreadsheetId] = useState<string | null>(
@@ -207,6 +230,10 @@ export function DialPage() {
     if (inCallMode) return;
     setSentTones('');
     setActiveCallRecorded(false);
+    setActiveCallBrowserRecorded(false);
+    setActiveCallTwilioRecorded(false);
+    setBackupError(null);
+    activeCallRef.current = null;
   }, [inCallMode]);
 
   // An outbound call opens its status panel as soon as it starts, so notes can
@@ -238,9 +265,36 @@ export function DialPage() {
 
   function toggleRecordCall() {
     setRecordCall((prev) => {
-      writeRecordCallsPreference(!prev);
+      writeBooleanPreference(RECORD_CALLS_STORAGE_KEY, !prev);
       return !prev;
     });
+  }
+
+  function toggleTwilioBackup() {
+    setTwilioBackup((prev) => {
+      writeBooleanPreference(TWILIO_BACKUP_STORAGE_KEY, !prev);
+      return !prev;
+    });
+  }
+
+  // Has Twilio record the rest of the live call, e.g. once it is going well.
+  async function backUpActiveCall() {
+    const callSid = activeCallRef.current?.parameters?.CallSid;
+    if (!callSid) {
+      setBackupError('The call is still connecting. Try again in a moment.');
+      return;
+    }
+    setBackupBusy(true);
+    setBackupError(null);
+    try {
+      await api.recordings.startTwilioBackup(callSid);
+      setActiveCallTwilioRecorded(true);
+      setActiveCallRecorded(true);
+    } catch (err) {
+      setBackupError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setBackupBusy(false);
+    }
   }
 
   useEffect(() => {
@@ -318,22 +372,42 @@ export function DialPage() {
         destinationE164: destinationNumber,
         callerE164: selectedNumber.data.phoneNumberE164,
       };
+      // The browser records for free; Twilio records too as a backup, or
+      // instead when this browser cannot record.
+      const recordInBrowser = recordCall && browserRecordingSupported;
+      const recordOnTwilio = recordCall && (twilioBackup || !browserRecordingSupported);
       const call = await voice.makeCall(numberId, destinationNumber, {
-        recordCall,
+        recordCall: recordOnTwilio,
         onPrepared: (p) => {
           prepared.current = p;
         },
       });
       if (!call) outboundCallRef.current = null;
-      // An API that predates the setting omits recordCall and always records.
-      if (call && prepared.current && prepared.current.recordCall !== false) {
-        setActiveCallRecorded(true);
-        watchRecordingDownload({
-          outboundIntentId: prepared.current.outboundIntentId,
-          numberId,
-          destination: prepared.current.destinationNumber,
-          intentExpiresAt: prepared.current.expiresAt,
-        });
+      activeCallRef.current = call;
+      if (call && prepared.current) {
+        const intent = prepared.current;
+        const browserRecorded =
+          recordInBrowser &&
+          recordCallInBrowser(call, {
+            direction: 'outbound',
+            counterpart: intent.destinationNumber,
+            numberId,
+            outboundIntentId: intent.outboundIntentId,
+          });
+        // An API that predates the setting omits recordCall and always records.
+        const twilioRecorded = intent.recordCall !== false;
+        setActiveCallRecorded(browserRecorded || twilioRecorded);
+        setActiveCallBrowserRecorded(browserRecorded);
+        setActiveCallTwilioRecorded(twilioRecorded);
+        // The browser saves its own file; otherwise download Twilio's MP3.
+        if (twilioRecorded && !browserRecorded) {
+          watchRecordingDownload({
+            outboundIntentId: intent.outboundIntentId,
+            numberId,
+            destination: intent.destinationNumber,
+            intentExpiresAt: intent.expiresAt,
+          });
+        }
       }
     } catch (err) {
       if (!wasInCallRef.current) outboundCallRef.current = null;
@@ -638,49 +712,125 @@ export function DialPage() {
           </p>
         )}
 
-        <div className="mt-4 flex items-center justify-between gap-3 rounded border border-slate-200 px-3 py-2">
-          <div className="min-w-0">
-            <p id="record-call-label" className="text-sm font-medium text-slate-800">
-              Record call
-              {inCallMode && activeCallRecorded && (
-                <span className="ml-2 inline-flex items-center gap-1 rounded-full bg-rose-100 px-2 py-0.5 text-xs font-medium text-rose-700">
-                  <span
-                    className="h-1.5 w-1.5 animate-pulse rounded-full bg-rose-600"
-                    aria-hidden="true"
-                  />
-                  Recording
-                </span>
-              )}
-            </p>
-            <p id="record-call-hint" className="text-xs text-slate-500">
-              {inCallMode
-                ? activeCallRecorded
-                  ? 'The MP3 downloads automatically after the call ends.'
-                  : 'Changes apply to your next call.'
-                : recordCall
-                  ? 'The call is recorded and the MP3 downloads automatically when it ends.'
-                  : 'The call will not be recorded.'}
-            </p>
-          </div>
-          <button
-            type="button"
-            role="switch"
-            aria-checked={recordCall}
-            aria-labelledby="record-call-label"
-            aria-describedby="record-call-hint"
-            onClick={toggleRecordCall}
-            disabled={inCallMode || submitting}
-            className={`relative inline-flex h-6 w-11 shrink-0 items-center rounded-full transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-slate-500 focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-60 ${
-              recordCall ? 'bg-rose-600' : 'bg-slate-300'
-            }`}
-          >
-            <span
-              aria-hidden="true"
-              className={`inline-block h-5 w-5 rounded-full bg-white shadow transition-transform ${
-                recordCall ? 'translate-x-5' : 'translate-x-0.5'
+        <div className="mt-4 rounded border border-slate-200 px-3 py-2">
+          <div className="flex items-center justify-between gap-3">
+            <div className="min-w-0">
+              <p id="record-call-label" className="text-sm font-medium text-slate-800">
+                Record call
+                {inCallMode && activeCallRecorded && (
+                  <span className="ml-2 inline-flex items-center gap-1 rounded-full bg-rose-100 px-2 py-0.5 text-xs font-medium text-rose-700">
+                    <span
+                      className="h-1.5 w-1.5 animate-pulse rounded-full bg-rose-600"
+                      aria-hidden="true"
+                    />
+                    Recording
+                  </span>
+                )}
+              </p>
+              <p id="record-call-hint" className="text-xs text-slate-500">
+                {inCallMode
+                  ? activeCallRecorded
+                    ? activeCallBrowserRecorded
+                      ? 'Recording in this browser. The file downloads when the call ends.'
+                      : 'The MP3 downloads automatically after the call ends.'
+                    : 'Changes apply to your next call.'
+                  : !recordCall
+                    ? 'The call will not be recorded.'
+                    : browserRecordingSupported
+                      ? 'Recorded in this browser for free. The file downloads when the call ends; calls of 90 seconds or more are also added to the call log.'
+                      : 'The call is recorded and the MP3 downloads automatically when it ends.'}
+              </p>
+            </div>
+            <button
+              type="button"
+              role="switch"
+              aria-checked={recordCall}
+              aria-labelledby="record-call-label"
+              aria-describedby="record-call-hint"
+              onClick={toggleRecordCall}
+              disabled={inCallMode || submitting}
+              className={`relative inline-flex h-6 w-11 shrink-0 items-center rounded-full transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-slate-500 focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-60 ${
+                recordCall ? 'bg-rose-600' : 'bg-slate-300'
               }`}
-            />
-          </button>
+            >
+              <span
+                aria-hidden="true"
+                className={`inline-block h-5 w-5 rounded-full bg-white shadow transition-transform ${
+                  recordCall ? 'translate-x-5' : 'translate-x-0.5'
+                }`}
+              />
+            </button>
+          </div>
+
+          {recordCall && browserRecordingSupported && (
+            <div className="mt-2 flex items-center justify-between gap-3 border-t border-slate-100 pt-2">
+              <div className="min-w-0">
+                <p id="twilio-backup-label" className="text-sm text-slate-800">
+                  Twilio backup copy
+                </p>
+                <p id="twilio-backup-hint" className="text-xs text-slate-500">
+                  {inCallMode
+                    ? activeCallTwilioRecorded
+                      ? 'Twilio is also recording this call.'
+                      : 'Have Twilio record the rest of this call ($0.0025/min).'
+                    : twilioBackup
+                      ? 'Twilio also records each call ($0.0025/min) while browser recordings prove reliable.'
+                      : 'Off. During a call you can still back it up on Twilio.'}
+                </p>
+              </div>
+              {inCallMode ? (
+                activeCallTwilioRecorded ? (
+                  <span className="shrink-0 rounded-full bg-slate-100 px-2 py-0.5 text-xs font-medium text-slate-700">
+                    On
+                  </span>
+                ) : (
+                  <button
+                    type="button"
+                    onClick={() => void backUpActiveCall()}
+                    disabled={backupBusy || voice.connectionState !== 'open'}
+                    className="shrink-0 rounded border border-slate-300 px-2 py-1 text-xs font-medium hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-60"
+                  >
+                    {backupBusy ? 'Starting…' : 'Back up this call'}
+                  </button>
+                )
+              ) : (
+                <button
+                  type="button"
+                  role="switch"
+                  aria-checked={twilioBackup}
+                  aria-labelledby="twilio-backup-label"
+                  aria-describedby="twilio-backup-hint"
+                  onClick={toggleTwilioBackup}
+                  disabled={submitting}
+                  className={`relative inline-flex h-5 w-9 shrink-0 items-center rounded-full transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-slate-500 focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-60 ${
+                    twilioBackup ? 'bg-slate-700' : 'bg-slate-300'
+                  }`}
+                >
+                  <span
+                    aria-hidden="true"
+                    className={`inline-block h-4 w-4 rounded-full bg-white shadow transition-transform ${
+                      twilioBackup ? 'translate-x-4' : 'translate-x-0.5'
+                    }`}
+                  />
+                </button>
+              )}
+            </div>
+          )}
+          {backupError && <p className="mt-1 text-xs text-rose-700">{backupError}</p>}
+          {browserRecording && (
+            <p
+              role="status"
+              className={`mt-2 break-words text-xs ${
+                browserRecording.state === 'failed'
+                  ? 'text-rose-700'
+                  : browserRecording.state === 'waiting'
+                    ? 'text-amber-700'
+                    : 'text-slate-600'
+              }`}
+            >
+              {describeBrowserRecording(browserRecording)}
+            </p>
+          )}
         </div>
 
         <div className="mt-4 flex flex-wrap gap-2">

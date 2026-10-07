@@ -211,7 +211,10 @@ function finish(
 }
 
 function pickRecording(call: CallDto): CallRecordingDto | null {
-  const callRecordings = call.recordings.filter((r) => r.source !== 'voicemail');
+  // Browser recordings are saved to disk by the browser itself.
+  const callRecordings = call.recordings.filter(
+    (r) => r.source !== 'voicemail' && r.source !== 'browser',
+  );
   return (
     callRecordings.find((r) => r.status === 'COMPLETED') ??
     callRecordings.find((r) => r.status === 'IN_PROGRESS') ??

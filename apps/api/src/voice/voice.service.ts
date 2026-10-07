@@ -17,6 +17,7 @@ import twilio from 'twilio';
 
 import { AuditService } from '../audit/audit.service';
 import { PrismaService } from '../prisma/prisma.service';
+import { RECORD_INBOUND_TAG, recordsInboundCalls } from '../recordings/inbound-recording';
 import { RedisService } from '../redis/redis.service';
 import { TwilioService } from '../twilio/twilio.service';
 
@@ -189,10 +190,9 @@ export class VoiceService implements OnModuleInit, OnModuleDestroy {
     numberId: string,
   ): Promise<{ numberId: string; recordCall: boolean }> {
     const phoneNumber = await this.assertOwnership(actor, numberId);
-    const tags = (phoneNumber.tags ?? {}) as Record<string, unknown>;
     return {
       numberId: phoneNumber.id,
-      recordCall: tags.recordInboundCalls === true,
+      recordCall: recordsInboundCalls(phoneNumber.tags),
     };
   }
 
@@ -208,7 +208,7 @@ export class VoiceService implements OnModuleInit, OnModuleDestroy {
       data: {
         tags: {
           ...existingTags,
-          recordInboundCalls: recordCall,
+          [RECORD_INBOUND_TAG]: recordCall,
         },
       },
     });

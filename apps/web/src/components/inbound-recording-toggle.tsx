@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 
 import { api } from '../lib/api-client';
+import { describeBrowserRecording, useBrowserRecordingStatus } from '../lib/browser-recordings';
 
 export function InboundRecordingToggle({
   numberId,
@@ -9,7 +10,9 @@ export function InboundRecordingToggle({
   numberId: string;
   inCall: boolean;
 }) {
-  const [recordCall, setRecordCall] = useState(false);
+  const [recordCall, setRecordCall] = useState(true);
+  const latest = useBrowserRecordingStatus();
+  const recording = latest?.direction === 'inbound' ? latest : null;
   const [loaded, setLoaded] = useState(false);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -17,7 +20,7 @@ export function InboundRecordingToggle({
   useEffect(() => {
     let cancelled = false;
     setLoaded(false);
-    setRecordCall(false);
+    setRecordCall(true);
     setError(null);
     api.voice
       .recordingPreference(numberId)
@@ -58,7 +61,7 @@ export function InboundRecordingToggle({
             {!loaded
               ? 'Recording setting unavailable until loaded.'
               : recordCall
-                ? 'Recording is on for answered incoming calls to this number.'
+                ? 'Answered incoming calls to this number are recorded in this browser for free and downloaded when they end; calls of 90 seconds or more are also added to the call log.'
                 : 'Incoming calls to this number are not recorded.'}{' '}
             Changes apply to calls that start ringing after you change this setting.
           </p>
@@ -79,6 +82,20 @@ export function InboundRecordingToggle({
           />
         </button>
       </div>
+      {recording && (
+        <p
+          role="status"
+          className={`mt-2 break-words text-xs ${
+            recording.state === 'failed'
+              ? 'text-rose-700'
+              : recording.state === 'waiting'
+                ? 'text-amber-700'
+                : 'text-slate-600'
+          }`}
+        >
+          {describeBrowserRecording(recording)}
+        </p>
+      )}
       {error && (
         <p role="alert" className="mt-2 text-xs text-rose-700">
           {error}

@@ -704,18 +704,6 @@ function VoicemailSection({ settings }: { settings: VoiceSettingsDto }) {
       />
       {settings.voicemailEnabled ? (
         <>
-          <Row
-            icon="message"
-            title="Transcribe voicemail"
-            description="Read voicemail as text, in the language the caller speaks"
-            control={
-              <Switch
-                checked={settings.voicemailTranscribe}
-                label="Transcribe voicemail"
-                onChange={(next) => void update({ voicemailTranscribe: next })}
-              />
-            }
-          />
           <p className="px-5 pb-1 pt-3 text-sm font-medium text-gv-ink">Greeting</p>
           {choice('default', 'Standard greeting')}
           {choice('text', 'Read my text aloud')}

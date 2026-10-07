@@ -188,20 +188,29 @@ describe('VoiceWebhookService.handleInbound', () => {
     // number that was called.
     expect(xml).toContain('<Identity>user_u1</Identity>');
     expect(xml).toContain('<Parameter name="calledNumber" value="+15552222222"/>');
+    // The answering browser files its recording under the inbound call.
+    expect(xml).toContain('<Parameter name="parentCallSid" value="CA1"/>');
     expect(xml).toContain('statusCallback="https://example.com/webhooks/twilio/voice/status"');
 
-    // Only an explicit persisted opt-in may enable recording.
-    for (const preference of [undefined, false, 'true', true]) {
+    // The browser records unless the number opts out; Twilio never does here,
+    // whatever the old Twilio-recording tag says.
+    for (const [tags, record] of [
+      [{}, 'true'],
+      [{ recordInboundInBrowser: true }, 'true'],
+      [{ recordInboundCalls: false }, 'true'],
+      [{ recordInboundInBrowser: false, recordInboundCalls: true }, 'false'],
+    ] as const) {
       prisma.phoneNumber.findUnique.mockResolvedValue({
         ...phoneNumber,
-        tags: { recordInboundCalls: preference },
+        tags,
       } as typeof phoneNumber);
       const next = await service.handleInbound({
         CallSid: 'CA2',
         From: '+15551111111',
         To: phoneNumber.phoneNumberE164,
       });
-      expect(next.includes('record="record-from-answer-dual"')).toBe(preference === true);
+      expect(next).toContain(`<Parameter name="recordCall" value="${record}"/>`);
+      expect(next).toContain('record="do-not-record"');
     }
   });
 

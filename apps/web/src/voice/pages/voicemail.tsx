@@ -42,7 +42,7 @@ export function VoicemailPage() {
       <EmptyState
         icon="voicemail"
         title="No voicemail"
-        body="When you miss a call, callers can leave a message. You'll read the transcript here."
+        body="When you miss a call, callers can leave a message. You'll listen to it here."
         action={
           <PrimaryButton onClick={() => navigate('/voice/settings#voicemail')}>
             Voicemail settings
@@ -86,16 +86,12 @@ export function VoicemailPage() {
                 </span>
               </button>
               <div className="pb-3 pl-[72px] pr-4">
-                <p
-                  className={`mt-1 text-sm ${item.transcript ? 'text-gv-ink' : 'italic text-gv-muted'} ${open ? '' : 'line-clamp-2'}`}
-                >
-                  {item.transcript ??
-                    (item.transcriptStatus === 'in-progress'
-                      ? 'Transcribing…'
-                      : item.transcriptStatus === 'failed'
-                        ? 'Transcript not available'
-                        : 'No transcript')}
-                </p>
+                {/* Voicemail is no longer transcribed; older messages keep their text. */}
+                {item.transcript ? (
+                  <p className={`mt-1 text-sm text-gv-ink ${open ? '' : 'line-clamp-2'}`}>
+                    {item.transcript}
+                  </p>
+                ) : null}
                 {open ? (
                   <div className="mt-3 space-y-2">
                     <VoicemailPlayer

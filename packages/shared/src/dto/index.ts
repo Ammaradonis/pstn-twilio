@@ -112,13 +112,19 @@ export interface OutboundCallAnalyticsDto {
 export interface CallRecordingDto {
   id: string;
   twilioCallSid: string;
-  twilioRecordingSid: string;
+  /** Null for a recording made in the browser (source "browser"). */
+  twilioRecordingSid: string | null;
   recordingUrl: string | null;
   status: RecordingStatus;
   durationSeconds: number | null;
   channels: number | null;
+  /** "browser", "voicemail", or Twilio's RecordingSource (e.g. "DialVerb"). */
   source: string | null;
   track: string | null;
+  /** Audio type of the stored file; null while it is only at Twilio (MP3). */
+  contentType: string | null;
+  /** When the file reached our own storage; null while it is only at Twilio. */
+  storedAt: string | null;
   startedAt: string | null;
   createdAt: string;
 }
@@ -130,7 +136,7 @@ export interface VoicemailDto {
   phoneNumberE164: string;
   phoneNumberFriendlyName: string | null;
   twilioCallSid: string;
-  twilioRecordingSid: string;
+  twilioRecordingSid: string | null;
   from: string;
   to: string;
   status: RecordingStatus;

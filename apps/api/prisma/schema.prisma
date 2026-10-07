@@ -272,7 +272,8 @@ model CallRecording {
   id                 String          @id @default(uuid())
   callId             String?         @map("call_id")
   twilioCallSid      String          @map("twilio_call_sid")
-  twilioRecordingSid String          @unique @map("twilio_recording_sid")
+  // Null for recordings made in the browser (source "browser").
+  twilioRecordingSid String?         @unique @map("twilio_recording_sid")
   recordingUrl       String?         @map("recording_url")
   status             RecordingStatus @default(IN_PROGRESS)
   durationSeconds    Int?            @map("duration_seconds")
@@ -285,6 +286,15 @@ model CallRecording {
   transcript         String?
   transcriptStatus   String?         @map("transcript_status")
   heardAt            DateTime?       @map("heard_at")
+  // The file in our own object storage (R2). Twilio recordings are copied
+  // there and then deleted from Twilio; browser recordings are uploaded there.
+  storageKey         String?         @map("storage_key")
+  contentType        String?         @map("content_type")
+  sizeBytes          Int?            @map("size_bytes")
+  storedAt           DateTime?       @map("stored_at")
+  twilioDeletedAt    DateTime?       @map("twilio_deleted_at")
+  archiveAttempts    Int             @default(0) @map("archive_attempts")
+  archiveError       String?         @map("archive_error")
   createdAt          DateTime        @default(now()) @map("created_at")
   updatedAt          DateTime        @updatedAt @map("updated_at")
 
@@ -293,6 +303,7 @@ model CallRecording {
   @@index([callId])
   @@index([twilioCallSid])
   @@index([twilioRecordingSid])
+  @@index([status, storedAt])
   @@map("call_recordings")
 }
 

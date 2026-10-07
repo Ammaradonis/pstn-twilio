@@ -5,7 +5,12 @@ import { useParams } from 'react-router-dom';
 
 import { useRealtimeCalls } from '../hooks/use-realtime-calls';
 import { api } from '../lib/api-client';
-import { callRecordingFilename, saveBlob } from '../lib/download';
+import {
+  callRecordingFilename,
+  recordingExtension,
+  recordingSourceLabel,
+  saveBlob,
+} from '../lib/download';
 
 export function CallsPage() {
   const { numberId } = useParams<{ numberId: string }>();
@@ -144,6 +149,7 @@ function RecordingAudio({
             prefix: recording.source === 'voicemail' ? 'voicemail' : 'call',
             counterpart: call.direction === 'OUTBOUND' ? (call.destination ?? call.to) : call.from,
             startedAt: call.startedAt,
+            extension: recordingExtension(recording.contentType ?? media.type),
           }),
         );
       }
@@ -157,9 +163,15 @@ function RecordingAudio({
   if (recording.status !== 'COMPLETED') {
     return <span className="text-xs text-slate-500">{recording.status}</span>;
   }
+  const extension = recordingExtension(recording.contentType).toUpperCase();
 
   return (
     <div className="flex flex-col gap-1">
+      {call.recordings.length > 1 && (
+        <span className="text-[11px] font-medium uppercase tracking-wide text-slate-500">
+          {recordingSourceLabel(recording.source)}
+        </span>
+      )}
       {src ? <audio controls preload="metadata" src={src} className="h-8 w-64 max-w-full" /> : null}
       <div className="flex gap-1">
         {!src && (
@@ -176,10 +188,10 @@ function RecordingAudio({
           type="button"
           onClick={() => void run('download')}
           disabled={busy !== null}
-          aria-label="Download recording as MP3"
+          aria-label={`Download recording as ${extension}`}
           className="w-fit rounded border border-slate-300 px-2 py-1 text-xs disabled:cursor-not-allowed disabled:opacity-60"
         >
-          {busy === 'download' ? 'Downloading…' : 'Download MP3'}
+          {busy === 'download' ? 'Downloading…' : `Download ${extension}`}
         </button>
       </div>
       {error ? <span className="max-w-48 text-xs text-red-600">{error}</span> : null}

@@ -1,6 +1,7 @@
 import { useEffect } from 'react';
 
 import { useAuthStore } from '../lib/auth-store';
+import { uploadPendingRecordings } from '../lib/browser-recordings';
 import { formatPhone } from '../lib/format';
 import {
   dismissRecordingDownload,
@@ -38,7 +39,10 @@ export function RecordingDownloadTray() {
   const { token } = useAuthStore();
 
   useEffect(() => {
-    if (token) resumeRecordingDownloads();
+    if (!token) return;
+    resumeRecordingDownloads();
+    // Browser recordings a reload or lost connection left un-uploaded.
+    void uploadPendingRecordings();
   }, [token]);
 
   if (downloads.length === 0) return null;

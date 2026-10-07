@@ -61,6 +61,8 @@ function recording(overrides: Partial<CallRecordingDto> = {}): CallRecordingDto 
     channels: 2,
     source: 'DialVerb',
     track: 'both',
+    contentType: null,
+    storedAt: null,
     startedAt: null,
     createdAt: '2026-09-14T10:22:20.000Z',
     ...overrides,

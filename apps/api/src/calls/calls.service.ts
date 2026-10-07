@@ -20,6 +20,7 @@ import {
 import { AuditService } from '../audit/audit.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { RealtimeService } from '../realtime/realtime.service';
+import { RecordingMediaService } from '../recordings/recording-media.service';
 import { TwilioService } from '../twilio/twilio.service';
 
 import { decodeCursor, encodeCursor, mapCall } from './calls.mapper';
@@ -82,6 +83,7 @@ export class CallsService {
     private readonly twilio: TwilioService,
     private readonly audit: AuditService,
     private readonly realtime: RealtimeService,
+    private readonly media: RecordingMediaService,
   ) {}
 
   async list(
@@ -365,10 +367,11 @@ export class CallsService {
     }
 
     try {
-      const media = await this.twilio.fetchRecordingMedia(recording.twilioRecordingSid);
+      const media = await this.media.open(recording);
       return {
-        ...media,
-        filename: `${recording.twilioRecordingSid}.mp3`,
+        stream: media.stream,
+        contentType: media.contentType,
+        filename: `${recording.twilioRecordingSid ?? recording.id}.${media.extension}`,
       };
     } catch (err) {
       const message = err instanceof Error ? err.message : 'Twilio recording media fetch failed';
@@ -394,10 +397,11 @@ export class CallsService {
     }
 
     try {
-      const media = await this.twilio.fetchRecordingMedia(recording.twilioRecordingSid);
+      const media = await this.media.open(recording);
       return {
-        ...media,
-        filename: `${recording.twilioRecordingSid}.mp3`,
+        stream: media.stream,
+        contentType: media.contentType,
+        filename: `${recording.twilioRecordingSid ?? recording.id}.${media.extension}`,
       };
     } catch (err) {
       const message = err instanceof Error ? err.message : 'Twilio voicemail media fetch failed';
