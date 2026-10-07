@@ -9,6 +9,9 @@ export function getSocket(): Socket {
   if (socketInstance) return socketInstance;
   socketInstance = io(env.VITE_WS_URL, {
     transports: ['websocket', 'polling'],
+    // A blocked WebSocket must fall back to polling instead of retrying the
+    // same transport forever (listing both transports alone doesn't do this).
+    tryAllTransports: true,
     autoConnect: true,
     // Lazy auth: re-read the token on every connection attempt, so reconnects
     // pick up a token that was set after the socket was first created.
