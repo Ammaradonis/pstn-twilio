@@ -25,6 +25,8 @@ function corsOrigins(config: ConfigService): string[] {
       'http://127.0.0.1:5173',
       'https://bestsoftphone.site',
       'https://app.bestsoftphone.site',
+      // Pages serves the app on www too; without it sign-in fails there.
+      'https://www.bestsoftphone.site',
       'https://pstn-twilio-web.pages.dev',
     ]),
   );

@@ -259,12 +259,21 @@ def test_brave_runs_when_free_google_says_there_are_no_results():
 def test_rows_with_a_website_or_profile_keep_brave_first():
     job = _Job(_engine(_Google([HIT]), _Brave()), Row(**ROW))
     assert job._google_first()
+    # A bare row keeps its free pass when a business profile hands it a social
+    # page: the sheet row itself still names no website and no address, and
+    # Google is what found that page (2026-10-07). An address candidate ends it.
     job.social.add("https://www.facebook.com/tigerdojo")
+    assert job._google_first()
+    job.candidates.append(Candidate(email="info@tigerdojo.com", source="site", url="https://tigerdojo.com", context=""))
     assert not job._google_first()
     job = _Job(_engine(_Google([HIT]), _Brave(), mode="all"), Row(**ROW, website="https://tigerdojo.com"))
     job.site_host = "tigerdojo.com"
     assert job._google_first()
     assert not _Job(_engine(_Google([HIT]), _Brave(), mode="off"), Row(**ROW))._google_first()
+    # A row the sheet itself filled in is not a bare row: no free pass.
+    filled = _Job(_engine(_Google([HIT]), _Brave()), Row(**ROW, website="https://tigerdojo.com"))
+    filled.social.add("https://www.facebook.com/tigerdojo")
+    assert not filled._google_first()
 
 
 def test_sharing_the_fetcher_driver_lends_it_for_the_whole_page(tmp_path):

@@ -214,6 +214,14 @@ class _Job:
         self._google_stall_logged = False
         self._scraped: set[str] = set()
 
+    def _sheet_is_bare(self) -> bool:
+        """The sheet row itself has nothing to go on: no website of its own and
+        no Facebook/Instagram (a link-in-bio page counts as nothing to go on)."""
+        if self.row.facebook or self.row.instagram:
+            return False
+        site = (self.row.website or "").strip()
+        return not site or host_matches(_host(site), SOCIAL_HOSTS | LINK_IN_BIO_HOSTS)
+
     # ── orchestration ─────────────────────────────────────────────────────────
 
     async def run(self) -> Finding:
@@ -379,16 +387,31 @@ class _Job:
         return stages
 
     def _google_first(self) -> bool:
-        """Free Google before Brave: in "bare" mode (the default) only when
-        there's nothing to go on yet — no website, no Facebook/Instagram,
-        no address from a listing; in "all" mode for every row.
+        """Free Google before the paid chain.
 
-        False whenever free Google is off, so a row is never left with no
-        search at all."""
+        In "bare" mode the free pass is for rows the sheet gave us nothing for.
+        The old test looked only at what the engine had *already* collected, so a
+        bare row stopped qualifying the moment its Google Business Profile
+        supplied a website or a social page — exactly the rows that still have no
+        address. Google is also what finds those pages in the first place, so a
+        bare row now keeps its free pass even then, as long as the business
+        profile has not already produced an address candidate. Every other row
+        qualifies only when there is still nothing to go on, as before. In "all"
+        mode every row gets the free pass. False whenever free Google is off, so
+        a row is never left with no search at all.
+        """
         google = self.e.google
         if google is None or not google.enabled or self.e.google_mode not in ("bare", "all"):
             return False
-        return self.e.google_mode == "all" or not (self.site_host or self.social or self.candidates)
+        if self.e.google_mode == "all":
+            return True
+        if not (self.site_host or self.social or self.candidates):
+            return True
+        # A bare row keeps its free pass even after its business profile turned
+        # up a website or a social page, because that is not an address and
+        # Google is what surfaced those pages in the first place. An address
+        # candidate (from the site crawl or a directory listing) ends it.
+        return self._sheet_is_bare() and not self.candidates
 
     async def _google_pass(self) -> _Scored | None:
         """The Google-only queries, then every usual stage, all on free Google."""

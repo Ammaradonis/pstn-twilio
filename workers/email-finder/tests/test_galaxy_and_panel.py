@@ -340,6 +340,12 @@ class _Google:
         self.asked.append(query)
         return self.panels.get(query)
 
+    async def search(self, query, country="US"):
+        """The free Google pass a bare row now keeps after its business profile
+        supplies pages (2026-10-07). It answers nothing here so these tests stay
+        about the profile's enrichment."""
+        return []
+
 
 def _panel_job(google, **row):
     engine = Engine(_Fetcher(), _NoSearch(), _Domains(), google=google)  # type: ignore[arg-type]

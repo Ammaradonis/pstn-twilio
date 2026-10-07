@@ -47,6 +47,8 @@ from .validate import DomainChecker
 log = logging.getLogger("email_finder.worker")
 IDLE_POLL_SECONDS = 20
 HEARTBEAT_SECONDS = 45
+# How often the log states plainly that this laptop is connected and working.
+LIVENESS_LOG_SECONDS = 300
 CACHE_MAINTENANCE_SECONDS = 3600
 # A restart waits until the code has been unchanged this long (an edit or
 # git pull in progress shouldn't restart the worker halfway through).
@@ -218,6 +220,10 @@ async def run() -> bool:
     api = Api(settings.api_base, settings.worker_token)
     form_sender = FormSender(fetcher, CACHE_DIR.parent / "form-answers.json")
     stop = asyncio.Event()
+    # Counters for the liveness line, so a quiet log still shows work moving.
+    claimed = [0]
+    finished = [0]
+    failures = [0]
 
     loop = asyncio.get_running_loop()
     for sig in (signal.SIGINT, signal.SIGTERM):
@@ -227,11 +233,45 @@ async def run() -> bool:
             pass
 
     async def heartbeat_loop() -> None:
+        """Poll the API and report plainly what this laptop's connection is doing.
+
+        The heartbeat used to be silent, so a log could sit quiet for the whole
+        15-minute row timeout and look like the worker had stopped or like
+        something outside this PC was holding it up. It never was: the worker
+        only ever talks to the API, and the phone or browser showing progress has
+        no say in whether rows are researched. These lines separate "this laptop
+        cannot reach the API" from "connected and simply busy".
+        """
+        last_beat: float | None = None
+        offline_since: float | None = None
+        offline_said = 0
         while not stop.is_set():
             try:
                 await api.heartbeat()
             except httpx.HTTPError as err:
-                log.warning("heartbeat failed: %s", err)
+                now = time.monotonic()
+                offline_since = offline_since or now
+                failures[0] += 1
+                # Always the first failure, then at most one line a minute: a long
+                # outage should stay visible without flooding the log.
+                if offline_said == 0 or now - offline_said >= 60:
+                    offline_said = now
+                    log.warning("Cannot reach the API from this laptop (%s); the work queue is "
+                                "unavailable until the connection is back. %.1f min so far.",
+                                err, (now - offline_since) / 60)
+                await _sleep(stop, HEARTBEAT_SECONDS)
+                continue
+            now = time.monotonic()
+            if offline_since is not None:
+                log.info("Back online: this laptop is connected to the API again after %.1f min.",
+                         (now - offline_since) / 60)
+                offline_since = None
+                offline_said = 0
+            if last_beat is None or now - last_beat >= LIVENESS_LOG_SECONDS:
+                log.info("Alive: connected to the API; claimed %d, finished %d, %d still running%s.",
+                         claimed[0], finished[0], claimed[0] - finished[0],
+                         f", {failures[0]} heartbeat failure(s)" if failures[0] else "")
+                last_beat = now
             await _sleep(stop, HEARTBEAT_SECONDS)
 
     async def flush_outbox() -> None:
@@ -280,6 +320,7 @@ async def run() -> bool:
                  f" — {finding.method}" if finding.method else "",
                  f"; retry in {finding.retry_after}s" if finding.retry_after else "")
         cache.set("outbox-v2", item["id"], {"kind": "research", "result": result}, 365 * 86400)
+        finished[0] += 1
         await flush_outbox()
 
     async def form_loop() -> None:
@@ -324,6 +365,9 @@ async def run() -> bool:
             try:
                 await flush_outbox()
                 batch = await api.claim(settings.concurrency)
+                claimed[0] += len(batch)
+                if batch:
+                    log.info("Claimed %d row(s) to research.", len(batch))
                 backoff = IDLE_POLL_SECONDS
             except httpx.HTTPStatusError as err:
                 if err.response.status_code == 401:
