@@ -2,6 +2,7 @@ import type { CallDto, CallRecordingDto, CallStatus, WsCallEvent } from '@pstn-t
 import { useSyncExternalStore } from 'react';
 
 import { api, ApiError, getToken } from './api-client';
+import { MIN_UPLOAD_SECONDS } from './browser-recordings';
 import { callRecordingFilename, saveBlob } from './download';
 import { getSocket } from './realtime';
 
@@ -247,9 +248,18 @@ async function saveRecording(
   entry: RecordingDownload,
   callId: string,
   recordingId: string,
-  call: Pick<CallDto, 'destination' | 'startedAt'> | null,
+  call: Pick<CallDto, 'destination' | 'startedAt' | 'durationSeconds'> | null,
 ): Promise<void> {
   const id = entry.outboundIntentId;
+
+  // Calls above the threshold go to the database only — no download to the
+  // local device. The recording-archiver already handles storage in that case.
+  const duration = call?.durationSeconds ?? null;
+  if (duration !== null && duration >= MIN_UPLOAD_SECONDS) {
+    finish(id, 'downloaded', null);
+    return;
+  }
+
   update(id, { state: 'downloading', message: null, callId, recordingId });
   try {
     const blob = await api.calls.recordingMedia(entry.numberId, callId, recordingId);

@@ -3,7 +3,7 @@ import { useSyncExternalStore } from 'react';
 
 import { api, ApiError, getToken } from './api-client';
 import { CallRecorder, recordingMimeType, type RecordableCall } from './call-recorder';
-import { callRecordingFilename, saveBlob } from './download';
+import { callRecordingFilename } from './download';
 import {
   createMemoryRecordingStore,
   indexedDbRecordingStore,
@@ -259,12 +259,13 @@ async function finishSession(id: string, call: RecordableCall): Promise<void> {
     setStatus(id, { state: 'failed', message: 'No audio was captured.' });
     return;
   }
+  // Calls at or above MIN_UPLOAD_SECONDS go to the database only; no local
+  // download on phone or laptop.
   const filename = callRecordingFilename({
     counterpart: row.counterpart,
     startedAt: row.startedAt,
     extension: extensionFor(row.mimeType),
   });
-  saveBlob(blob, filename);
   finishedBlobs.set(id, blob);
   try {
     await store.put(row);
