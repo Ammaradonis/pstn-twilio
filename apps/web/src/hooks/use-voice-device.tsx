@@ -3,6 +3,7 @@ import { useCallback, useEffect, useState } from 'react';
 
 import { api } from '../lib/api-client';
 import { recordCallInBrowser } from '../lib/browser-recordings';
+import { SendLimiter } from '../lib/send-limiter';
 
 type ConnectionState = 'idle' | 'pending' | 'ringing' | 'open' | 'closed';
 
@@ -49,6 +50,8 @@ type VoiceDevice = {
     on?: (event: string, handler: (...args: unknown[]) => void) => void;
     // Whether the SDK plays its own ringtone for incoming calls.
     incoming?: (enabled?: boolean) => boolean;
+    // Voice SDK AudioProcessor hook: processes the microphone before it is sent.
+    addProcessor?: (processor: SendLimiter, isRemote?: boolean) => Promise<void>;
   };
   connect: (options: {
     params: { selectedNumberId: string; destinationNumber: string; outboundIntentId: string };
@@ -217,6 +220,11 @@ const DEFAULT_AUDIO_CONSTRAINTS: MediaTrackConstraints = {
 // loudspeaker, whose sound the phone's microphone picks back up as echo.
 const ANDROID_EARPIECE_INPUT_LABEL = 'Headset earpiece';
 const ANDROID_HEADSET_INPUT_LABELS = new Set(['Wired headset', 'Bluetooth headset', 'USB audio']);
+// Inputs only Chrome on Android lists, also in its "desktop site" mode, whose
+// user agent claims Linux.
+const ANDROID_ONLY_INPUT_LABELS = new Set([ANDROID_EARPIECE_INPUT_LABEL, 'Speakerphone']);
+// Keeps what the microphone sends under -3 dBFS (lib/send-limiter.ts).
+const sendLimiter = new SendLimiter();
 const MICROPHONE_STORAGE_KEY = 'pstn-twilio.microphone';
 
 type WakeLockSentinelLike = {
@@ -610,6 +618,18 @@ function disposeCurrentDevice(resetState: boolean): void {
   }
 }
 
+// Avoid adding browser gain on Android's communication input. Keep echo
+// cancellation and noise suppression; elsewhere AGC keeps quiet mics audible.
+// This is a gain-staging precaution, not a diagnosis of carrier/network quality.
+function processingConstraints(inputs: Array<{ label: string }>): MediaTrackConstraints {
+  const android =
+    inputs.some((input) => ANDROID_ONLY_INPUT_LABELS.has(input.label)) ||
+    (typeof navigator !== 'undefined' && /Android/i.test(navigator.userAgent));
+  return android
+    ? { ...DEFAULT_AUDIO_CONSTRAINTS, autoGainControl: false }
+    : DEFAULT_AUDIO_CONSTRAINTS;
+}
+
 // Microphone constraints for a call. On an Android phone with no headset this
 // requests the earpiece, so the other party is heard through the top speaker
 // held to the ear. Everywhere else the browser's default device is kept.
@@ -625,24 +645,25 @@ async function callAudioConstraints(
       throw new Error(
         'Could not check the selected microphone. Refresh microphones or choose Automatic.',
       );
-    return DEFAULT_AUDIO_CONSTRAINTS;
+    return processingConstraints(runtime.state.microphoneInputs);
   }
+  const processing = processingConstraints(inputs);
   if (selectedId) {
     if (!inputs.some((device) => device.deviceId === selectedId)) {
       throw new Error(
         'The selected microphone is unavailable. Choose another microphone or Automatic.',
       );
     }
-    return { ...DEFAULT_AUDIO_CONSTRAINTS, deviceId: { exact: selectedId } };
+    return { ...processing, deviceId: { exact: selectedId } };
   }
   if (inputs.some((device) => ANDROID_HEADSET_INPUT_LABELS.has(device.label))) {
-    return DEFAULT_AUDIO_CONSTRAINTS;
+    return processing;
   }
   const earpiece = inputs.find((device) => device.label === ANDROID_EARPIECE_INPUT_LABEL);
-  if (!earpiece?.deviceId) return DEFAULT_AUDIO_CONSTRAINTS;
+  if (!earpiece?.deviceId) return processing;
   // `ideal` rather than `exact`: if the earpiece disappears, fall back to
   // another microphone instead of failing the call.
-  return { ...DEFAULT_AUDIO_CONSTRAINTS, deviceId: { ideal: earpiece.deviceId } };
+  return { ...processing, deviceId: { ideal: earpiece.deviceId } };
 }
 
 async function refreshMicrophones(): Promise<void> {
@@ -734,6 +755,11 @@ function releaseMicrophone(): void {
 
 async function prepareCallAudio(device: VoiceDevice): Promise<MediaTrackConstraints> {
   const constraints = await callAudioConstraints();
+  const { deviceId: _deviceId, ...processing } = constraints;
+  // Enumeration can reveal Android inputs after init (including desktop-site
+  // mode). The SDK's selected-input capture uses these stored constraints,
+  // rather than the ones passed later to connect/accept.
+  await device.audio?.setAudioConstraints(processing);
   const requestedDeviceId = requestedInputDevice(constraints);
   if (requestedDeviceId) {
     if (!device.audio?.setInputDevice) {
@@ -748,7 +774,8 @@ async function prepareCallAudio(device: VoiceDevice): Promise<MediaTrackConstrai
     // deviceId inside rtcConstraints can race the SDK's own media acquisition.
     await device.audio.setInputDevice(requestedDeviceId);
   }
-  return DEFAULT_AUDIO_CONSTRAINTS;
+  // The device is chosen above; keep only the voice processing settings.
+  return processing;
 }
 
 async function refreshVoiceToken(): Promise<void> {
@@ -1314,10 +1341,17 @@ async function initVoiceDevice(
       }
       if (device.audio && typeof device.audio.setAudioConstraints === 'function') {
         try {
-          await device.audio.setAudioConstraints(DEFAULT_AUDIO_CONSTRAINTS);
+          await device.audio.setAudioConstraints(
+            processingConstraints(runtime.state.microphoneInputs),
+          );
         } catch {
           // ignore
         }
+      }
+      try {
+        await device.audio?.addProcessor?.(sendLimiter);
+      } catch {
+        // Calls still work, just without the limiter.
       }
       if (runtime.generation !== generation) return null;
       runtime.expiresAt = tokenResp.expiresAt;
@@ -1586,7 +1620,9 @@ async function requestMicrophonePermission(): Promise<boolean> {
   }
 
   try {
-    const stream = await navigator.mediaDevices.getUserMedia({ audio: DEFAULT_AUDIO_CONSTRAINTS });
+    const stream = await navigator.mediaDevices.getUserMedia({
+      audio: processingConstraints(runtime.state.microphoneInputs),
+    });
     try {
       await refreshMicrophones();
     } finally {

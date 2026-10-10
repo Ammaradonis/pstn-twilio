@@ -3,6 +3,7 @@ import { useEffect } from 'react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { api } from '../lib/api-client';
+import { SendLimiter } from '../lib/send-limiter';
 
 import { useVoiceDevice } from './use-voice-device';
 
@@ -15,6 +16,7 @@ const voiceSdkMock = vi.hoisted(() => ({
     destroy: ReturnType<typeof vi.fn>;
     connect: ReturnType<typeof vi.fn>;
     audio: {
+      addProcessor: ReturnType<typeof vi.fn>;
       setAudioConstraints: ReturnType<typeof vi.fn>;
       setInputDevice: ReturnType<typeof vi.fn>;
       unsetInputDevice: ReturnType<typeof vi.fn>;
@@ -72,6 +74,7 @@ vi.mock('@twilio/voice-sdk', () => {
     disconnectAll = vi.fn();
     connect = vi.fn();
     audio = {
+      addProcessor: vi.fn().mockResolvedValue(undefined),
       setAudioConstraints: vi.fn().mockResolvedValue(undefined),
       setInputDevice: vi.fn().mockResolvedValue(undefined),
       unsetInputDevice: vi.fn().mockResolvedValue(undefined),
@@ -166,6 +169,7 @@ describe('useVoiceDevice', () => {
     expect(device).toBeDefined();
     if (!device) throw new Error('Mock Twilio Device was not created');
     expect(device.register).toHaveBeenCalledTimes(1);
+    expect(device.audio.addProcessor).toHaveBeenCalledWith(expect.any(SendLimiter));
     expect(device.state).toBe('registered');
 
     act(() => {
@@ -1011,6 +1015,7 @@ describe('useVoiceDevice', () => {
     });
   });
 
+  // The phone's call-mode capture applies gain; the browser's own is off there.
   describe('on an Android phone', () => {
     function androidInputs(...labels: string[]) {
       const devices = ['default', ...labels].map((label, i) => ({
@@ -1049,18 +1054,27 @@ describe('useVoiceDevice', () => {
       });
 
       expect(device.audio.setInputDevice).toHaveBeenCalledWith('id-2');
+      expect(device.audio.setAudioConstraints).toHaveBeenLastCalledWith({
+        echoCancellation: true,
+        noiseSuppression: true,
+        autoGainControl: false,
+      });
+      const constraintOrder = device.audio.setAudioConstraints.mock.invocationCallOrder.at(-1)!;
+      expect(constraintOrder).toBeLessThan(
+        device.audio.setInputDevice.mock.invocationCallOrder[0]!,
+      );
       expect(device.connect).toHaveBeenCalledWith(
         expect.objectContaining({
           audioConstraints: {
             echoCancellation: true,
             noiseSuppression: true,
-            autoGainControl: true,
+            autoGainControl: false,
           },
           rtcConstraints: {
             audio: {
               echoCancellation: true,
               noiseSuppression: true,
-              autoGainControl: true,
+              autoGainControl: false,
             },
           },
         }),
@@ -1085,7 +1099,7 @@ describe('useVoiceDevice', () => {
           audioConstraints: {
             echoCancellation: true,
             noiseSuppression: true,
-            autoGainControl: true,
+            autoGainControl: false,
           },
         }),
       );
@@ -1101,7 +1115,7 @@ describe('useVoiceDevice', () => {
           audioConstraints: {
             echoCancellation: true,
             noiseSuppression: true,
-            autoGainControl: true,
+            autoGainControl: false,
           },
         }),
       );
@@ -1181,7 +1195,7 @@ describe('useVoiceDevice', () => {
             audio: {
               echoCancellation: true,
               noiseSuppression: true,
-              autoGainControl: true,
+              autoGainControl: false,
             },
           },
         }),
