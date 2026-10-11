@@ -13,8 +13,8 @@ import {
 
 // Free call recording: the browser records each call it is on, from the
 // moment it is answered (see CallRecorder). A call that lasted at least
-// MIN_UPLOAD_SECONDS is saved to the downloads folder when it ends and
-// uploaded to the call log; a shorter one is deleted everywhere (memory,
+// MIN_UPLOAD_SECONDS is uploaded to the call log without a local download;
+// a shorter one is deleted everywhere (memory,
 // IndexedDB, never downloaded) so cold-call hang-ups don't fill the disk.
 // Uploads that fail (no network, storage not set up yet) wait in IndexedDB
 // and are retried.

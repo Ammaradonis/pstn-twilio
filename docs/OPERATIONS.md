@@ -78,6 +78,26 @@ ORDER BY created_at DESC;
 
 ## On-call playbook
 
+### Database quota outage
+
+`/api/health` checks only the API process. Monitor `/api/health/db` separately:
+it returns HTTP 503 when queries fail, even if the API process remains healthy.
+A database quota failure also returns HTTP 503 with an actionable message from
+login and other database-backed endpoints.
+
+If Neon reports "Your account or project has exceeded the quota", inspect the
+project's usage and organization billing in the Neon Console. Check data transfer
+as well as compute and storage. Restore capacity through the account owner;
+restarting Fly, redeploying, or deleting rows does not reset a monthly transfer
+quota. After capacity is restored, verify `/api/health/db` returns 200 and test
+login and voice token issuance. Do not place a call just to check connectivity.
+
+The October 11, 2026 outage affected project `nameless-sunset-25153479`: Neon
+reported 5,816,072,195 bytes transferred on `free_v3`, refused compute startup
+with HTTP 423 "quota exceeded", and reported the next quota reset as November 1.
+
+### Other incidents
+
 See [`TROUBLESHOOTING.md`](TROUBLESHOOTING.md) for the actual symptom → fix
 playbook. Highest-priority alerts:
 

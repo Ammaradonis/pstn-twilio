@@ -1,6 +1,7 @@
-import { Controller, Get } from '@nestjs/common';
+import { Controller, Get, ServiceUnavailableException } from '@nestjs/common';
 import type { HealthStatusDto } from '@pstn-twilio/shared';
 
+import { databaseUnavailableMessage } from '../prisma/database-unavailable';
 import { PrismaService } from '../prisma/prisma.service';
 import { RedisService } from '../redis/redis.service';
 import { TwilioService } from '../twilio/twilio.service';
@@ -44,17 +45,18 @@ export class HealthController {
         timestamp: this.now(),
       };
     } catch (err) {
-      return {
+      const status: HealthStatusDto = {
         status: 'down',
         checks: {
           db: {
             status: 'down',
-            message: err instanceof Error ? err.message : 'unknown',
+            message: databaseUnavailableMessage(err) ?? 'The database is unavailable.',
           },
         },
         uptimeSeconds: this.uptimeSeconds(),
         timestamp: this.now(),
       };
+      throw new ServiceUnavailableException(status);
     }
   }
 

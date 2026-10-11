@@ -111,7 +111,7 @@ describe('recordCallInBrowser', () => {
     expect(recordCallInBrowser(fakeCall(), META)).toBe(false);
   });
 
-  it('records from answer to hangup, saves the file, and uploads it to the call log', async () => {
+  it('records from answer to hangup and uploads without a local download', async () => {
     vi.mocked(api.recordings.uploadBrowser).mockResolvedValue({} as never);
     const call = fakeCall();
 
@@ -132,10 +132,7 @@ describe('recordCallInBrowser', () => {
     expect(input).toMatchObject({ callSid: CALL_SID, durationSeconds: expect.any(Number) });
     expect(input.uploadId).toMatch(/^[0-9a-f-]{36}$/);
     expect(await blobText(blob)).toBe('opus-1opus-2');
-    expect(saveBlob).toHaveBeenCalledWith(
-      blob,
-      expect.stringMatching(/^call-12547024877-.+\.webm$/),
-    );
+    expect(saveBlob).not.toHaveBeenCalled();
     // Uploaded, so nothing is left waiting in the browser.
     await vi.waitFor(async () => expect(await store.list()).toEqual([]));
   });
@@ -160,10 +157,7 @@ describe('recordCallInBrowser', () => {
     expect(vi.mocked(api.recordings.uploadBrowser).mock.calls[0]![0]).toMatchObject({
       callSid: PARENT_SID,
     });
-    expect(saveBlob).toHaveBeenCalledWith(
-      expect.anything(),
-      expect.stringMatching(/^call-15551234567-.+\.webm$/),
-    );
+    expect(saveBlob).not.toHaveBeenCalled();
     expect(api.calls.byOutboundIntent).not.toHaveBeenCalled();
   });
 
@@ -214,7 +208,7 @@ describe('recordCallInBrowser', () => {
       expect(row).toMatchObject({ callSid: CALL_SID, attempts: 1 });
       expect(row!.endedAt).not.toBeNull();
     });
-    expect(saveBlob).toHaveBeenCalledTimes(1);
+    expect(saveBlob).not.toHaveBeenCalled();
   });
 
   it('drops an upload the API refuses for good', async () => {

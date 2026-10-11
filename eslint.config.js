@@ -115,6 +115,12 @@ export default [
 
   // Ad-hoc Node.js helper scripts (CommonJS or plain Node ESM)
   {
+    files: ['scripts/**/*.mjs'],
+    languageOptions: {
+      globals: globals.node,
+    },
+  },
+  {
     files: ['scripts/**/*.{js,cjs}'],
     languageOptions: {
       ecmaVersion: 2022,
