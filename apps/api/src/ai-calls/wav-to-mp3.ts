@@ -1,6 +1,8 @@
 // Converts a PCM WAV recording to MP3 with a pure-JS LAME encoder, so older
 // Vapi recordings (stored as WAV) download as MP3 like new ones.
 
+import { compileFunction, constants } from 'node:vm';
+
 interface Mp3EncoderInstance {
   encodeBuffer(left: Int16Array): Int8Array | Uint8Array;
   flush(): Int8Array | Uint8Array;
@@ -20,7 +22,10 @@ let encoderCtor: Promise<Mp3EncoderCtor> | null = null;
 // with a real dynamic import that TypeScript won't rewrite into require().
 function loadEncoder(): Promise<Mp3EncoderCtor> {
   encoderCtor ??= (
-    new Function('specifier', 'return import(specifier)') as (s: string) => Promise<unknown>
+    compileFunction('return import(specifier)', ['specifier'], {
+      filename: __filename,
+      importModuleDynamically: constants.USE_MAIN_CONTEXT_DEFAULT_LOADER,
+    }) as (s: string) => Promise<unknown>
   )('@breezystack/lamejs').then((mod) => (mod as { Mp3Encoder: Mp3EncoderCtor }).Mp3Encoder);
   return encoderCtor;
 }
