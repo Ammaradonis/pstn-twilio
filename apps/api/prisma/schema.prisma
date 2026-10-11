@@ -550,7 +550,8 @@ model EmailFinderRow {
   leaseToken       String?   @map("lease_token")
   nextAttemptAt    DateTime? @map("next_attempt_at")
   researchComplete Boolean   @default(false) @map("research_complete")
-  email            String?
+  // All found addresses, comma-separated, best first (e.g. "info@bjc.com, owner@school.com").
+  email            String?   @db.VarChar(2000)
   emailType        String?   @map("email_type")
   confidence       Int?
   sourceUrl        String?   @map("source_url")

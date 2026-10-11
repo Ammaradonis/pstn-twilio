@@ -137,6 +137,11 @@ class Finding:
     # Verified details for the sheet's empty cells: websiteUrl, phoneNumber,
     # facebookUrl, instagramUrl, youtubeUrl, twitterUrl, linkedinUrl, tiktokUrl.
     enrichment: dict[str, str] = field(default_factory=dict)
+    # All validated email addresses found for this school, best first.
+    # The primary `email` field holds the highest-scored address; `emails`
+    # holds every address that passed DNS validation and scoring minimum,
+    # comma-separated when written to the sheet.
+    emails: list[str] = field(default_factory=list)
 
     @property
     def status(self) -> str:
@@ -216,6 +221,7 @@ class _Job:
         self._google_stalled = False  # free Google couldn't answer this row
         self._google_stall_logged = False
         self._scraped: set[str] = set()
+        self._all_validated: list[str] = []  # all addresses that passed DNS + scoring
 
     def _sheet_is_bare(self) -> bool:
         """The sheet row itself has nothing to go on: no website of its own and
@@ -1018,6 +1024,8 @@ class _Job:
                 scored.append(s)
         scored.sort(key=lambda s: -s.score)
 
+        best: _Scored | None = None
+        validated: list[str] = []
         for s in scored:
             if s.score < self.e.scoring.minimum_score:
                 break
@@ -1029,8 +1037,13 @@ class _Job:
                 self.finding.notes.append("Mail-domain DNS lookup pending; no validation assumed")
                 continue
             if deliverable:
-                return s
-        return None
+                if best is None:
+                    best = s
+                if s.email not in validated:
+                    validated.append(s.email)
+        # Persist all validated addresses on the Finding so _finish() can use them.
+        self._all_validated = validated
+        return best
 
     def _score(self, email: str, seen: list[Candidate], persons: list[nlp.Person], has_own: bool) -> _Scored | None:
         local, domain = email.split("@")
@@ -1191,6 +1204,15 @@ class _Job:
             # Search being down only defers rows with nothing to show; an address
             # from the school's own site is written now (research_complete stays False).
             f.retry_after = None
+            # Collect every validated address, best first, deduplicated.
+            seen_emails: list[str] = []
+            # Start with the primary winner so it is always first.
+            if f.email and f.email not in seen_emails:
+                seen_emails.append(f.email)
+            for addr in getattr(self, "_all_validated", []):
+                if addr not in seen_emails:
+                    seen_emails.append(addr)
+            f.emails = seen_emails
         if self.forms and not best and f.research_complete:
             f.contact_form_url = _best_form(self.forms)
 

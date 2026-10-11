@@ -117,13 +117,16 @@ def to_row(data: dict) -> Row:
 
 
 def to_result(row_id: str, f: Finding, lease_token: str) -> dict:
+    # All validated addresses for this school, comma-separated (best first).
+    all_emails = f.emails if f.emails else ([f.email] if f.email else [])
+    emails_csv = ", ".join(e for e in all_emails if e) or None
     return {
         "id": row_id,
         "leaseToken": lease_token,
         "researchComplete": f.research_complete,
         **({"retryAfter": f.retry_after} if f.retry_after else {}),
         "status": "RETRY" if f.retry_after else (f.status if not (f.notes and f.notes[0].startswith("error:")) else "FAILED"),
-        "email": f.email,
+        "email": emails_csv,
         "emailType": f.email_type,
         "confidence": f.confidence or None,
         "sourceUrl": f.source_url if f.source_url and len(f.source_url) <= 1000 else None,

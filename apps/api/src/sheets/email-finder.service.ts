@@ -424,7 +424,8 @@ export class EmailFinderService implements OnModuleDestroy, OnModuleInit {
               : null,
           // Deferred work has not failed; do not consume crash retry attempts.
           ...(r.status === 'RETRY' ? { attempts: { decrement: 1 } } : {}),
-          email: clip(r.email?.toLowerCase(), 254),
+          // email now holds all addresses comma-separated, best first (up to 2000 chars).
+          email: clip(r.email?.toLowerCase(), 2000),
           emailType: clip(r.emailType, 32),
           confidence: r.confidence ?? null,
           sourceUrl: clip(r.sourceUrl, 1000),
@@ -438,14 +439,16 @@ export class EmailFinderService implements OnModuleDestroy, OnModuleInit {
       if (!updated.count) continue;
       jobs.add(row.jobId);
       saved++;
-      const email = clip(r.email?.toLowerCase(), 254);
-      if (r.status === 'FOUND' && email && row.job) {
+      // The primary email is the first address in the comma-separated list.
+      const emailCsv = clip(r.email?.toLowerCase(), 2000);
+      const primaryEmail = emailCsv?.split(',')[0]?.trim() ?? null;
+      if (r.status === 'FOUND' && primaryEmail && row.job) {
         const find = toFind(
           {
             id: r.id,
             jobId: row.jobId,
             input: row.input,
-            email,
+            email: emailCsv,
             emailType: clip(r.emailType, 32),
             confidence: r.confidence ?? null,
             method: clip(r.method, 200),

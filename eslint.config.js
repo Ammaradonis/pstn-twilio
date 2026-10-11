@@ -25,6 +25,8 @@ export default [
       'packages/shared/src/**/*.js',
       'packages/shared/src/**/*.js.map',
       '**/*.d.ts',
+      'tmp/**',
+      'temp/**',
     ],
   },
 
