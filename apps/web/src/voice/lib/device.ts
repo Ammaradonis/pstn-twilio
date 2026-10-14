@@ -79,15 +79,78 @@ export function isStandaloneApp(): boolean {
   );
 }
 
-/** A readable default name, e.g. "Android app" or "Windows · Edge". */
+export function isIphone(): boolean {
+  return devicePlatform() === 'iPhone';
+}
+
+export function isChromeOnIos(): boolean {
+  return isIos() && /CriOS/.test(navigator.userAgent);
+}
+
+export function isSafariOnIos(): boolean {
+  return (
+    isIos() && /Safari/.test(navigator.userAgent) && !/CriOS|FxiOS|EdgiOS/.test(navigator.userAgent)
+  );
+}
+
+export function isGalaxyA36(): boolean {
+  return (
+    devicePlatform() === 'Android' &&
+    (/SM-A366|Galaxy.*A36/i.test(navigator.userAgent) || /SM-A\d{3}/i.test(navigator.userAgent))
+  );
+}
+
+/** A readable default name, e.g. "Galaxy A36 5G · Chrome" or "iPhone 18 Pro · Safari". */
 export function defaultDeviceName(): string {
+  const browser = browserName();
+  if (isGalaxyA36()) {
+    return isStandaloneApp() ? 'Galaxy A36 5G app' : `Galaxy A36 5G · ${browser}`;
+  }
+  if (isIphone()) {
+    const isPro = hasDynamicIsland() || iosVersion() >= 18;
+    const model = isPro ? 'iPhone 18 Pro' : 'iPhone';
+    return isStandaloneApp() ? `${model} app` : `${model} · ${browser}`;
+  }
   const platform = devicePlatform();
-  return isStandaloneApp() ? `${platform} app` : `${platform} · ${browserName()}`;
+  return isStandaloneApp() ? `${platform} app` : `${platform} · ${browser}`;
 }
 
 export function isIos(): boolean {
   const platform = devicePlatform();
   return platform === 'iPhone' || platform === 'iPad';
+}
+
+/**
+ * Returns the iOS major version number, or 0 if not on iOS.
+ * Parses the UA string token "OS 18_0_0" / "OS 18_2" etc.
+ */
+export function iosVersion(): number {
+  if (!isIos()) return 0;
+  const match = /OS (\d+)_/.exec(navigator.userAgent);
+  const version = match?.[1];
+  return version ? parseInt(version, 10) : 0;
+}
+
+/**
+ * True on iPhones that have a Dynamic Island (iPhone 14 Pro and later).
+ * The Dynamic Island models all have a safe-area-inset-top of at least 59px
+ * in standalone / fullscreen mode, whereas older notch phones top out at ~47px.
+ * We use 55px as a conservative threshold so future models are included.
+ * Falls back to false on non-iOS or when CSS env() is unavailable.
+ */
+export function hasDynamicIsland(): boolean {
+  if (!isIos()) return false;
+  try {
+    const el = document.createElement('div');
+    el.style.cssText =
+      'position:fixed;top:env(safe-area-inset-top,0px);height:0;width:0;visibility:hidden';
+    document.body.appendChild(el);
+    const top = parseFloat(getComputedStyle(el).top) || 0;
+    document.body.removeChild(el);
+    return top >= 55;
+  } catch {
+    return false;
+  }
 }
 
 export interface DevicePrefs {

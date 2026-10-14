@@ -88,7 +88,21 @@ function audioContext(): AudioContext | null {
 /** Call from a tap so later ringing is allowed to make sound. */
 export function unlockAudio(): void {
   const ctx = audioContext();
-  if (ctx?.state === 'suspended') void ctx.resume().catch(() => undefined);
+  if (!ctx) return;
+  if (ctx.state === 'suspended' || (ctx.state as string) === 'interrupted') {
+    void ctx.resume().catch(() => undefined);
+  }
+  // iOS Safari & Chrome (WebKit) require playing an actual buffer during a user gesture
+  // to fully transition AudioContext to running and prevent later auto-muting.
+  try {
+    const buffer = ctx.createBuffer(1, 1, 22050);
+    const source = ctx.createBufferSource();
+    source.buffer = buffer;
+    source.connect(ctx.destination);
+    source.start(0);
+  } catch {
+    /* ignore if already active */
+  }
 }
 
 /**
@@ -148,7 +162,9 @@ const LOOKAHEAD_BATCH = 2;
 function startLoop(pattern: { period: number; notes: Note[] }): () => void {
   const ctx = audioContext();
   if (!ctx) return () => undefined;
-  if (ctx.state === 'suspended') void ctx.resume().catch(() => undefined);
+  if (ctx.state === 'suspended' || (ctx.state as string) === 'interrupted') {
+    void ctx.resume().catch(() => undefined);
+  }
   const master = ctx.createGain();
   master.gain.value = 0.9;
   master.connect(ctx.destination);
@@ -185,7 +201,9 @@ export function startRingtone(id: RingtoneId, options: { once?: boolean } = {}):
     const pattern = PATTERNS[id];
     const ctx = audioContext();
     if (!ctx) return () => undefined;
-    if (ctx.state === 'suspended') void ctx.resume().catch(() => undefined);
+    if (ctx.state === 'suspended' || (ctx.state as string) === 'interrupted') {
+      void ctx.resume().catch(() => undefined);
+    }
     for (const note of pattern.notes)
       playNote(ctx, ctx.destination, note, ctx.currentTime + note.at);
     return () => undefined;
@@ -216,7 +234,9 @@ export function startRingback(): () => void {
 export function playEndTone(): void {
   const ctx = audioContext();
   if (!ctx) return;
-  if (ctx.state === 'suspended') void ctx.resume().catch(() => undefined);
+  if (ctx.state === 'suspended' || (ctx.state as string) === 'interrupted') {
+    void ctx.resume().catch(() => undefined);
+  }
   playNote(ctx, ctx.destination, { at: 0, freq: 620, length: 0.16, gain: 0.3 }, ctx.currentTime);
   playNote(ctx, ctx.destination, { at: 0.19, freq: 466, length: 0.3, gain: 0.3 }, ctx.currentTime);
 }
@@ -241,7 +261,9 @@ export function playKeyTone(key: string): void {
   const freq = DTMF[key];
   const ctx = audioContext();
   if (!freq || !ctx) return;
-  if (ctx.state === 'suspended') void ctx.resume().catch(() => undefined);
+  if (ctx.state === 'suspended' || (ctx.state as string) === 'interrupted') {
+    void ctx.resume().catch(() => undefined);
+  }
   playNote(ctx, ctx.destination, { at: 0, freq, length: 0.12, gain: 0.16 }, ctx.currentTime);
 }
 

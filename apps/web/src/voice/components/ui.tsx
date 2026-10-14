@@ -64,7 +64,7 @@ export function IconButton({
       title={label}
       onClick={onClick}
       disabled={disabled}
-      className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-full text-gv-muted hover:bg-gv-soft active:bg-gv-line disabled:opacity-40 ${className}`}
+      className={`flex h-10 w-10 shrink-0 touch-manipulation items-center justify-center rounded-full text-gv-muted hover:bg-gv-soft active:bg-gv-line disabled:opacity-40 ${className}`}
     >
       <Icon name={icon} />
     </button>
@@ -134,14 +134,14 @@ export function Sheet({
       <button
         type="button"
         aria-label="Close"
-        className="absolute inset-0 cursor-default bg-black/40"
+        className="absolute inset-0 cursor-default touch-manipulation bg-black/40"
         onClick={onClose}
       />
       <div
         role="dialog"
         aria-modal="true"
         aria-label={title}
-        className={`relative max-h-[90vh] w-full overflow-y-auto rounded-t-3xl bg-white pb-[env(safe-area-inset-bottom)] shadow-2xl sm:rounded-3xl ${
+        className={`relative max-h-[90vh] max-h-[90dvh] w-full overflow-y-auto overscroll-y-contain rounded-t-3xl bg-white pb-[max(env(safe-area-inset-bottom),1rem)] shadow-2xl sm:rounded-3xl ${
           wide ? 'sm:max-w-lg' : 'sm:max-w-md'
         }`}
       >
@@ -168,7 +168,7 @@ export function SheetAction({
     <button
       type="button"
       onClick={onClick}
-      className={`flex w-full items-center gap-4 px-6 py-3 text-left text-[15px] hover:bg-gv-soft ${
+      className={`flex w-full touch-manipulation items-center gap-4 px-6 py-3.5 text-left text-[15px] hover:bg-gv-soft active:bg-gv-line select-none ${
         danger ? 'text-gv-red' : 'text-gv-ink'
       }`}
     >
@@ -297,7 +297,7 @@ export function SnackbarProvider({ children }: { children: ReactNode }) {
     <SnackbarContext.Provider value={value}>
       {children}
       {message ? (
-        <div className="pointer-events-none fixed inset-x-0 bottom-24 z-[60] flex justify-center px-4 md:bottom-6">
+        <div className="pointer-events-none fixed inset-x-0 bottom-[calc(max(env(safe-area-inset-bottom),16px)+5.5rem)] z-[60] flex justify-center px-4 md:bottom-6">
           <div
             role="status"
             className="pointer-events-auto flex max-w-md items-center gap-4 rounded-lg bg-[#323232] px-4 py-3 text-sm text-white shadow-lg"
@@ -306,7 +306,7 @@ export function SnackbarProvider({ children }: { children: ReactNode }) {
             {message.action ? (
               <button
                 type="button"
-                className="font-medium text-[#8ab4f8]"
+                className="touch-manipulation font-medium text-[#8ab4f8]"
                 onClick={() => {
                   message.action?.onClick();
                   setMessage(null);

@@ -192,7 +192,7 @@ function ChangePasswordSheet({ open, onClose }: { open: boolean; onClose: () => 
     }
   }
   const field =
-    'w-full rounded-lg border border-gv-line px-3 py-3 text-[15px] focus:border-gv-blue focus:ring-1 focus:ring-gv-blue';
+    'w-full rounded-lg border border-gv-line px-3 py-3 text-base focus:border-gv-blue focus:ring-1 focus:ring-gv-blue';
   return (
     <Sheet open={open} onClose={onClose} title="Change password">
       <form onSubmit={(event) => void submit(event)} className="space-y-3 px-6 pb-6">
@@ -564,7 +564,7 @@ function CallsSection({ settings }: { settings: VoiceSettingsDto }) {
             aria-label="Ring for"
             value={settings.ringSeconds}
             onChange={(e) => void update({ ringSeconds: Number(e.target.value) })}
-            className="rounded-lg border border-gv-line py-2 text-sm"
+            className="rounded-lg border border-gv-line py-2 text-base"
           >
             {[15, 20, 25, 30, 40].map((s) => (
               <option key={s} value={s}>
@@ -860,7 +860,7 @@ function ThisDeviceSection() {
               setDevicePrefs({ ringtone: id });
               preview(id);
             }}
-            className="rounded-lg border border-gv-line py-2 text-sm"
+            className="rounded-lg border border-gv-line py-2 text-base"
           >
             {RINGTONES.map((tone) => (
               <option key={tone.id} value={tone.id}>
@@ -928,7 +928,7 @@ function ThisDeviceSection() {
         <Row
           icon="download"
           title="Install the app"
-          description="Tap Share, then Add to Home Screen."
+          description="In Safari tap Share, or in Chrome tap Menu (…), then choose Add to Home Screen."
         />
       ) : null}
     </Section>
@@ -970,7 +970,7 @@ function BlockedSection() {
           inputMode="tel"
           placeholder="Block a number"
           aria-label="Number to block"
-          className="min-w-0 flex-1 rounded-lg border border-gv-line px-3 py-2 text-sm"
+          className="min-w-0 flex-1 rounded-lg border border-gv-line px-3 py-2 text-base"
         />
         <TextButton
           danger
@@ -1065,7 +1065,7 @@ function DevicesSection() {
             maxLength={60}
             onChange={(e) => setName(e.target.value)}
             aria-label="Device name"
-            className="w-full rounded-lg border border-gv-line px-3 py-3 text-[15px]"
+            className="w-full rounded-lg border border-gv-line px-3 py-3 text-base"
           />
           <div className="flex justify-end gap-2">
             <TextButton onClick={() => setRenaming(null)}>Cancel</TextButton>

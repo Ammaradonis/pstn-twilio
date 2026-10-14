@@ -183,7 +183,7 @@ export function ThreadPage() {
   const blocked = isBlocked(counterpart);
 
   return (
-    <div className="fixed inset-0 z-[35] flex flex-col bg-white pb-[env(safe-area-inset-bottom)] pt-[env(safe-area-inset-top)] md:static md:inset-auto md:z-auto md:h-[calc(100vh-5rem)]">
+    <div className="fixed inset-0 z-[35] flex flex-col bg-white pb-[max(env(safe-area-inset-bottom),12px)] pt-[max(env(safe-area-inset-top),16px)] pl-[env(safe-area-inset-left)] pr-[env(safe-area-inset-right)] md:static md:inset-auto md:z-auto md:h-[calc(100vh-5rem)]">
       <header className="flex items-center gap-2 border-b border-gv-line px-2 py-2">
         <IconButton icon="back" label="Back" onClick={() => navigate('/voice/messages')} />
         <button
@@ -298,7 +298,7 @@ export function ThreadPage() {
             maxLength={1600}
             placeholder="Type a message"
             aria-label="Message"
-            className="max-h-32 min-h-[44px] flex-1 resize-none rounded-3xl border-0 bg-gv-soft px-4 py-3 text-[15px] focus:ring-2 focus:ring-gv-blue"
+            className="max-h-32 min-h-[44px] flex-1 resize-none rounded-3xl border-0 bg-gv-soft px-4 py-3 text-base focus:ring-2 focus:ring-gv-blue"
           />
           <button
             type="submit"
@@ -330,7 +330,7 @@ export function NewMessagePage() {
     navigate(`/voice/messages/${encodeURIComponent(e164)}`, { replace: true });
 
   return (
-    <div className="fixed inset-0 z-[35] flex flex-col bg-white pt-[env(safe-area-inset-top)] md:static md:z-auto">
+    <div className="fixed inset-0 z-[35] flex flex-col bg-white pt-[max(env(safe-area-inset-top),16px)] pb-[max(env(safe-area-inset-bottom),12px)] pl-[env(safe-area-inset-left)] pr-[env(safe-area-inset-right)] md:static md:z-auto">
       <header className="flex items-center gap-2 border-b border-gv-line px-2 py-2">
         <IconButton icon="back" label="Back" onClick={() => navigate(-1)} />
         <span className="text-base text-gv-ink">New message</span>
@@ -350,7 +350,7 @@ export function NewMessagePage() {
           onChange={(event) => setTo(event.target.value)}
           placeholder="Name or phone number"
           aria-label="To"
-          className="h-12 flex-1 border-0 bg-transparent text-[15px] focus:ring-0"
+          className="h-12 flex-1 border-0 bg-transparent text-base focus:ring-0"
         />
       </form>
       <ul className="flex-1 overflow-y-auto">

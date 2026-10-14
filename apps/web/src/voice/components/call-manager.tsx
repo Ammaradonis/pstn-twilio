@@ -120,10 +120,19 @@ export function CallProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     const unlock = () => unlockAudio();
     window.addEventListener('pointerdown', unlock);
+    window.addEventListener('touchstart', unlock, { passive: true });
     window.addEventListener('keydown', unlock);
+    const onResume = () => {
+      if (document.visibilityState === 'visible') unlockAudio();
+    };
+    document.addEventListener('visibilitychange', onResume);
+    window.addEventListener('pageshow', onResume);
     return () => {
       window.removeEventListener('pointerdown', unlock);
+      window.removeEventListener('touchstart', unlock);
       window.removeEventListener('keydown', unlock);
+      document.removeEventListener('visibilitychange', onResume);
+      window.removeEventListener('pageshow', onResume);
     };
   }, []);
 
@@ -463,9 +472,9 @@ function IncomingCallScreen({
       role="alertdialog"
       aria-modal="true"
       aria-labelledby="voice-incoming-title"
-      className="fixed inset-0 z-[70] flex flex-col bg-gradient-to-b from-[#174ea6] to-[#0b2a5c] text-white"
+      className="fixed inset-0 z-[70] flex flex-col bg-gradient-to-b from-[#174ea6] to-[#0b2a5c] text-white overscroll-none select-none pl-[env(safe-area-inset-left)] pr-[env(safe-area-inset-right)]"
     >
-      <div className="flex flex-1 flex-col items-center justify-center px-6 pt-[env(safe-area-inset-top)] text-center">
+      <div className="flex flex-1 flex-col items-center justify-center px-6 pt-[max(env(safe-area-inset-top),2rem)] text-center">
         <p className="text-sm uppercase tracking-[0.2em] text-white/70">Incoming call</p>
         <div className="relative mt-8">
           <span className="absolute inset-0 animate-ping rounded-full bg-white/20" />
@@ -482,13 +491,13 @@ function IncomingCallScreen({
           </p>
         ) : null}
       </div>
-      <div className="flex items-end justify-around px-10 pb-[calc(env(safe-area-inset-bottom)+3rem)]">
+      <div className="flex items-end justify-around px-10 pb-[calc(max(env(safe-area-inset-bottom),20px)+3rem)]">
         <button
           type="button"
           onClick={onDecline}
-          className="flex flex-col items-center gap-3 text-sm"
+          className="flex touch-manipulation flex-col items-center gap-3 text-sm active:scale-95 transition-transform"
         >
-          <span className="flex h-[72px] w-[72px] items-center justify-center rounded-full bg-gv-red shadow-lg active:scale-95">
+          <span className="flex h-[72px] w-[72px] items-center justify-center rounded-full bg-gv-red shadow-lg">
             <Icon name="callEnd" className="h-9 w-9" />
           </span>
           Decline
@@ -497,9 +506,9 @@ function IncomingCallScreen({
           type="button"
           onClick={onAnswer}
           disabled={answering || micBlocked}
-          className="flex flex-col items-center gap-3 text-sm disabled:opacity-60"
+          className="flex touch-manipulation flex-col items-center gap-3 text-sm active:scale-95 transition-transform disabled:opacity-60"
         >
-          <span className="flex h-[72px] w-[72px] animate-bounce items-center justify-center rounded-full bg-gv-green-bright shadow-lg active:scale-95">
+          <span className="flex h-[72px] w-[72px] animate-bounce items-center justify-center rounded-full bg-gv-green-bright shadow-lg">
             <Icon name="phone" className="h-9 w-9" />
           </span>
           {answering ? 'Answering…' : 'Answer'}
@@ -539,7 +548,7 @@ function CallControl({
       onClick={onClick}
       disabled={disabled}
       aria-pressed={active}
-      className="flex flex-col items-center gap-2 text-sm text-gv-ink disabled:opacity-40"
+      className="flex touch-manipulation flex-col items-center gap-2 text-sm text-gv-ink disabled:opacity-40"
     >
       <span
         className={`flex h-16 w-16 items-center justify-center rounded-full ${
@@ -622,13 +631,13 @@ function InCallScreen({
   }, [keypad]);
 
   return (
-    <div className="fixed inset-0 z-[65] flex flex-col bg-white pb-[env(safe-area-inset-bottom)] pt-[env(safe-area-inset-top)]">
+    <div className="fixed inset-0 z-[65] flex flex-col bg-white pb-[calc(max(env(safe-area-inset-bottom),16px)+1rem)] pt-[max(env(safe-area-inset-top),16px)] pl-[env(safe-area-inset-left)] pr-[env(safe-area-inset-right)] overscroll-none select-none">
       <div className="flex items-center justify-between px-2 py-2">
         <button
           type="button"
           onClick={onMinimize}
           aria-label="Back to the app"
-          className="flex h-10 w-10 items-center justify-center rounded-full text-gv-muted hover:bg-gv-soft"
+          className="flex h-10 w-10 touch-manipulation items-center justify-center rounded-full text-gv-muted hover:bg-gv-soft"
         >
           <Icon name="expandMore" />
         </button>
@@ -657,7 +666,8 @@ function InCallScreen({
                   key={key}
                   type="button"
                   onClick={() => press(key)}
-                  className="flex h-16 flex-col items-center justify-center rounded-full text-2xl text-gv-ink hover:bg-gv-soft active:bg-gv-line"
+                  onContextMenu={(event) => event.preventDefault()}
+                  className="flex h-16 touch-manipulation select-none flex-col items-center justify-center rounded-full text-2xl text-gv-ink hover:bg-gv-soft active:bg-gv-line active:scale-95 transition-transform"
                 >
                   {key}
                   <span className="text-[10px] tracking-widest text-gv-muted">
@@ -694,7 +704,7 @@ function InCallScreen({
           type="button"
           onClick={onHangup}
           aria-label="End call"
-          className="mx-auto mt-8 flex h-[72px] w-[72px] items-center justify-center rounded-full bg-gv-red text-white shadow-lg active:scale-95"
+          className="mx-auto mt-8 flex h-[72px] w-[72px] touch-manipulation items-center justify-center rounded-full bg-gv-red text-white shadow-lg active:scale-95 transition-transform"
         >
           <Icon name="callEnd" className="h-9 w-9" />
         </button>
@@ -727,7 +737,7 @@ function OngoingCallBar({
     <button
       type="button"
       onClick={onOpen}
-      className="fixed inset-x-0 top-0 z-[55] flex items-center justify-center gap-2 bg-gv-green-bright px-4 pb-2 pt-[calc(env(safe-area-inset-top)+0.5rem)] text-sm font-medium text-white shadow"
+      className="fixed inset-x-0 top-0 z-[55] flex touch-manipulation items-center justify-center gap-2 bg-gv-green-bright px-4 pb-2 pt-[calc(max(env(safe-area-inset-top),20px)+0.5rem)] pl-[max(env(safe-area-inset-left),1rem)] pr-[max(env(safe-area-inset-right),1rem)] text-sm font-medium text-white shadow"
     >
       <Icon name="phone" className="h-4 w-4" />
       {label} · {connectedAt ? formatTimer((now - connectedAt) / 1000) : 'Calling…'} · Tap to return
@@ -788,13 +798,13 @@ export function Dialer({
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex flex-col bg-white pb-[env(safe-area-inset-bottom)] pt-[env(safe-area-inset-top)] md:inset-auto md:bottom-6 md:right-6 md:h-[640px] md:w-[380px] md:rounded-3xl md:shadow-2xl">
+    <div className="fixed inset-0 z-50 flex flex-col bg-white pb-[max(env(safe-area-inset-bottom),16px)] pt-[max(env(safe-area-inset-top),16px)] pl-[env(safe-area-inset-left)] pr-[env(safe-area-inset-right)] overscroll-none select-none md:inset-auto md:bottom-6 md:right-6 md:h-[640px] md:w-[380px] md:rounded-3xl md:shadow-2xl">
       <div className="flex items-center gap-2 px-2 py-2">
         <button
           type="button"
           onClick={onClose}
           aria-label="Close keypad"
-          className="flex h-10 w-10 items-center justify-center rounded-full text-gv-muted hover:bg-gv-soft"
+          className="flex h-10 w-10 touch-manipulation items-center justify-center rounded-full text-gv-muted hover:bg-gv-soft"
         >
           <Icon name="back" />
         </button>
@@ -847,7 +857,7 @@ export function Dialer({
                 event.preventDefault();
                 setValue('');
               }}
-              className="flex h-10 w-10 items-center justify-center rounded-full text-gv-muted hover:bg-gv-soft"
+              className="flex h-10 w-10 touch-manipulation items-center justify-center rounded-full text-gv-muted hover:bg-gv-soft"
             >
               <Icon name="backspace" />
             </button>
@@ -866,13 +876,14 @@ export function Dialer({
               onPointerDown={() => startHold(key)}
               onPointerUp={() => endHold(key)}
               onPointerLeave={() => holdTimer.current && clearTimeout(holdTimer.current)}
+              onContextMenu={(event) => event.preventDefault()}
               onKeyDown={(event) => {
                 if (event.key === 'Enter' || event.key === ' ') {
                   event.preventDefault();
                   add(key);
                 }
               }}
-              className="flex h-16 select-none flex-col items-center justify-center rounded-full text-[28px] leading-none text-gv-ink hover:bg-gv-soft active:bg-gv-line"
+              className="flex h-16 select-none touch-manipulation flex-col items-center justify-center rounded-full text-[28px] leading-none text-gv-ink hover:bg-gv-soft active:bg-gv-line active:scale-95 transition-transform"
             >
               {key}
               <span className="mt-1 h-3 text-[10px] tracking-widest text-gv-muted">
@@ -886,7 +897,7 @@ export function Dialer({
           onClick={call}
           disabled={!value}
           aria-label="Call"
-          className="mx-auto mt-4 flex h-16 w-16 items-center justify-center rounded-full bg-gv-green-bright text-white shadow-md hover:brightness-110 active:scale-95 disabled:opacity-40"
+          className="mx-auto mt-4 flex h-16 w-16 touch-manipulation items-center justify-center rounded-full bg-gv-green-bright text-white shadow-md hover:brightness-110 active:scale-95 transition-transform disabled:opacity-40"
         >
           <Icon name="phone" className="h-8 w-8" />
         </button>

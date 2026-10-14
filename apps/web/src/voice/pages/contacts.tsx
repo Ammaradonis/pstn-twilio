@@ -460,11 +460,11 @@ export function ContactEditPage() {
   }
 
   const field =
-    'w-full rounded-lg border border-gv-line px-3 py-3 text-[15px] focus:border-gv-blue focus:ring-1 focus:ring-gv-blue';
+    'w-full rounded-lg border border-gv-line px-3 py-3 text-base focus:border-gv-blue focus:ring-1 focus:ring-gv-blue';
   return (
     <form
       onSubmit={(event) => void save(event)}
-      className="fixed inset-0 z-[35] overflow-y-auto bg-white pb-[env(safe-area-inset-bottom)] pt-[env(safe-area-inset-top)] md:static md:z-auto"
+      className="fixed inset-0 z-[35] overflow-y-auto bg-white pb-[max(env(safe-area-inset-bottom),16px)] pt-[max(env(safe-area-inset-top),16px)] pl-[env(safe-area-inset-left)] pr-[env(safe-area-inset-right)] md:static md:z-auto"
     >
       <header className="flex items-center gap-2 px-2 py-2">
         <IconButton icon="close" label="Cancel" onClick={() => navigate(-1)} />
@@ -522,7 +522,7 @@ export function ContactEditPage() {
                   phones[index] = { ...phone, label: e.target.value };
                   setForm({ ...form, phones });
                 }}
-                className="rounded-lg border border-gv-line py-3 text-sm capitalize"
+                className="rounded-lg border border-gv-line py-3 text-base capitalize"
               >
                 {LABELS.map((label) => (
                   <option key={label} value={label}>

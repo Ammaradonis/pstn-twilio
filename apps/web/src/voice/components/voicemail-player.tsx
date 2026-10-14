@@ -47,6 +47,8 @@ export function VoicemailPlayer({
         const objectUrl = URL.createObjectURL(blob);
         setUrl(objectUrl);
         const element = new Audio(objectUrl);
+        element.setAttribute('playsinline', 'true');
+        element.setAttribute('webkit-playsinline', 'true');
         element.ontimeupdate = () => setPosition(element.currentTime);
         element.onloadedmetadata = () => {
           if (Number.isFinite(element.duration)) setLength(element.duration);

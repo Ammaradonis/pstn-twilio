@@ -2,8 +2,24 @@
 @tailwind components;
 @tailwind utilities;
 
-html,
-body,
-#root {
-  height: 100%;
+@layer base {
+  html,
+  body,
+  #root {
+    height: 100%;
+    min-height: 100%;
+    min-height: 100dvh;
+    -webkit-tap-highlight-color: transparent;
+    -webkit-text-size-adjust: 100%;
+    text-size-adjust: 100%;
+  }
+
+  /* Prevent automatic viewport zoom on input focus in iOS Safari & Chrome */
+  @media screen and (max-width: 768px) {
+    input,
+    select,
+    textarea {
+      font-size: 16px;
+    }
+  }
 }
