@@ -78,6 +78,23 @@ ORDER BY created_at DESC;
 
 ## On-call playbook
 
+### API memory pressure and failed deployments
+
+The October 16, 2026 outage affected the only Fly API machine. It had 256 MB
+of RAM, a recorded OOM kill (exit 137), sustained memory pressure, and failing
+HTTP health checks. Public API requests timed out while the frontend still loaded.
+Increasing the machine to 512 MB restored API, database, Redis, and Twilio probes.
+`deploy/fly.toml` now records that memory size; retain it when deploying.
+
+Inspect `fly machine status <id> -a pstn-twilio-api`, `fly checks list`, and
+`/proc/pressure/memory` over Fly SSH when health checks time out. Check machine
+exit events for `oom_killed` rather than assuming every outage is a database issue.
+
+The API deployment pipeline was also blocked by a stale Dockerfile instruction
+copying `patches/`, which is no longer tracked or referenced by the workspace.
+The Dockerfile now builds without that directory. Verify the **deploy API to Fly**
+job after a push: a green frontend-only CI run does not prove the API was deployed.
+
 ### Database quota outage
 
 `/api/health` checks only the API process. Monitor `/api/health/db` separately:

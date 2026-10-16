@@ -20,6 +20,13 @@ kill_timeout = "10s"
   NODE_ENV = "production"
   PORT = "3000"
 
+# 256 MB caused memory pressure, OOM restarts, and failed health checks.
+# Keep the recovery size in source control so deploys retain it.
+[[vm]]
+  cpu_kind = "shared"
+  cpus = 1
+  memory_mb = 512
+
 [http_service]
   internal_port = 3000
   force_https = true
