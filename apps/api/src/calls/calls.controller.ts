@@ -27,6 +27,7 @@ const listQuerySchema = z.object({
   direction: z.nativeEnum(CallDirection).optional(),
   status: z.nativeEnum(CallStatus).optional(),
   since: z.string().datetime().optional(),
+  hasRecordings: z.enum(['true', 'false']).optional(),
 });
 
 const lastDialQuerySchema = z.object({
@@ -70,7 +71,10 @@ export class CallsController {
     @Param('numberId') numberId: string,
     @Query(new ZodValidationPipe(listQuerySchema)) query: z.infer<typeof listQuerySchema>,
   ) {
-    return this.calls.list(actorFromRequest(req), numberId, query);
+    return this.calls.list(actorFromRequest(req), numberId, {
+      ...query,
+      hasRecordings: query.hasRecordings === 'true',
+    });
   }
 
   @Get('numbers/:numberId/last-dial')

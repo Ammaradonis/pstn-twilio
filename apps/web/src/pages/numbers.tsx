@@ -157,6 +157,12 @@ export function Numbers() {
                         <Link to={`/numbers/${n.id}/dial`} className="text-slate-700 underline">
                           Dial
                         </Link>
+                        <Link
+                          to={`/numbers/${n.id}/recordings`}
+                          className="text-slate-700 underline"
+                        >
+                          Recordings
+                        </Link>
                         <Link to={`/numbers/${n.id}`} className="text-slate-700 underline">
                           Settings
                         </Link>

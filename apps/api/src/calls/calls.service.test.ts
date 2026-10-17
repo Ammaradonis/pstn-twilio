@@ -35,6 +35,42 @@ function buildService(
 }
 
 describe('CallsService.list', () => {
+  it('filters recorded calls by number before pagination, across both directions', async () => {
+    const { service, prisma } = buildService();
+    prisma.phoneNumber.findUnique.mockResolvedValue({ id: 'pn1', userId: 'u1' });
+    prisma.call.findMany.mockResolvedValue([]);
+    const at = new Date('2026-10-01T00:00:00Z');
+
+    await service.list({ userId: 'u1', role: UserRole.OWNER }, 'pn1', {
+      limit: 50,
+      hasRecordings: true,
+      cursor: encodeCursor(at, 'older-call'),
+    });
+
+    expect(prisma.call.findMany).toHaveBeenCalledWith({
+      where: {
+        phoneNumberId: 'pn1',
+        recordings: { some: { status: RecordingStatus.COMPLETED } },
+        OR: [{ createdAt: { lt: at } }, { AND: [{ createdAt: at }, { id: { lt: 'older-call' } }] }],
+      },
+      include: { recordings: { orderBy: { createdAt: 'desc' } } },
+      orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
+      take: 50,
+    });
+  });
+
+  it('enforces ownership when listing recordings', async () => {
+    const { service, prisma } = buildService();
+    prisma.phoneNumber.findUnique.mockResolvedValue({ id: 'pn1', userId: 'someone-else' });
+    await expect(
+      service.list({ userId: 'u1', role: UserRole.VIEWER }, 'pn1', {
+        limit: 50,
+        hasRecordings: true,
+      }),
+    ).rejects.toBeInstanceOf(ForbiddenException);
+    expect(prisma.call.findMany).not.toHaveBeenCalled();
+  });
+
   it('rejects ownership when actor is not OWNER and does not own the number', async () => {
     const prisma = {
       phoneNumber: {

@@ -38,6 +38,7 @@ interface ListInput {
   direction?: CallDirection;
   status?: CallStatus;
   since?: string;
+  hasRecordings?: boolean;
 }
 
 export interface RecordingMediaResult {
@@ -99,6 +100,9 @@ export class CallsService {
     if (input.direction) where.direction = input.direction;
     if (input.status) where.status = input.status;
     if (input.since) where.createdAt = { gte: new Date(input.since) };
+    if (input.hasRecordings) {
+      where.recordings = { some: { status: RecordingStatus.COMPLETED } };
+    }
     if (cursor) {
       where.OR = [
         { createdAt: { lt: new Date(cursor.t) } },

@@ -15,6 +15,7 @@ export function useRealtimeCalls(numberId: string | undefined): void {
 
     function handleCall(payload: WsCallEvent) {
       if (payload.numberId !== numberId) return;
+      void queryClient.invalidateQueries({ queryKey: ['recordings', numberId] });
       queryClient.setQueryData<PaginatedDto<CallDto>>(['calls', numberId], (prev) => {
         if (!prev) return prev;
         const idx = prev.items.findIndex((c) => c.id === payload.call.id);

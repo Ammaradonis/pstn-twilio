@@ -188,6 +188,12 @@ export function NumberDetail() {
           >
             Dial
           </Link>
+          <Link
+            to={`/numbers/${n.id}/recordings`}
+            className="rounded border border-slate-300 px-3 py-1.5 text-sm"
+          >
+            Recordings
+          </Link>
         </div>
       </header>
 

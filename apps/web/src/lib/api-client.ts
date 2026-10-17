@@ -271,6 +271,7 @@ export const api = {
         direction?: string;
         status?: string;
         since?: string;
+        hasRecordings?: boolean;
       },
     ) =>
       request<PaginatedDto<CallDto>>(`/numbers/${numberId}/calls`, {

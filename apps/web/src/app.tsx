@@ -13,6 +13,7 @@ import { NotFound } from './pages/not-found';
 import { NumberDetail } from './pages/number-detail';
 import { NumberNew } from './pages/number-new';
 import { Numbers } from './pages/numbers';
+import { RecordingsPage } from './pages/recordings';
 import { Settings } from './pages/settings';
 import { SettingsDiagnostics } from './pages/settings-diagnostics';
 import { SettingsSecurity } from './pages/settings-security';
@@ -44,6 +45,7 @@ export function App() {
           <Route path="/numbers/:numberId" element={<NumberDetail />} />
           <Route path="/numbers/:numberId/messages" element={<MessagesPage />} />
           <Route path="/numbers/:numberId/calls" element={<CallsPage />} />
+          <Route path="/numbers/:numberId/recordings" element={<RecordingsPage />} />
           <Route path="/numbers/:numberId/answer" element={<AnswerPage />} />
           <Route path="/numbers/:numberId/dial" element={<DialPage />} />
           <Route path="/settings" element={<Settings />} />
