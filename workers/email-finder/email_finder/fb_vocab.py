@@ -219,6 +219,19 @@ def term_key(term: str, country: str = "") -> str:
     return f"{country.upper()}:{term.casefold()}" if country else term.casefold()
 
 
+def term_from(payload: dict) -> SearchTerm:
+    """Rebuild a SearchTerm from the plan JSON (the CLI and the worker both do)."""
+    return SearchTerm(
+        term=payload["term"],
+        bucket=payload.get("bucket", "owners"),
+        tier=int(payload.get("tier", 1)),
+        country=payload.get("country", ""),
+        place_key=payload.get("place_key", ""),
+        covers=int(payload.get("covers", 0)),
+        sources=list(payload.get("sources", [])),
+    )
+
+
 def build_places(records: list[Address]) -> dict[str, Place]:
     """Group every usable address under its town. Addresses are never dropped."""
     places: dict[str, Place] = {}

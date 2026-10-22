@@ -35,6 +35,7 @@ import httpx
 
 from .cache import Cache
 from .config import CACHE_DIR, load_settings
+from .fb_runner import FbGroupsRunner, FbRemote
 from .engine import Engine, Finding, Row
 from .fetch import Fetcher
 from .forms import FormSender
@@ -367,6 +368,16 @@ async def run() -> bool:
                  "stops the phone for %d h.", caps or "no engagement",
                  f"{settings.ambient.quiet_hours[0]:02d}:00-{settings.ambient.quiet_hours[1]:02d}:00"
                  if settings.ambient.quiet_hours else "none", settings.ambient.cap_hours)
+    # The Dial page's "FB groups" button creates a run; this loop is what moves it.
+    # It shares the phone, its lock and its challenge handling with the lookups.
+    fb_remote = None
+    fb_task = None
+    if galaxy is not None and settings.worker_token:
+        fb_remote = FbRemote(settings.api_base, settings.worker_token)
+        fb_task = asyncio.create_task(FbGroupsRunner(galaxy, fb_remote).loop(stop))
+    elif galaxy is not None:
+        log.info("Facebook groups loop not started: EMAIL_FINDER_WORKER_TOKEN is not set.")
+
     backoff = IDLE_POLL_SECONDS
     started_code, rejected_code = IMPORTED_CODE, set()
     restart = False
@@ -412,9 +423,14 @@ async def run() -> bool:
         stop.set()
         beat.cancel()
         forms.cancel()
+        if fb_task is not None:
+            fb_task.cancel()
         if galaxy is not None:
             await galaxy.stop_ambient()
-        await asyncio.gather(beat, forms, return_exceptions=True)
+        await asyncio.gather(beat, forms, *([fb_task] if fb_task else []),
+                             return_exceptions=True)
+        if fb_remote is not None:
+            await fb_remote.close()
         await api.close()
         if google:
             await google.close()

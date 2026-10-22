@@ -38,6 +38,7 @@ from email_finder.fb_vocab import (
     keep,
     load_plan,
     save_plan,
+    term_from,
 )
 
 log = logging.getLogger("fb-groups")
@@ -97,7 +98,7 @@ async def _search(groups: FacebookGroups, store: GroupStore, limit: int,
         if dry_run:
             print(f"  would search: {term['term']}  (covers {term.get('covers', 0)} school(s))")
             continue
-        candidates = await groups.search(_term(term))
+        candidates = await groups.search(term_from(term))
         if not candidates:
             continue
         for candidate in sorted(candidates, key=lambda c: -c.score):
@@ -119,13 +120,7 @@ async def _search(groups: FacebookGroups, store: GroupStore, limit: int,
                 print(f"    -> {joined.state} ({joined.note})")
 
 
-def _term(payload: dict):
-    from email_finder.fb_vocab import SearchTerm
 
-    return SearchTerm(term=payload["term"], bucket=payload["bucket"], tier=payload["tier"],
-                      country=payload["country"], place_key=payload["place_key"],
-                      covers=int(payload.get("covers", 0)),
-                      sources=list(payload.get("sources", [])))
 
 
 async def _join(groups: FacebookGroups, store: GroupStore, top: int) -> None:

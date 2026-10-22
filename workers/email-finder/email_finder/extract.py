@@ -20,7 +20,7 @@ from dataclasses import dataclass, field
 from urllib.parse import unquote, urljoin, urlsplit
 
 from bs4 import BeautifulSoup
-from .social import is_profile, normalise
+from .social import is_profile
 from .urls import form_host
 
 EMAIL_RE = re.compile(
@@ -234,11 +234,13 @@ def parse_page(url: str, html: str) -> PageInfo:
             continue
         anchor = a.get_text(" ", strip=True)[:80]
         info.links.append((absolute.split("#")[0], anchor))
-        # Every network the sheet has a column for (social.py), not only the two
-        # the finder signs in to: enrichment mode fills youtube/twitter/linkedin/
-        # tiktok too, and a school's own footer is the most reliable source.
+        # Every network the sheet has a column for (see social.py), not only the
+        # two the finder signs in to: enrichment mode fills youtube/twitter/
+        # linkedin/tiktok too, and a school's own footer is the most reliable
+        # source. Capture only drops the query string; canonicalising for the
+        # sheet is enrichment's job (social.normalise).
         if is_profile(absolute):
-            info.social.add(normalise(absolute))
+            info.social.add(absolute.split("?")[0])
         if form_host(absolute):
             info.forms.append(absolute)
 

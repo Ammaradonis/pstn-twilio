@@ -5,7 +5,12 @@ import type { RealtimeService } from '../realtime/realtime.service';
 import type { RedisService } from '../redis/redis.service';
 
 import { ContactFormService } from './contact-form.service';
-import { EmailFinderService, cleanEnrichment, fingerprint } from './email-finder.service';
+import {
+  EmailFinderService,
+  cleanEnrichment,
+  fingerprint,
+  socialColumnsFull,
+} from './email-finder.service';
 import { findColumns, type SheetsService } from './sheets.service';
 import { normalizeHeader } from './sheets.util';
 
@@ -269,6 +274,117 @@ describe('email finder row identity and writes', () => {
     } finally {
       vi.useRealTimers();
     }
+  });
+});
+
+describe('social enrichment mode', () => {
+  const header = ['title', 'address', 'email', 'facebookUrl', 'instagramUrl', 'youtubeUrl'];
+  // findColumns expects normalized headers; production normalizes row 1 first.
+  const cols = findColumns(header.map(normalizeHeader));
+
+  function harness(jobMode: 'EMAIL' | 'ENRICH', sheetRows: (string | null)[][]) {
+    const job = {
+      id: 'job',
+      userId: 'u',
+      spreadsheetId: 'spreadsheet',
+      sheetTitle: 'Texas',
+      status: 'RUNNING',
+      mode: jobMode,
+    };
+    const result = {
+      id: 'row',
+      fingerprint: fingerprint(sheetRows[1]!, cols),
+      enrichment: {
+        // The row already holds a (wrong) Facebook page; this is the correction.
+        facebookUrl: 'https://www.facebook.com/correct-page',
+        youtubeUrl: 'https://youtube.com/@dojo',
+      },
+      email: null,
+      emailType: null,
+      sourceUrl: null,
+      decisionMaker: null,
+      contactFormUrl: null,
+    };
+    const prisma = {
+      emailFinderJob: { findUnique: vi.fn().mockResolvedValue(job), updateMany: vi.fn() },
+      emailFinderRow: {
+        findMany: vi.fn().mockResolvedValue([result]),
+        updateMany: vi.fn(),
+        count: vi.fn().mockResolvedValue(0),
+      },
+    };
+    const sheets = {
+      getAccessToken: vi.fn().mockResolvedValue('test'),
+      fetchTabs: vi.fn().mockResolvedValue([{ title: 'Texas', sheetId: 1, columnCount: 20 }]),
+      fetchRows: vi.fn().mockResolvedValue(sheetRows),
+      google: vi.fn().mockResolvedValue({}),
+    };
+    const service = new EmailFinderService(
+      prisma as unknown as PrismaService,
+      sheets as unknown as SheetsService,
+      {} as RedisService,
+      {} as RealtimeService,
+    );
+    return { service, sheets };
+  }
+
+  function written(sheets: { google: ReturnType<typeof vi.fn> }) {
+    const out: Record<string, string> = {};
+    for (const call of sheets.google.mock.calls) {
+      const body = (call[3] as { body?: { data?: { range: string; values: string[][] }[] } }).body;
+      for (const d of body?.data ?? []) out[d.range] = d.values[0]?.[0] ?? '';
+    }
+    return out;
+  }
+
+  it('overwrites a social cell that already has a value', async () => {
+    const rows = [
+      header,
+      ['Tiger Dojo', '1 Main St', 'kept@dojo.org', 'https://www.facebook.com/wrong-page', '', ''],
+    ];
+    const { service, sheets } = harness('ENRICH', rows);
+    await service.flush('job');
+    const cells = written(sheets);
+    // facebookUrl is column D (4th), row 2 -> D2 replaced.
+    expect(cells["'Texas'!D2"]).toBe('https://www.facebook.com/correct-page');
+    // An empty social cell is filled too.
+    expect(cells["'Texas'!F2"]).toBe('https://youtube.com/@dojo');
+  });
+
+  it('never overwrites the email of a row even in enrichment mode', async () => {
+    const rows = [header, ['Tiger Dojo', '1 Main St', 'typed@dojo.org', '', '', '']];
+    const { service, sheets } = harness('ENRICH', rows);
+    // Even if a result were to carry an email, the typed-in one must survive.
+    await service.flush('job');
+    const cells = written(sheets);
+    expect(Object.values(cells)).not.toContain('typed@dojo.org');
+    expect(cells["'Texas'!C2"]).toBeUndefined();
+  });
+
+  it('still only fills empty cells in the normal email mode', async () => {
+    const rows = [
+      header,
+      ['Tiger Dojo', '1 Main St', '', 'https://www.facebook.com/keep-me', '', ''],
+    ];
+    const { service, sheets } = harness('EMAIL', rows);
+    await service.flush('job');
+    const cells = written(sheets);
+    // The address pass leaves an existing Facebook page alone.
+    expect(cells["'Texas'!D2"]).toBeUndefined();
+  });
+
+  it('treats a row as complete only when every social column the sheet has is filled', () => {
+    // The harness sheet has title, address, email, facebookUrl, instagramUrl,
+    // youtubeUrl. Columns the sheet does not have are ignored, not counted.
+    const full = ['Dojo', '1 Main', '', 'https://fb.com/a', 'https://ig.com/a', 'https://yt.com/a'];
+    expect(socialColumnsFull(full, cols)).toBe(true);
+    // Instagram missing: enrichment still has something to find.
+    expect(
+      socialColumnsFull(['Dojo', '1 Main', '', 'https://fb.com/a', '', 'https://yt.com/a'], cols),
+    ).toBe(false);
+    // A sheet with no social columns at all is never "complete".
+    const narrow = findColumns(['title', 'address'].map(normalizeHeader));
+    expect(socialColumnsFull(['Dojo', '1 Main'], narrow)).toBe(false);
   });
 });
 

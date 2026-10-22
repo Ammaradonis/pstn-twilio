@@ -109,14 +109,28 @@ const SOCIAL_COLUMNS = new Set([
 ]);
 
 /**
+ * Enrichment key -> the header key `findColumns` reports for it. The two differ
+ * (`facebookUrl` is the API/DTO name, `facebook` is the sheet column), and using
+ * the wrong one silently reads `undefined` and reports every row incomplete.
+ */
+const SOCIAL_COLUMN_KEYS: readonly [string, keyof Columns][] = [
+  ['facebookUrl', 'facebook'],
+  ['instagramUrl', 'instagram'],
+  ['youtubeUrl', 'youtube'],
+  ['twitterUrl', 'twitter'],
+  ['linkedinUrl', 'linkedin'],
+  ['tiktokUrl', 'tiktok'],
+];
+
+/**
  * Whether every social column the sheet has is already filled, so enrichment
  * would have nothing to add. Columns the sheet does not have are not counted:
  * a sheet with only facebook/instagram is "full" once both are set.
  */
 export function socialColumnsFull(row: readonly unknown[], cols: Columns): boolean {
   let present = 0;
-  for (const column of SOCIAL_COLUMNS) {
-    const index = cols[column as keyof Columns];
+  for (const [, key] of SOCIAL_COLUMN_KEYS) {
+    const index = cols[key];
     if (typeof index !== 'number' || index === -1) continue;
     present++;
     if (!String(row[index] ?? '').trim()) return false;

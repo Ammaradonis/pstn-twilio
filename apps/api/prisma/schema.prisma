@@ -111,6 +111,7 @@ model User {
   googleCalendar      GoogleCalendarConnection?
   googleSheets        GoogleSheetsConnection?
   emailFinderJobs     EmailFinderJob[]
+  fbGroupsRuns        FbGroupsRun[]
   voiceSettings       VoiceSettings?
   voicemailGreeting   VoicemailGreeting?
   contacts            Contact[]
@@ -577,6 +578,46 @@ model EmailFinderRow {
   @@index([status, claimedAt])
   @@index([status, nextAttemptAt])
   @@map("email_finder_rows")
+}
+
+// ---------------------------------------------------------------------------
+// Facebook groups. One run per user, started from the Dial page's "FB groups"
+// button and executed by the same worker on the user's PC that drives the
+// phone. The run is a rolling pipeline rather than a queue of rows: the worker
+// reports what it did in the last batch and the API keeps the scoreboard, so a
+// restart resumes at the stage it reached and nothing is recounted.
+// ---------------------------------------------------------------------------
+
+model FbGroupsRun {
+  id           String    @id @default(uuid())
+  userId       String    @map("user_id")
+  // RUNNING | PAUSED | DONE | CANCELLED
+  status       String    @default("RUNNING")
+  // SEARCH (find groups) | JOIN | ENGAGE (like/comment/reply/follow) | OUTREACH (DMs)
+  stage        String    @default("SEARCH")
+  searches     Int       @default(0)
+  groupsFound  Int       @default(0) @map("groups_found")
+  joined       Int       @default(0)
+  likes        Int       @default(0)
+  comments     Int       @default(0)
+  replies      Int       @default(0)
+  follows      Int       @default(0)
+  dms          Int       @default(0)
+  reviewQueued Int       @default(0) @map("review_queued")
+  // The worker's last sentence about what happened, shown under the button.
+  note         String?
+  // Coverage of the address book the worker built: how many addresses, how many
+  // searches, how many uncovered. Stored so the button can prove the rule.
+  plan         Json?
+  startedAt    DateTime  @default(now()) @map("started_at")
+  updatedAt    DateTime  @updatedAt @map("updated_at")
+  finishedAt   DateTime? @map("finished_at")
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, status])
+  @@index([status, updatedAt])
+  @@map("fb_groups_runs")
 }
 
 // ---------------------------------------------------------------------------

@@ -10,6 +10,7 @@ import { useParams } from 'react-router-dom';
 import { AiAgentPanel } from '../components/ai-agent-panel';
 import { CallQualityPanel } from '../components/call-quality';
 import { EmailFinderStatus } from '../components/email-finder-status';
+import { FbGroupsButton } from '../components/fb-groups-button';
 import { MicrophonePicker } from '../components/microphone-picker';
 import { postCallDraftKey, PostCallStatusPanel } from '../components/post-call-status-panel';
 import { SocialEnrichmentButton } from '../components/social-enrichment-button';
@@ -927,6 +928,8 @@ export function DialPage() {
             sheetTitle={sheetTitle}
           />
         )}
+        {/* Not tied to the selected tab: the searches come from both workbooks. */}
+        <FbGroupsButton />
       </div>
 
       <AiAgentPanel destination={normalizedDestination} />

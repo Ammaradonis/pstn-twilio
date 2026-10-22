@@ -224,10 +224,65 @@ closed. A comment under 20 words is refused rather than posted.
 
 ---
 
-## 7. Running it
+## 7. The button
 
-The runner resolves its own imports, so it works from the repo root as long as it
-is the worker's own Python:
+The Dial page has an **FB groups** button under "Sheet target", next to "Enrich
+socials". One click starts the run; nothing happens before it, and clicking it
+while a run is open resumes that run instead of starting a second.
+
+```
+Dial page button ──► POST /api/fb-groups/start ──► fb_groups_runs (Postgres)
+                                                        ▲
+      worker on the PC: POST /worker/tick ──── batch ────┘
+                        POST /worker/progress (deltas, stage, note, plan)
+                              │
+                              └──► FacebookGroups → Galaxy A20e
+```
+
+The worker is the same process as the email finder (`start-email-finder.ps1`),
+so there is nothing extra to start. It asks for work every 20 seconds while a
+run is open and every 90 seconds while none is. It shares the phone lock, the
+challenge handling and the caps with the research work: a batch simply waits if a
+row lookup has the phone.
+
+The API never decides what to do next — it only keeps the scoreboard. The worker
+picks the stage (it holds the plan, the registry and the caps) and reports the
+deltas, so a restart resumes exactly where it stopped:
+
+| Stage      | One batch does                                                      | Moves on when               |
+| ---------- | ------------------------------------------------------------------- | --------------------------- |
+| `SEARCH`   | 3 searches from the plan                                            | the plan has no unrun terms |
+| `JOIN`     | joins 2 candidates scoring 45+                                      | no candidate is left        |
+| `ENGAGE`   | visits 1 group due a visit (like, comment, up to 3 replies, follow) | always                      |
+| `OUTREACH` | up to 2 DMs to people with history                                  | always, back to `SEARCH`    |
+
+The panel shows the running counts, the worker's last sentence, the review-queue
+size, and the coverage line once the worker has built the plan ("27,965 of
+27,965 addresses covered by 49,083 searches · none uncovered"). Pause stops it at
+the end of the current batch; Stop closes the run.
+
+Routes: `POST /api/fb-groups/start`, `GET /api/fb-groups/status`,
+`POST /api/fb-groups/:runId/{pause|resume|cancel}` (JWT), and
+`POST /api/fb-groups/worker/{tick|progress}` (worker token).
+
+**Deploying it.** The migration `20261022140000_add_fb_groups_run` creates one
+table and is already applied. The API needs redeploying before the button exists
+in production:
+
+```powershell
+fly deploy --remote-only --dockerfile deploy/api.Dockerfile   # API
+# web: push, or the Cloudflare Pages build (git push to main)
+```
+
+Until then the button only works against a locally run API.
+
+---
+
+## 8. Running it from a terminal
+
+The same pipeline is drivable by hand, for a first cautious run before trusting
+the button. The script resolves its own imports, so it works from the repo root
+as long as it is the worker's own Python:
 
 ```powershell
 $fb = ".\workers\email-finder\.venv\Scripts\python.exe", ".\workers\email-finder\scripts\fb_groups.py"
@@ -272,7 +327,7 @@ The phone itself is configured exactly as the Instagram worker's: `EMAIL_FINDER_
 
 ---
 
-## 8. What can go wrong, honestly
+## 9. What can go wrong, honestly
 
 - **The screen selectors are the weak point.** Group cards and comment bands are
   parsed by geometry, which survives Facebook changing resource ids but needs

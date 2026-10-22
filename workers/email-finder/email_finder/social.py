@@ -128,15 +128,13 @@ def normalise(url: str) -> str:
     elif host.startswith(("m.", "mobile.")):
         host = host.split(".", 1)[1]
     path = parts.path
-    # Trim a trailing tab, keeping profile.php intact and any trailing slash the
-    # URL had (a school's footer often links /dojo/, and callers compare strings).
-    had_slash = path.endswith("/") and len(path) > 1
+    # Trim a trailing tab, and the trailing slash, so one profile always has one
+    # canonical value no matter which method (or footer link) found it. This is
+    # the form written into the sheet, so "/dojo" and "/dojo/" must not diverge.
     segments = [s for s in path.split("/") if s]
     while len(segments) > 1 and segments[-1].lower() in _TABS:
         segments = segments[:-1]
     path = "/" + "/".join(segments)
-    if had_slash and not path.endswith("/"):
-        path += "/"
     if platform == "twitter":
         pass  # x.com and twitter.com are both kept as found
     query = parts.query if "profile.php" in path else ""

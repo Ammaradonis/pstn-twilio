@@ -20,6 +20,7 @@ import type {
   RecordingPreferenceDto,
   SendMessageInput,
   EmailFinderStatusDto,
+  FbGroupsStatusDto,
   PushCallResultDto,
   SheetsConnectionStatusDto,
   SheetsFollowUpDto,
@@ -465,6 +466,19 @@ export const api = {
       }),
     setRunning: (jobId: string, action: 'pause' | 'resume' | 'cancel') =>
       request<EmailFinderStatusDto>(`/email-finder/${encodeURIComponent(jobId)}/${action}`, {
+        method: 'POST',
+      }),
+  },
+
+  /**
+   * Facebook groups: one rolling run, driven by the worker on the PC. Starting
+   * it is idempotent — an open run is resumed rather than duplicated.
+   */
+  fbGroups: {
+    start: () => request<FbGroupsStatusDto>('/fb-groups/start', { method: 'POST' }),
+    status: () => request<FbGroupsStatusDto>('/fb-groups/status'),
+    setRunning: (runId: string, action: 'pause' | 'resume' | 'cancel') =>
+      request<FbGroupsStatusDto>(`/fb-groups/${encodeURIComponent(runId)}/${action}`, {
         method: 'POST',
       }),
   },

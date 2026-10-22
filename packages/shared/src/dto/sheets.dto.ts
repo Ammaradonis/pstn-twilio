@@ -148,3 +148,48 @@ export interface EmailFinderStatusDto {
   /** The tab's latest finds, newest first. */
   recentFinds?: EmailFinderFindDto[];
 }
+
+// ---------------------------------------------------------------------------
+// Facebook groups (workers/email-finder/fb_*.py). One rolling run per user,
+// started from the Dial page and executed by the worker on the user's PC.
+// ---------------------------------------------------------------------------
+
+export type FbGroupsRunStatus = 'RUNNING' | 'PAUSED' | 'DONE' | 'CANCELLED';
+
+/**
+ * The pipeline a run moves through. The worker decides when to advance: it is
+ * the one that knows how many searches the plan still has.
+ */
+export type FbGroupsStage = 'SEARCH' | 'JOIN' | 'ENGAGE' | 'OUTREACH';
+
+export interface FbGroupsStatusDto {
+  runId: string | null;
+  status: FbGroupsRunStatus | null;
+  stage: FbGroupsStage | null;
+  searches: number;
+  groupsFound: number;
+  joined: number;
+  likes: number;
+  comments: number;
+  replies: number;
+  follows: number;
+  dms: number;
+  /** Comments a human should read before anything else is posted. */
+  reviewQueued: number;
+  /** What the worker said about its last batch. */
+  note: string | null;
+  startedAt: string | null;
+  updatedAt: string | null;
+  workerOnline: boolean;
+  workerLastSeen: string | null;
+  /** How much of the address book the search plan covers, once the worker has built it. */
+  plan?: FbGroupsPlanDto | null;
+}
+
+export interface FbGroupsPlanDto {
+  addresses: number;
+  covered: number;
+  searches: number;
+  uncovered: number;
+  builtAt: string | null;
+}
