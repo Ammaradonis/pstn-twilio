@@ -231,6 +231,16 @@ See [Playwright's profile restrictions](https://playwright.dev/python/docs/api/c
 Close/stop the research worker before preparing its dedicated session. Session
 cookies stay in the ignored local `.cache/browser-profile` folder. Do not share it.
 
+## Facebook groups
+
+A second Android worker lives beside this one: it turns every address in
+"U.S. Conquest" and "The Official UK" into localized group searches, joins the
+groups that score as owner-facing, and engages slowly (like, comment, thread
+reply, follow, DM) through the two DeepSeek prompts in `prompts/`. It reuses
+`android.Galaxy`, `ambient.Gesture` and `cache.Cache`; the comment gate and the
+caps are its own. See [FB-GROUPS.md](FB-GROUPS.md) and
+`python scripts/fb_groups.py --help`.
+
 ## Recovery, limits and evaluation
 
 SQLite caches searches and pages, stores daily request reservations and keeps an

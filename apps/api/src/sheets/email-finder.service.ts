@@ -91,6 +91,40 @@ const ENRICHMENT_COLUMNS = [
   ['tiktokUrl', 'tiktok'],
 ] as const;
 
+/**
+ * EMAIL hunts addresses; ENRICH hunts the social profile URLs and fills those
+ * columns. They are separate jobs so a tab can run both, and so enrichment
+ * never waits behind a queued address run.
+ */
+export type FinderMode = 'EMAIL' | 'ENRICH';
+
+/** The sheet columns enrichment mode owns: it overwrites these by design. */
+const SOCIAL_COLUMNS = new Set([
+  'facebookUrl',
+  'instagramUrl',
+  'youtubeUrl',
+  'twitterUrl',
+  'linkedinUrl',
+  'tiktokUrl',
+]);
+
+/**
+ * Whether every social column the sheet has is already filled, so enrichment
+ * would have nothing to add. Columns the sheet does not have are not counted:
+ * a sheet with only facebook/instagram is "full" once both are set.
+ */
+export function socialColumnsFull(row: readonly unknown[], cols: Columns): boolean {
+  let present = 0;
+  for (const column of SOCIAL_COLUMNS) {
+    const index = cols[column as keyof Columns];
+    if (typeof index !== 'number' || index === -1) continue;
+    present++;
+    if (!String(row[index] ?? '').trim()) return false;
+  }
+  // No social columns at all: never "full", or the button would do nothing.
+  return present > 0;
+}
+
 /** Known columns only; links must be http(s), phone numbers phone-shaped. */
 export function cleanEnrichment(input: unknown): Record<string, string> | null {
   if (!input || typeof input !== 'object') return null;
@@ -150,11 +184,16 @@ export class EmailFinderService implements OnModuleDestroy, OnModuleInit {
   // ── Dial page ─────────────────────────────────────────────────────────────
 
   /** Queue a tab's rows that have no email yet; safe to call on every selection. */
-  start(userId: string, spreadsheetId: string, sheetTitle: string): Promise<EmailFinderStatusDto> {
-    const key = JSON.stringify([userId, spreadsheetId, sheetTitle]);
+  start(
+    userId: string,
+    spreadsheetId: string,
+    sheetTitle: string,
+    mode: FinderMode = 'EMAIL',
+  ): Promise<EmailFinderStatusDto> {
+    const key = JSON.stringify([userId, spreadsheetId, sheetTitle, mode]);
     const existing = this.starts.get(key);
     if (existing) return existing;
-    const run = this.startTab(userId, spreadsheetId, sheetTitle).finally(() =>
+    const run = this.startTab(userId, spreadsheetId, sheetTitle, mode).finally(() =>
       this.starts.delete(key),
     );
     this.starts.set(key, run);
@@ -165,6 +204,7 @@ export class EmailFinderService implements OnModuleDestroy, OnModuleInit {
     userId: string,
     spreadsheetId: string,
     sheetTitle: string,
+    mode: FinderMode,
   ): Promise<EmailFinderStatusDto> {
     const token = await this.sheets.getAccessToken(userId);
     const rows = await this.sheets.fetchRows(token, spreadsheetId, sheetTitle);
@@ -183,12 +223,22 @@ export class EmailFinderService implements OnModuleDestroy, OnModuleInit {
 
     const queued: { fingerprint: string; input: FinderRowInput }[] = [];
     let alreadyHadEmail = 0;
+    let alreadyComplete = 0;
     const seen = new Set<string>();
     for (const row of rows.slice(1)) {
       const title = text(row[cols.school]).trim();
       if (!title) continue;
-      if (cols.email !== -1 && extractEmail(text(row[cols.email]))) {
+      // The address hunt skips rows that already have an address. Enrichment
+      // must not: an address says nothing about whether the social columns are
+      // filled, and those are exactly what it was asked for.
+      if (mode === 'EMAIL' && cols.email !== -1 && extractEmail(text(row[cols.email]))) {
         alreadyHadEmail++;
+        continue;
+      }
+      // Enrichment skips a row only when every social column it owns is already
+      // filled, which is the one case where it has nothing to add.
+      if (mode === 'ENRICH' && socialColumnsFull(row, cols)) {
+        alreadyComplete++;
         continue;
       }
       const fp = fingerprint(row, cols);
@@ -211,8 +261,10 @@ export class EmailFinderService implements OnModuleDestroy, OnModuleInit {
     }
 
     const job = await this.prisma.emailFinderJob.upsert({
-      where: { userId_spreadsheetId_sheetTitle: { userId, spreadsheetId, sheetTitle } },
-      create: { userId, spreadsheetId, sheetTitle },
+      where: {
+        userId_spreadsheetId_sheetTitle_mode: { userId, spreadsheetId, sheetTitle, mode },
+      },
+      create: { userId, spreadsheetId, sheetTitle, mode },
       update: {},
     });
     if (job.status === 'DONE') {
@@ -267,16 +319,19 @@ export class EmailFinderService implements OnModuleDestroy, OnModuleInit {
     await this.redis.client.set(`email-finder:job:${job.id}:had-email`, String(alreadyHadEmail));
     this.scheduleFlush(job.id, 100);
     await this.finishIfComplete(job.id);
-    return this.status(userId, spreadsheetId, sheetTitle);
+    return this.status(userId, spreadsheetId, sheetTitle, mode);
   }
 
   async status(
     userId: string,
     spreadsheetId: string,
     sheetTitle: string,
+    mode: FinderMode = 'EMAIL',
   ): Promise<EmailFinderStatusDto> {
     const job = await this.prisma.emailFinderJob.findUnique({
-      where: { userId_spreadsheetId_sheetTitle: { userId, spreadsheetId, sheetTitle } },
+      where: {
+        userId_spreadsheetId_sheetTitle_mode: { userId, spreadsheetId, sheetTitle, mode },
+      },
     });
     const lastSeen = await this.redis.client.get(WORKER_SEEN_KEY).catch(() => null);
     const workerOnline = Boolean(lastSeen && Date.now() - Date.parse(lastSeen) < WORKER_ONLINE_MS);
@@ -343,7 +398,7 @@ export class EmailFinderService implements OnModuleDestroy, OnModuleInit {
     const job = await this.prisma.emailFinderJob.findFirst({ where: { id: jobId, userId } });
     if (!job) throw new NotFoundException('No email finder job with that id.');
     await this.prisma.emailFinderJob.update({ where: { id: jobId }, data: { status } });
-    return this.status(userId, job.spreadsheetId, job.sheetTitle);
+    return this.status(userId, job.spreadsheetId, job.sheetTitle, job.mode as FinderMode);
   }
 
   // ── Worker on the user's PC ───────────────────────────────────────────────
@@ -352,7 +407,9 @@ export class EmailFinderService implements OnModuleDestroy, OnModuleInit {
     await this.redis.client.set(WORKER_SEEN_KEY, new Date().toISOString(), 'EX', 3600);
   }
 
-  async claim(max: number): Promise<{ id: string; leaseToken: string; input: FinderRowInput }[]> {
+  async claim(
+    max: number,
+  ): Promise<{ id: string; leaseToken: string; input: FinderRowInput; mode: FinderMode }[]> {
     await this.heartbeat();
     await this.prisma.emailFinderRow.updateMany({
       where: { status: 'RETRY', nextAttemptAt: { lte: new Date() } },
@@ -384,12 +441,15 @@ export class EmailFinderService implements OnModuleDestroy, OnModuleInit {
     });
     const claimed = await this.prisma.emailFinderRow.findMany({
       where: { id: { in: next.map((r) => r.id) }, status: 'CLAIMED', leaseToken },
-      select: { id: true, input: true },
+      select: { id: true, input: true, job: { select: { mode: true } } },
     });
     return claimed.map((r) => ({
       id: r.id,
       leaseToken,
       input: r.input as unknown as FinderRowInput,
+      // Enrichment rows run Engine.enrich on the worker; the address rows run
+      // Engine.find. The worker decides from this, so it needs no new endpoint.
+      mode: (r.job?.mode as FinderMode) ?? 'EMAIL',
     }));
   }
 
@@ -505,7 +565,7 @@ export class EmailFinderService implements OnModuleDestroy, OnModuleInit {
   }
 
   private async writeToSheet(
-    job: { userId: string; spreadsheetId: string; sheetTitle: string },
+    job: { userId: string; spreadsheetId: string; sheetTitle: string; mode?: string },
     results: {
       id?: string;
       fingerprint: string;
@@ -563,11 +623,19 @@ export class EmailFinderService implements OnModuleDestroy, OnModuleInit {
       }
     });
     const rekey: { id: string; fingerprint: string }[] = [];
+    /** Social cells this flush replaced in enrichment mode (for the log). */
+    let overwritten = 0;
     const cell = (col: number, rowIdx: number, value: string) =>
       data.push({
         range: a1(job.sheetTitle, `${columnLetter(col + 1)}${rowIdx + 1}`),
         values: [[value]],
       });
+
+    // Enrichment mode owns the social columns: it was asked to fill them with
+    // what it verified, so an existing value is replaced rather than kept.
+    // Every other column follows the address finder's rule and is only filled
+    // when empty, so a typed-in email or phone number is never lost.
+    const overwrite = job.mode === 'ENRICH';
 
     for (const r of results) {
       const indexes = rowByFingerprint.get(r.fingerprint) ?? [];
@@ -584,22 +652,29 @@ export class EmailFinderService implements OnModuleDestroy, OnModuleInit {
           cell(at.decisionMaker, i, r.decisionMaker);
         if (r.contactFormUrl && !text(row[at.contactForm]).trim())
           cell(at.contactForm, i, r.contactFormUrl);
-        // Fill the school's details into empty cells only.
+        // Fill the school's details into empty cells only (except the social
+        // columns in enrichment mode, see above).
         const enrichment = cleanEnrichment(r.enrichment) ?? {};
         const updated = [...row];
         for (const [key, column] of ENRICHMENT_COLUMNS) {
           const col = cols[column];
           const value = enrichment[key];
-          if (value && col !== -1 && !text(row[col]).trim()) {
-            cell(col, i, value);
-            updated[col] = value;
-          }
+          if (!value || col === -1) continue;
+          const mayWrite = overwrite ? SOCIAL_COLUMNS.has(key) : !text(row[col]).trim();
+          if (!mayWrite) continue;
+          if (text(row[col]) === value) continue; // already correct: no API call
+          cell(col, i, value);
+          updated[col] = value;
+          if (overwrite) overwritten++;
         }
         // A filled-in phone or website changes the row's identity: follow it, so
         // picking the tab again doesn't research the row from scratch.
         const now = fingerprint(updated, cols);
         if (r.id && now !== r.fingerprint) rekey.push({ id: r.id, fingerprint: now });
       }
+    }
+    if (overwrite && overwritten) {
+      this.logger.log(`Enrichment replaced ${overwritten} social cell(s) in "${job.sheetTitle}".`);
     }
     for (let i = 0; i < data.length; i += 400) {
       await this.sheets.google(

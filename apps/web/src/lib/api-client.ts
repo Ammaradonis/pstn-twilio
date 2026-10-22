@@ -447,4 +447,25 @@ export const api = {
         method: 'POST',
       }),
   },
+
+  /**
+   * Social-column enrichment: a separate job from the address hunt, so both can
+   * run for the same tab. It fills facebook/instagram/youtube/twitter/linkedin/
+   * tiktok and replaces whatever is there with the verified profile.
+   */
+  socialEnrichment: {
+    start: (spreadsheetId: string, sheetTitle: string) =>
+      request<EmailFinderStatusDto>('/email-finder/enrich', {
+        method: 'POST',
+        body: { spreadsheetId, sheetTitle },
+      }),
+    status: (spreadsheetId: string, sheetTitle: string) =>
+      request<EmailFinderStatusDto>('/email-finder/enrich/status', {
+        query: { spreadsheetId, sheetTitle },
+      }),
+    setRunning: (jobId: string, action: 'pause' | 'resume' | 'cancel') =>
+      request<EmailFinderStatusDto>(`/email-finder/${encodeURIComponent(jobId)}/${action}`, {
+        method: 'POST',
+      }),
+  },
 };

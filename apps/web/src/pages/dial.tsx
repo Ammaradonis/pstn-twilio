@@ -12,6 +12,7 @@ import { CallQualityPanel } from '../components/call-quality';
 import { EmailFinderStatus } from '../components/email-finder-status';
 import { MicrophonePicker } from '../components/microphone-picker';
 import { postCallDraftKey, PostCallStatusPanel } from '../components/post-call-status-panel';
+import { SocialEnrichmentButton } from '../components/social-enrichment-button';
 import { readPersistedSpreadsheet, SpreadsheetPicker } from '../components/spreadsheet-picker';
 import { VoiceRecovery } from '../components/voice-recovery';
 import { useVoiceDevice } from '../hooks/use-voice-device';
@@ -915,6 +916,13 @@ export function DialPage() {
         {spreadsheetId && sheetTitle && (
           <EmailFinderStatus
             key={`${spreadsheetId}:${sheetTitle}`}
+            spreadsheetId={spreadsheetId}
+            sheetTitle={sheetTitle}
+          />
+        )}
+        {spreadsheetId && sheetTitle && (
+          <SocialEnrichmentButton
+            key={`enrich:${spreadsheetId}:${sheetTitle}`}
             spreadsheetId={spreadsheetId}
             sheetTitle={sheetTitle}
           />

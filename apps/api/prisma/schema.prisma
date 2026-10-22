@@ -523,6 +523,9 @@ model EmailFinderJob {
   userId        String    @map("user_id")
   spreadsheetId String    @map("spreadsheet_id")
   sheetTitle    String    @map("sheet_title")
+  // EMAIL: hunt addresses. ENRICH: hunt the social profile URLs and fill those
+  // columns, overwriting what is there (see Engine.enrich in the worker).
+  mode          String    @default("EMAIL")
   // RUNNING | PAUSED | DONE | CANCELLED
   status        String    @default("RUNNING")
   createdAt     DateTime  @default(now()) @map("created_at")
@@ -532,7 +535,8 @@ model EmailFinderJob {
   user User             @relation(fields: [userId], references: [id], onDelete: Cascade)
   rows EmailFinderRow[]
 
-  @@unique([userId, spreadsheetId, sheetTitle])
+  // One tab can have both an address run and an enrichment run at once.
+  @@unique([userId, spreadsheetId, sheetTitle, mode])
   @@map("email_finder_jobs")
 }
 

@@ -55,7 +55,7 @@ import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { ZodValidationPipe } from '../common/zod.pipe';
 
 import { ContactFormService } from './contact-form.service';
-import { EmailFinderService } from './email-finder.service';
+import { EmailFinderService, type FinderMode } from './email-finder.service';
 import { FollowUpRenderer } from './follow-up-renderer.service';
 import { SheetsConfig } from './sheets.config';
 import { SheetsService, SheetsUnavailableError } from './sheets.service';
@@ -194,7 +194,15 @@ export class GoogleSheetsOAuthController {
   }
 }
 
-type TabQuery = { spreadsheetId?: string; sheetTitle?: string };
+type TabQuery = { spreadsheetId?: string; sheetTitle?: string; mode?: string };
+
+function modeFrom(body: TabQuery): FinderMode {
+  return String(body.mode ?? '')
+    .trim()
+    .toUpperCase() === 'ENRICH'
+    ? 'ENRICH'
+    : 'EMAIL';
+}
 
 function tabFrom(body: TabQuery): { spreadsheetId: string; sheetTitle: string } {
   const spreadsheetId = body.spreadsheetId?.trim();
@@ -214,13 +222,32 @@ export class EmailFinderController {
   @HttpCode(200)
   start(@Req() req: AuthedRequest, @Body() body: TabQuery) {
     const { spreadsheetId, sheetTitle } = tabFrom(body);
-    return userFacing(this.finder.start(req.user.id, spreadsheetId, sheetTitle));
+    return userFacing(this.finder.start(req.user.id, spreadsheetId, sheetTitle, 'EMAIL'));
+  }
+
+  /**
+   * Enrichment mode: fill the tab's facebook/instagram/youtube/twitter/
+   * linkedin/tiktok columns with the profiles the worker can verify.
+   * A separate job from the address hunt, so a tab can run both.
+   */
+  @Post('enrich')
+  @HttpCode(200)
+  enrich(@Req() req: AuthedRequest, @Body() body: TabQuery) {
+    const { spreadsheetId, sheetTitle } = tabFrom(body);
+    return userFacing(this.finder.start(req.user.id, spreadsheetId, sheetTitle, 'ENRICH'));
   }
 
   @Get('status')
-  status(@Req() req: AuthedRequest, @Query() query: TabQuery) {
+  status(@Req() req: AuthedRequest, @Query() query: TabQuery & { mode?: string }) {
     const { spreadsheetId, sheetTitle } = tabFrom(query);
-    return this.finder.status(req.user.id, spreadsheetId, sheetTitle);
+    return this.finder.status(req.user.id, spreadsheetId, sheetTitle, modeFrom(query));
+  }
+
+  /** Enrichment progress for the selected tab (same shape as `status`). */
+  @Get('enrich/status')
+  enrichStatus(@Req() req: AuthedRequest, @Query() query: TabQuery) {
+    const { spreadsheetId, sheetTitle } = tabFrom(query);
+    return this.finder.status(req.user.id, spreadsheetId, sheetTitle, 'ENRICH');
   }
 
   @Post(':jobId/pause')

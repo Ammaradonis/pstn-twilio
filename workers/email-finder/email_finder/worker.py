@@ -116,16 +116,26 @@ def to_row(data: dict) -> Row:
     )
 
 
-def to_result(row_id: str, f: Finding, lease_token: str) -> dict:
+def to_result(row_id: str, f: Finding, lease_token: str, mode: str = "EMAIL") -> dict:
     # All validated addresses for this school, comma-separated (best first).
     all_emails = f.emails if f.emails else ([f.email] if f.email else [])
     emails_csv = ", ".join(e for e in all_emails if e) or None
+    social = f.enrichment if mode == "ENRICH" else None
+    # In enrichment mode the row's outcome is the social links, not an address:
+    # FOUND means at least one column was filled, so the sheet's write-back and
+    # the Dial page's "done" count both make sense.
+    if mode == "ENRICH":
+        status = "RETRY" if f.retry_after else (
+            "FOUND" if social and not (f.notes and f.notes[0].startswith("error:")) else "NOT_FOUND")
+    else:
+        status = "RETRY" if f.retry_after else (
+            f.status if not (f.notes and f.notes[0].startswith("error:")) else "FAILED")
     return {
         "id": row_id,
         "leaseToken": lease_token,
         "researchComplete": f.research_complete,
         **({"retryAfter": f.retry_after} if f.retry_after else {}),
-        "status": "RETRY" if f.retry_after else (f.status if not (f.notes and f.notes[0].startswith("error:")) else "FAILED"),
+        "status": status,
         "email": emails_csv,
         "emailType": f.email_type,
         "confidence": f.confidence or None,
@@ -315,14 +325,20 @@ async def run() -> bool:
             log.error("API is outdated: deploy the email finder recovery migration and API build.")
             return
         row = to_row(item["input"])
+        # The API says which pass this row belongs to: the address hunt, or the
+        # social-column enrichment (Engine.enrich) that never scores addresses.
+        mode = "ENRICH" if str(item.get("mode") or "").upper() == "ENRICH" else "EMAIL"
+        run = engine.enrich if mode == "ENRICH" else engine.find
         try:
-            finding = await asyncio.wait_for(engine.find(row), timeout=settings.row_timeout)
+            finding = await asyncio.wait_for(run(row), timeout=settings.row_timeout)
         except asyncio.TimeoutError:
             finding = Finding(notes=["Research time limit reached; will resume using cached pages"], retry_after=1800, research_complete=False)
-        result = to_result(item["id"], finding, item["leaseToken"])
-        log.info("Research finished: %s (%s) row=%s%s%s", result["status"],
+        result = to_result(item["id"], finding, item["leaseToken"], mode)
+        social = ", ".join(sorted(finding.enrichment)) if mode == "ENRICH" else ""
+        log.info("Research finished: %s (%s) row=%s%s%s%s", result["status"],
                  finding.email_type or "unresolved", item["id"],
                  f" — {finding.method}" if finding.method else "",
+                 f" — social: {social}" if social else "",
                  f"; retry in {finding.retry_after}s" if finding.retry_after else "")
         cache.set("outbox-v2", item["id"], {"kind": "research", "result": result}, 365 * 86400)
         finished[0] += 1

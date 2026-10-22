@@ -60,6 +60,8 @@ from .sources import (
 )
 from .validate import DomainChecker, DnsUnavailable, plausible
 from .scoring import ScoreWeights, load_weights
+from .social import (PROFILE_HOSTS, candidate_handles, is_profile as social_is_profile,
+                     normalise as social_normalise, platform_of as social_platform_of)
 
 log = logging.getLogger(__name__)
 _extract = tldextract.TLDExtract(suffix_list_urls=(), cache_dir=None)
@@ -184,11 +186,31 @@ class Engine:
             log.exception("row failed: %s", row.title)
             return Finding(notes=[f"error: {err}"])
 
+    async def enrich(self, row: Row) -> Finding:
+        """Enrichment mode: hunt the row's social profile URLs, nothing else.
+
+        The email finder stops as soon as it has an address; this keeps going
+        until every platform it can has been tried, because the sheet's
+        facebook/instagram/youtube/twitter/linkedin/tiktok columns are the goal.
+        No address validation, no people lookup, no contact-form work: those are
+        the expensive parts of `find()` and play no part in filling those cells.
+        """
+        job = _Job(self, row, social_only=True)
+        try:
+            return await job.run()
+        except Exception as err:  # noqa: BLE001
+            log.exception("enrichment failed: %s", row.title)
+            return Finding(notes=[f"error: {err}"])
+
 
 class _Job:
-    def __init__(self, engine: Engine, row: Row) -> None:
+    def __init__(self, engine: Engine, row: Row, social_only: bool = False) -> None:
         self.e = engine
         self.row = row
+        # Enrichment mode (Engine.enrich): fill the sheet's social columns and
+        # nothing else, so the address hunt, its DNS work and its people lookup
+        # are all skipped.
+        self.social_only = social_only
         self.country = (
             "GB"
             if row.phone.replace(" ", "").startswith("+44") or UK_POSTCODE.search(row.address)
@@ -234,6 +256,10 @@ class _Job:
     # ── orchestration ─────────────────────────────────────────────────────────
 
     async def run(self) -> Finding:
+        if self.social_only:
+            finding = await self._run_enrichment()
+            self._finalize_enrichment()
+            return finding
         finding = await self._run()
         self._finalize_enrichment()
         return finding
@@ -246,13 +272,166 @@ class _Job:
             for info in self.pages:
                 if _host(info.url) == self.site_host:
                     for link in sorted(info.social):
-                        column = "facebookUrl" if "facebook.com" in link else "instagramUrl"
-                        f.enrichment.setdefault(column, link)
+                        platform = social_platform_of(link)
+                        if platform:
+                            f.enrichment.setdefault(PROFILE_COLUMNS[platform], link)
+        if self.social_only:
+            # Enrichment mode owns the social columns: the user asked for found
+            # URLs to be written even where a cell already holds one, so nothing
+            # is dropped here. Only the details it does not hunt are filtered.
+            for column, have in (("websiteUrl", self.row.website), ("phoneNumber", self.row.phone)):
+                if have:
+                    f.enrichment.pop(column, None)
+            return
         # Never report what the sheet already has.
         for column, have in (("websiteUrl", self.row.website), ("phoneNumber", self.row.phone),
                              ("facebookUrl", self.row.facebook), ("instagramUrl", self.row.instagram)):
             if have:
                 f.enrichment.pop(column, None)
+
+    # ── enrichment mode ───────────────────────────────────────────────────────
+
+    async def _run_enrichment(self) -> Finding:
+        """Every method that can name a school's social profile, cheapest first.
+
+        Each method feeds `self.finding.enrichment`; a method that finds nothing
+        is not an error. The row is `research_complete = False` only when a
+        method that would normally answer was unavailable (Google blocked, the
+        phone busy), so a later attempt picks the row up again.
+        """
+        found = self.finding.enrichment
+        for method in (
+            self._enrich_business_profile,
+            self._enrich_own_site,
+            self._enrich_web_search,
+            self._enrich_phone_discovery,
+        ):
+            try:
+                await method()
+            except (GoogleBlocked, GoogleUnavailable) as err:
+                log.info("Enrichment method %s skipped (%s)", method.__name__, err)
+                self.finding.research_complete = False
+                continue
+            except Exception as err:  # noqa: BLE001 - one method must not sink the row
+                log.warning("Enrichment method %s failed: %s", method.__name__, err)
+                continue
+            if self._enrichment_goal_met():
+                break
+        for link in list(self.social):
+            self._record_social(link)
+        self.finding.notes.append(
+            "social: " + (", ".join(sorted(found)) if found else "none found")
+        )
+        self.finding.research_complete = self.finding.research_complete and True
+        return self.finding
+
+    def _enrichment_goal_met(self) -> bool:
+        """Stop early once every platform a school realistically has is filled.
+
+        Facebook and Instagram are near-universal for these schools; the other
+        four are a bonus. Once both of the universal ones are known, paying for
+        more searches is not worth it.
+        """
+        return bool(self.finding.enrichment.get("facebookUrl")
+                    and self.finding.enrichment.get("instagramUrl"))
+
+    def _record_social(self, url: str) -> None:
+        """Store one found profile under its sheet column, best value wins."""
+        platform = social_platform_of(url)
+        if not platform:
+            return
+        column = PROFILE_COLUMNS[platform]
+        clean = social_normalise(url)
+        if not clean:
+            return
+        existing = self.finding.enrichment.get(column)
+        # An existing value is only replaced by a profile on the canonical host
+        # (never by a share/tracking URL).
+        if not existing:
+            self.finding.enrichment[column] = clean
+
+    async def _enrich_business_profile(self) -> None:
+        """Google's own Business Profile panel: the pages the school registered."""
+        google = self.e.google
+        if google is None or not google.enabled or self.e.google_mode == "off" or self._google_blocked:
+            return
+        queries = [self.row.title] + ([f"{self.row.title} {self.row.address}"] if self.row.address else [])
+        for query in queries:
+            panel = await google.business_profile(query, country=self.country)
+            if panel and self._panel_matches(panel):
+                await self._use_panel(panel)
+                return
+
+    async def _enrich_own_site(self) -> None:
+        """The school's own website, whose footer carries its social links."""
+        site = (self.row.website or "").strip()
+        if not site:
+            # No site in the sheet: let the business profile name one first.
+            site = (self.finding.enrichment.get("websiteUrl") or "").strip()
+        if not site:
+            return
+        host = _host(site)
+        if host_matches(host, SIGNED_IN_HOSTS["facebook"] | SIGNED_IN_HOSTS["instagram"]):
+            self._record_social(site)
+            return
+        if host_matches(host, LINK_IN_BIO_HOSTS):
+            await self._crawl_link_page(site)
+            return
+        await self._crawl_site(site)
+        for info in self.pages:
+            for link in info.social:
+                self._record_social(link)
+
+    async def _enrich_web_search(self) -> None:
+        """One query per platform the sheet still has empty."""
+        wanted = [p for p in ENRICH_QUERY_ORDER
+                  if not self.finding.enrichment.get(PROFILE_COLUMNS[p])]
+        if not wanted:
+            return
+        where = self.town or self.street or ""
+        for platform in wanted:
+            hosts = " OR ".join(f"site:{h}" for h in sorted(PROFILE_HOSTS[platform])[:2])
+            results = await self._query(f'"{self.row.title}" {where} ({hosts})'.strip())
+            for r in results:
+                if social_platform_of(r.url) == platform and social_is_profile(r.url):
+                    self._record_social(r.url)
+            if self._enrichment_goal_met():
+                return
+
+    async def _enrich_phone_discovery(self) -> None:
+        """The Galaxy A20e: open guessed and searched profiles in the real app.
+
+        The phone is the last resort because it is slow and rate-limited (see
+        android.py), but it is also the only method that can confirm a profile
+        the web never surfaced. Instagram guesses are checked against the
+        profile's own text; the phone reads the bio rather than trusting the URL.
+        """
+        galaxy = self.e.galaxy
+        if galaxy is None:
+            return
+        if not await galaxy.available():
+            self.finding.research_complete = False
+            self.finding.notes.append("Galaxy A20e not available for social discovery")
+            return
+        # 1. Profiles the earlier methods already named: confirm and enrich them.
+        for url in sorted(self.social):
+            platform = social_platform_of(url)
+            if platform not in SIGNED_IN_HOSTS:
+                continue
+            before = dict(self.finding.enrichment)
+            await self._galaxy_lookup(platform, url)
+            for column, value in self.finding.enrichment.items():
+                if column not in before:
+                    log.info("Galaxy A20e confirmed %s for %s", column, self.row.title)
+            if self._enrichment_goal_met():
+                return
+        # 2. Guessed Instagram handles, confirmed by reading the profile.
+        if not self.finding.enrichment.get("instagramUrl"):
+            for handle in candidate_handles(self.row.title, self.row.website):
+                url = f"https://www.instagram.com/{handle}/"
+                await self._galaxy_lookup("instagram", url, must_match=True)
+                if self.finding.enrichment.get("instagramUrl"):
+                    return
 
     async def _run(self) -> Finding:
         # The default first step: the school's Google Business Profile, for its
@@ -1282,6 +1461,9 @@ def _describe_spot(c: Candidate, site_host: str | None, own_domains: set[str]) -
 # Google Business Profile "Profiles" -> the sheet's column for them.
 PROFILE_COLUMNS = {"facebook": "facebookUrl", "instagram": "instagramUrl", "youtube": "youtubeUrl",
                    "twitter": "twitterUrl", "x": "twitterUrl", "linkedin": "linkedinUrl", "tiktok": "tiktokUrl"}
+# Enrichment mode asks for the platforms in this order: the two nearly every
+# school has first, so the row can stop before spending four more searches.
+ENRICH_QUERY_ORDER = ("facebook", "instagram", "youtube", "tiktok", "twitter", "linkedin")
 FACEBOOK_NOT_HANDLES = {"profile.php", "pages", "p", "people", "groups", "share", "sharer.php", "watch",
                         "events", "pg", "home.php", "story.php", "permalink.php", "photo.php", "reel",
                         "policy.php", "privacy", "terms", "legal", "help"}

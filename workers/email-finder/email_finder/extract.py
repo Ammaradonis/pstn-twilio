@@ -20,6 +20,7 @@ from dataclasses import dataclass, field
 from urllib.parse import unquote, urljoin, urlsplit
 
 from bs4 import BeautifulSoup
+from .social import is_profile, normalise
 from .urls import form_host
 
 EMAIL_RE = re.compile(
@@ -233,9 +234,11 @@ def parse_page(url: str, html: str) -> PageInfo:
             continue
         anchor = a.get_text(" ", strip=True)[:80]
         info.links.append((absolute.split("#")[0], anchor))
-        host = urlsplit(absolute).netloc.lower().removeprefix("www.").removeprefix("m.")
-        if host in ("facebook.com", "instagram.com") and _is_profile(absolute):
-            info.social.add(absolute.split("?")[0])
+        # Every network the sheet has a column for (social.py), not only the two
+        # the finder signs in to: enrichment mode fills youtube/twitter/linkedin/
+        # tiktok too, and a school's own footer is the most reliable source.
+        if is_profile(absolute):
+            info.social.add(normalise(absolute))
         if form_host(absolute):
             info.forms.append(absolute)
 
