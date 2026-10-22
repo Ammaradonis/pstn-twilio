@@ -217,7 +217,12 @@ class FbGroupsRunner:
         found = 0
         for payload in terms:
             candidates = await self.groups.search(term_from(payload))
-            result.searches += 1
+            # Count the search only if it really ran: `search()` marks a term
+            # only after the phone has shown it results, and a phone that is
+            # unplugged, busy or past its daily limit returns nothing and marks
+            # nothing. Counting those would inflate the bar the button shows.
+            if self.store.searched(term_key(payload["term"], payload.get("country", ""))):
+                result.searches += 1
             if not candidates:
                 continue
             for candidate in sorted(candidates, key=lambda c: -c.score):
