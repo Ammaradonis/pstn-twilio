@@ -241,7 +241,9 @@ class Pipeline:
         for r in payload.get('results', []):
             lead, ad = r.get('lead') or {}, r.get('ad') or {}
             self.results[(lead.get('spreadsheetId'), lead.get('sheetId'), lead.get('row'), ad.get('adId'))] = r
-        self.counts['prospects'] = self.counts['verified'] = len(self.results)
+        self.counts['prospects'] = len(self.results)
+        # Only verified rows are evidence; the rest are review reasons.
+        self.counts['verified'] = sum(1 for r in self.results.values() if r.get('verified'))
         await self.sync(force=True)
         state = 'synced' if self.synced else 'nothing_to_sync'
         if self.sync_state == 'failed':

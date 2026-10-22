@@ -24,9 +24,13 @@ MAX_BATCH = 200
 
 # Load the repo's .env the way workers/email-finder does, without importing its
 # whole settings object (this module is also used by tests and `--sync-only`).
+# env.txt carries prose, so keep dotenv's parse warnings out of the worker log.
 try:
+    import logging
+
     from dotenv import dotenv_values
 
+    logging.getLogger('dotenv.main').setLevel(logging.ERROR)
     for _path in (ROOT / '.env', ROOT / 'env.txt'):
         if _path.is_file():
             for _key, _value in dotenv_values(_path).items():
