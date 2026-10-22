@@ -2,6 +2,8 @@
 
 Run from any directory with the email-finder virtualenv. No spreadsheet writes
 occur here; the Sheets bridge applies verified evidence with fresh row checks.
+Verified matches are also uploaded to the app (`remote.py`) so the Dial page's
+"Meta ad filter" button can copy the matching rows into a new tab.
 """
 import argparse
 import asyncio
@@ -19,6 +21,7 @@ from pathlib import Path
 from urllib.parse import urlencode, urlsplit, parse_qs
 
 from matching import name_key, facebook_key, qualifies
+from remote import evidence_rows, upload
 
 ROOT = Path(__file__).resolve().parents[2]
 OUT = ROOT / '.cache/meta-ads'
@@ -54,10 +57,17 @@ class Pipeline:
         self.last_apply = 0
         self.last_export = 0
         self.applied_count = 0
-        self.counts = {'ads': 0, 'prospects': 0, 'verified': 0, 'searches': 0}
+        # Matches uploaded to the app for the Dial page's Meta ad filter.
+        self.synced = 0
+        self.last_sync = 0.0
+        self.sync_state = 'disabled' if args.no_sync else 'idle'
+        self.sync_note = None
+        self.counts = {'ads': 0, 'prospects': 0, 'verified': 0, 'searches': 0, 'synced': 0}
 
     def status(self, state, **extra):
-        (OUT / 'status.json').write_text(json.dumps({'state': state, 'updatedAt': now(), **self.counts, **extra}, indent=2), encoding='utf-8')
+        (OUT / 'status.json').write_text(json.dumps({'state': state, 'updatedAt': now(), **self.counts,
+                                                     'sync': {'state': self.sync_state, 'note': self.sync_note, 'synced': self.synced},
+                                                     **extra}, indent=2), encoding='utf-8')
 
     async def scroll(self, ctx):
         page = await ctx.new_page()
@@ -171,6 +181,9 @@ class Pipeline:
         while True:
             item = await self.candidates.get()
             if item is None:
+                # The app's button is useful as soon as a match exists, even if
+                # the colour pass is not requested or fails.
+                await self.sync(force=True)
                 if self.args.apply and self.counts['verified'] > self.applied_count:
                     await self.apply()
                 return
@@ -187,8 +200,55 @@ class Pipeline:
             self.results[(lead['spreadsheetId'], lead['sheetId'], lead['row'], ad['adId'])] = result
             self.counts['prospects'] = len(self.results)
             self.counts['verified'] = sum(r['verified'] for r in self.results.values())
+            await self.sync()
             if self.args.apply and self.counts['verified'] > self.applied_count and time.monotonic() - self.last_apply > 300:
                 await self.apply()
+
+    async def sync(self, force=False):
+        """Upload verified matches so the app's Meta ad filter can use them.
+
+        Best effort: an upload failure never aborts a scrape that may have hours
+        of evidence behind it. Nothing is counted as synced then, so the next
+        pass retries, and the reason is kept in status.json and sync.log.
+        """
+        if self.args.no_sync:
+            return
+        rows = evidence_rows(self.results.values())
+        if not rows or len(rows) <= self.synced:
+            return
+        if not force and time.monotonic() - self.last_sync < 120:
+            return
+        self.last_sync = time.monotonic()
+        try:
+            result = await upload(rows)
+        except Exception as exc:  # noqa: BLE001 - reported, never fatal
+            self.sync_state = 'failed'
+            self.sync_note = str(exc)
+            with (OUT / 'sync.log').open('a', encoding='utf-8') as log:
+                log.write(f'{now()} {exc}\n')
+            print(json.dumps({'sync': 'failed', 'error': str(exc)}), flush=True)
+            return
+        self.synced = len(rows)
+        self.sync_state = 'ok'
+        self.sync_note = None
+        self.counts['synced'] = self.synced
+        print(json.dumps({'sync': result, 'matches': len(rows)}), flush=True)
+
+    async def sync_only(self):
+        """Upload a previous run's prospects.json without opening Facebook."""
+        self.status('syncing')
+        payload = json.loads((OUT / 'prospects.json').read_text(encoding='utf-8'))
+        for r in payload.get('results', []):
+            lead, ad = r.get('lead') or {}, r.get('ad') or {}
+            self.results[(lead.get('spreadsheetId'), lead.get('sheetId'), lead.get('row'), ad.get('adId'))] = r
+        self.counts['prospects'] = self.counts['verified'] = len(self.results)
+        await self.sync(force=True)
+        state = 'synced' if self.synced else 'nothing_to_sync'
+        if self.sync_state == 'failed':
+            state = 'sync_failed'
+        self.status(state)
+        self.export()
+        self.db.close()
 
     async def apply(self):
         self.export()
@@ -233,6 +293,9 @@ class Pipeline:
                 writer.writerow(["'" + v if v.startswith(('=', '+', '-', '@')) else v for v in values])
 
     async def run(self):
+        if self.args.sync_only:
+            await self.sync_only()
+            return
         self.status('starting')
         try:
             async with async_playwright() as p:
@@ -251,6 +314,8 @@ class Pipeline:
             self.status('interrupted', error='; '.join(str(e) for e in getattr(exc, 'exceptions', [exc])))
             raise
         finally:
+            # An interrupted scrape still leaves matches worth keeping.
+            await self.sync(force=True)
             self.export()
             self.db.close()
 
@@ -267,9 +332,15 @@ if __name__ == '__main__':
     parser.add_argument('--max-scrolls', type=int, default=0, help='0 scrolls until no new cards for six passes')
     parser.add_argument('--replay-only', action='store_true')
     parser.add_argument('--refresh', action='store_true')
+    parser.add_argument('--no-sync', action='store_true', help='Do not upload matches; the Meta ad filter then has nothing to work from')
+    parser.add_argument('--sync-only', action='store_true', help='Upload the existing prospects.json and exit; no browser')
     args = parser.parse_args()
     if bool(args.start) != bool(args.end) or (args.start and args.end < args.start):
         parser.error('Supply both start and end, with end on or after start.')
+    if args.sync_only and (args.apply or args.replay_only or args.refresh or args.seed_only):
+        parser.error('--sync-only uploads the saved results and runs alone.')
+    if args.sync_only and args.no_sync:
+        parser.error('--sync-only and --no-sync contradict each other.')
     OUT.mkdir(parents=True, exist_ok=True)
     with (OUT / 'worker.lock').open('a+b') as lock:
         lock.seek(0)

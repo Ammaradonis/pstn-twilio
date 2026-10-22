@@ -621,6 +621,45 @@ model FbGroupsRun {
 }
 
 // ---------------------------------------------------------------------------
+// Meta advertising evidence. The worker on the PC reads facebook.com/ads/library
+// and uploads every school↔ad pair it verified: the tab's `title` matched the
+// advertiser name and the tab's `facebookUrl` matched the advertiser's page.
+// One row per (tab, school, ad); the worker re-sends a tab's full result set, so
+// the API replaces that tab's rows instead of accumulating duplicates. The Dial
+// page's "Meta ad filter" button copies the matching rows into a new tab.
+// ---------------------------------------------------------------------------
+
+model MetaAdEvidence {
+  id             String    @id @default(uuid())
+  spreadsheetId  String    @map("spreadsheet_id")
+  sheetId        Int       @map("sheet_id")
+  // The tab's title when the worker read the inventory; `sheetId` is the key.
+  sheetTitle     String    @map("sheet_title")
+  // 1-based row in the tab at the time of the match (header is 1). A hint only:
+  // the button matches on title + facebookUrl so a sorted tab still lines up.
+  rowIndex       Int       @map("row_index")
+  schoolTitle    String    @map("school_title")
+  facebookUrl    String    @map("facebook_url")
+  advertiserName String    @map("advertiser_name")
+  advertiserUrl  String    @map("advertiser_url")
+  adId           String    @map("ad_id")
+  // ACTIVE | INACTIVE, as Meta's Ad Library showed it when the worker read it.
+  status         String
+  // The days Meta printed on the ad card, when it printed them.
+  startedAt      DateTime? @map("started_at")
+  endedAt        DateTime? @map("ended_at")
+  // When the worker read the Ads Library; "running now" requires this to be recent.
+  observedAt     DateTime  @map("observed_at")
+  createdAt      DateTime  @default(now()) @map("created_at")
+  updatedAt      DateTime  @updatedAt @map("updated_at")
+
+  // The same ad cannot be attributed to the same school twice in one tab.
+  @@unique([spreadsheetId, sheetId, adId, schoolTitle], map: "meta_ad_evidence_school_ad_key")
+  @@index([spreadsheetId, sheetId, status, observedAt], map: "meta_ad_evidence_tab_status_idx")
+  @@map("meta_ad_evidence")
+}
+
+// ---------------------------------------------------------------------------
 // Voice app (User.experience = "voice"): a phone-style app for one person's
 // number, with linked phones, voicemail, contacts and blocking.
 // ---------------------------------------------------------------------------

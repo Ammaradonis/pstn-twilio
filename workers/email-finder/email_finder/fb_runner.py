@@ -236,7 +236,9 @@ class FbGroupsRunner:
                     country=payload.get("country", "")))
                 found += 1
         result.groupsFound = found
-        result.stage = "SEARCH" if self.next_searches(1) else "JOIN"
+        # Rotate after a bounded batch even when discovery has more work or
+        # has reached its cap. Otherwise 49,000 searches starve every other stage.
+        result.stage = "JOIN"
         done = result.searches
         skipped = len(terms) - done
         note = f"{done} search(es) done, {found} new group(s)"
@@ -259,9 +261,8 @@ class FbGroupsRunner:
             if joined_record.state in ("joined", "requested"):
                 joined += 1
         result.joined = joined
-        left = any(record.state == "candidate" and record.score >= JOIN_THRESHOLD
-                   for record in self.store.all())
-        result.stage = "JOIN" if left else "ENGAGE"
+        # Pending candidates and a join cooldown must not starve existing groups.
+        result.stage = "ENGAGE"
         return f"joined {joined} group(s)" if joined else "no join went through this batch"
 
     async def _engage(self, count: int, result: Batch) -> str:

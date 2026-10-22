@@ -64,7 +64,7 @@ type AuthedRequest = Request & { user: { id: string } };
 
 // Google API failures are user-actionable (not connected, no access, bad tab):
 // surface the message as a 400 instead of a 500.
-async function userFacing<T>(work: Promise<T>): Promise<T> {
+export async function userFacing<T>(work: Promise<T>): Promise<T> {
   try {
     return await work;
   } catch (err) {

@@ -427,3 +427,25 @@ def test_a_capped_run_still_covers_every_tier():
     ]}
     queue = groups.queue_searches(plan, limit=1)
     assert [term["term"] for term in queue] == ["a1", "a3"]
+def test_group_search_preserves_punctuation_in_query():
+    import asyncio
+    from urllib.parse import parse_qs, urlparse
+    from email_finder.fb_groups import FacebookGroups
+
+    class CapturedLink(Exception):
+        pass
+
+    captured = []
+    groups = object.__new__(FacebookGroups)
+
+    async def capture(url):
+        captured.append(url)
+        raise CapturedLink
+
+    groups._open = capture
+    name = "Manchester Promotion & Networking #1 + Owners"
+    try:
+        asyncio.run(groups._submit_search(name))
+    except CapturedLink:
+        pass
+    assert parse_qs(urlparse(captured[0]).query) == {"query": [name]}

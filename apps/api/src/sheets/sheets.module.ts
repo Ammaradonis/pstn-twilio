@@ -6,6 +6,8 @@ import { FbGroupsController, FbGroupsWorkerController } from './fb-groups.contro
 import { FbGroupsService } from './fb-groups.service';
 import { FollowUpRenderer } from './follow-up-renderer.service';
 import { GmailService } from './gmail.service';
+import { MetaAdsController, MetaAdsWorkerController } from './meta-ads.controller';
+import { MetaAdsService } from './meta-ads.service';
 import { SheetsFollowUpService } from './sheets-follow-up.service';
 import { SheetsTimezoneService } from './sheets-timezone.service';
 import { SheetsConfig } from './sheets.config';
@@ -27,6 +29,8 @@ import { SheetsService } from './sheets.service';
     EmailFinderWorkerController,
     FbGroupsController,
     FbGroupsWorkerController,
+    MetaAdsController,
+    MetaAdsWorkerController,
   ],
   providers: [
     SheetsConfig,
@@ -38,6 +42,7 @@ import { SheetsService } from './sheets.service';
     EmailFinderService,
     ContactFormService,
     FbGroupsService,
+    MetaAdsService,
     FinderWorkerGuard,
   ],
 })

@@ -177,8 +177,36 @@ def test_search_runs_the_next_searches_and_finds_groups(tmp_path, monkeypatch):
     assert groups.searches == ["testville martial arts"]
     assert result.searches == 1
     assert result.groupsFound == 1
-    assert result.stage == "SEARCH"  # one search left in the plan
+    assert result.stage == "JOIN"  # rotate while discovery still has work
     assert "1 search(es)" in result.note
+
+
+def test_capped_search_does_not_starve_joining(tmp_path, monkeypatch):
+    runner, _, groups = make(tmp_path, monkeypatch, None)
+
+    async def capped(term):
+        return []
+
+    groups.search = capped
+    result = asyncio.run(runner.step(run("SEARCH")["run"], {"searches": 1}))
+    assert result.searches == 0
+    assert result.stage == "JOIN"
+    assert runner.next_searches(1)  # the skipped address remains queued
+
+
+def test_capped_join_does_not_starve_engagement(tmp_path, monkeypatch):
+    runner, _, groups = make(tmp_path, monkeypatch, None)
+    record = GroupRecord(name="Martial Arts School Owners", score=88, state="candidate")
+    runner.store.put(record)
+
+    async def capped(candidate, **kwargs):
+        return record
+
+    groups.join = capped
+    result = asyncio.run(runner.step(run("JOIN")["run"], {"joins": 1}))
+    assert result.joined == 0
+    assert result.stage == "ENGAGE"
+    assert runner.store.get(record.name).state == "candidate"
 
 
 def test_search_advances_to_join_when_the_plan_is_exhausted(tmp_path, monkeypatch):

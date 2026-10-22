@@ -30,6 +30,7 @@ import re
 import time
 from dataclasses import asdict, dataclass, field
 from typing import TYPE_CHECKING, Iterable
+from urllib.parse import quote
 
 from .android import Node, PhoneUnavailable, STOP_SCREEN, CHALLENGE_SCREEN, find_button
 from .fb_vocab import MEMBERS, MEMBER_WORD, GroupCandidate, SearchTerm, parse_members, \
@@ -705,7 +706,7 @@ class FacebookGroups:
         search that never loaded must not be recorded as run, or the plan would
         silently lose a town.
         """
-        await self._open(SEARCH_URL.format(query=term.replace(" ", "%20")))
+        await self._open(SEARCH_URL.format(query=quote(term, safe="")))
         nodes: list[Node] = []
         # The A20e takes a few seconds to swap a busy Reels screen for the search
         # box, and declaring it "never loaded" costs the town its only search.
