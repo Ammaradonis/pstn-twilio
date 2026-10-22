@@ -134,6 +134,9 @@ def to_result(row_id: str, f: Finding, lease_token: str, mode: str = "EMAIL") ->
     return {
         "id": row_id,
         "leaseToken": lease_token,
+        # The API checks FOUND against the pass that produced it: an enrichment
+        # result legitimately carries no email, only social links.
+        "mode": mode,
         "researchComplete": f.research_complete,
         **({"retryAfter": f.retry_after} if f.retry_after else {}),
         "status": status,

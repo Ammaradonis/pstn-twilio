@@ -355,7 +355,7 @@ const publicHttpUrl = z
   .max(1000)
   .url()
   .refine((v) => /^https?:\/\//i.test(v));
-const finderResultsSchema = z.object({
+export const finderResultsSchema = z.object({
   results: z
     .array(
       z
@@ -375,10 +375,20 @@ const finderResultsSchema = z.object({
           enrichment: z.record(z.string().max(1000)).nullish(),
           researchComplete: z.boolean(),
           retryAfter: z.number().int().min(60).max(86400).optional(),
+          // Which pass produced this result. Enrichment rows succeed on a social
+          // profile alone, so they are the one case where FOUND carries no email.
+          mode: z.enum(['EMAIL', 'ENRICH']).optional(),
         })
         .superRefine((r, ctx) => {
-          if (r.status === 'FOUND' && !r.email)
+          const enrich = r.mode === 'ENRICH';
+          if (r.status === 'FOUND' && !r.email && !enrich)
             ctx.addIssue({ code: 'custom', message: 'FOUND requires email' });
+          if (enrich && !r.enrichment && r.status === 'FOUND') {
+            ctx.addIssue({
+              code: 'custom',
+              message: 'An enrichment FOUND needs at least one social link',
+            });
+          }
           if (
             r.status === 'CONTACT_FORM' &&
             (!r.contactFormUrl || !r.researchComplete || r.email)
