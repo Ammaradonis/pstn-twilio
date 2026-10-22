@@ -48,7 +48,7 @@ export const META_HEADERS = [
   'metaAdObservedAt',
 ] as const;
 
-type StoredEvidence = {
+export type StoredEvidence = {
   adId: string;
   status: string;
   startedAt: Date | null;

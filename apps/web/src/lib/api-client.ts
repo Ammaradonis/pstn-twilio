@@ -21,6 +21,9 @@ import type {
   SendMessageInput,
   EmailFinderStatusDto,
   FbGroupsStatusDto,
+  MetaAdFilterMode,
+  MetaAdFilterResultDto,
+  MetaAdsStatusDto,
   PushCallResultDto,
   SheetsConnectionStatusDto,
   SheetsFollowUpDto,
@@ -480,6 +483,23 @@ export const api = {
     setRunning: (runId: string, action: 'pause' | 'resume' | 'cancel') =>
       request<FbGroupsStatusDto>(`/fb-groups/${encodeURIComponent(runId)}/${action}`, {
         method: 'POST',
+      }),
+  },
+
+  /**
+   * Meta Ads Library prospecting: the worker on the PC uploads every verified
+   * school↔ad pair, and the filter copies the matching rows of the selected tab
+   * into a new tab of the same spreadsheet.
+   */
+  metaAds: {
+    status: (spreadsheetId: string, sheetTitle: string) =>
+      request<MetaAdsStatusDto>('/meta-ads/status', {
+        query: { spreadsheetId, sheetTitle },
+      }),
+    filter: (spreadsheetId: string, sheetTitle: string, mode: MetaAdFilterMode) =>
+      request<MetaAdFilterResultDto>('/meta-ads/filter', {
+        method: 'POST',
+        body: { spreadsheetId, sheetTitle, mode },
       }),
   },
 };

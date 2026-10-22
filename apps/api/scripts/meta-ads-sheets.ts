@@ -5,6 +5,7 @@ import { resolve, dirname } from 'node:path';
 import { PrismaClient } from '@prisma/client';
 
 import { decryptSecret } from '../src/common/secret-box';
+import { facebookKey, nameKey } from '../src/sheets/facebook-url';
 
 const books = [
   {
@@ -185,52 +186,6 @@ async function main() {
   );
 }
 
-function facebookKey(raw: string): string {
-  try {
-    const u = new URL(raw.includes('://') ? raw : `https://${raw}`);
-    if (
-      !['facebook.com', 'www.facebook.com', 'm.facebook.com', 'mbasic.facebook.com'].includes(
-        u.hostname,
-      )
-    )
-      return '';
-    const p = u.pathname
-      .split('/')
-      .filter(Boolean)
-      .map((v) => decodeURIComponent(v).toLowerCase());
-    if (p.length === 1 && p[0] === 'profile.php') {
-      const id = u.searchParams.get('id') ?? '';
-      return /^\d+$/.test(id) ? `id:${id}` : '';
-    }
-    if (p.length === 3 && ['people', 'pages'].includes(p[0]!) && /^\d+$/.test(p[2]!))
-      return `id:${p[2]}`;
-    if (
-      p.length === 1 &&
-      ![
-        'ads',
-        'login',
-        'groups',
-        'watch',
-        'share',
-        'help',
-        'reel',
-        'photo.php',
-        'profile.php',
-        'home.php',
-        'settings',
-        'marketplace',
-        'events',
-        'gaming',
-        'l.php',
-      ].includes(p[0]!)
-    )
-      return `${/^\d+$/.test(p[0]!) ? 'id' : 'name'}:${p[0]}`;
-  } catch {
-    /* Unrecognized profiles require review. */
-  }
-  return '';
-}
-
 async function applyVerified(
   file: string,
   leads: Lead[],
@@ -261,15 +216,7 @@ async function applyVerified(
     const key = facebookKey(lead.facebookUrl);
     if (!key || key !== facebookKey(ad.facebookUrl) || !/^\d+$/.test(ad.adId)) continue;
     if (ad.adUrl !== `https://www.facebook.com/ads/library/?id=${ad.adId}`) continue;
-    const normalizeName = (v: string) =>
-      v
-        .normalize('NFKC')
-        .toLowerCase()
-        .replaceAll('&', ' and ')
-        .replace(/[^\p{L}\p{N}_\s]/gu, ' ')
-        .trim()
-        .replace(/\s+/g, ' ');
-    if (normalizeName(ad.name) !== normalizeName(lead.title)) continue;
+    if (nameKey(ad.name) !== nameKey(lead.title)) continue;
     if (!['Active', 'Inactive'].includes(ad.status)) continue;
     // Independently check the date interval instead of trusting the exported TRUE.
     if (allTime !== true) {
