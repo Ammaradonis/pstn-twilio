@@ -60,8 +60,9 @@ from .sources import (
 )
 from .validate import DomainChecker, DnsUnavailable, plausible
 from .scoring import ScoreWeights, load_weights
-from .social import (PROFILE_HOSTS, candidate_handles, is_profile as social_is_profile,
-                     normalise as social_normalise, platform_of as social_platform_of)
+from .social import (PROFILE_HOSTS, SIGNED_IN_HOSTS, candidate_handles,
+                     is_profile as social_is_profile, normalise as social_normalise,
+                     platform_of as social_platform_of)
 
 log = logging.getLogger(__name__)
 _extract = tldextract.TLDExtract(suffix_list_urls=(), cache_dir=None)

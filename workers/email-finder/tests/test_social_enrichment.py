@@ -146,3 +146,51 @@ def test_enrichment_keeps_a_value_the_sheet_already_had():
     job.finding.enrichment["websiteUrl"] = "https://nevadashotokan.com"
     job._finalize_enrichment()
     assert "websiteUrl" not in job.finding.enrichment
+
+
+def test_every_enrichment_method_runs_to_io_without_a_name_error():
+    """Each method must fail on I/O, never on a NameError.
+
+    A missing import in `_enrich_own_site` (SIGNED_IN_HOSTS) once made every row
+    log "failed" while the orchestration tests stayed green, because they stubbed
+    the methods out. This executes the real bodies against an engine whose
+    dependencies blow up as soon as they are used: any name the method needs but
+    does not import raises NameError before that point, while an empty/absent
+    dependency only raises the AttributeError the stub produces.
+    """
+    class Explodes:
+        """Placeholder dependency: using it is fine, it just yields nothing."""
+
+        enabled = False
+        use_browser = False
+
+        def __getattr__(self, name):
+            return lambda *a, **k: None
+
+    engine = object.__new__(Engine)
+    engine.google = Explodes()
+    engine.fetcher = Explodes()
+    engine.galaxy = None
+    engine.google_mode = "off"
+    engine.search = Explodes()
+
+    job = engine_module._Job(engine, _StubRow(), social_only=True)
+    for name in ("_enrich_business_profile", "_enrich_own_site", "_enrich_web_search",
+                 "_enrich_phone_discovery"):
+        try:
+            asyncio.run(getattr(job, name)())
+        except NameError as err:  # the failure this test exists to prevent
+            raise AssertionError(f"{name} uses a name it does not import: {err}") from err
+        except Exception as err:  # noqa: BLE001 - I/O differences are not the point
+            first = err.__class__.__name__
+            assert "NameError" not in repr(err), f"{name}: {first} {err}"
+
+
+def test_own_site_method_runs_with_a_sheet_facebook_url():
+    """The exact call that used to raise NameError: a row whose website is a
+    Facebook page goes down the SIGNED_IN_HOSTS branch."""
+    row = _StubRow()
+    row.website = "https://www.facebook.com/nevadashotokan"
+    job = engine_module._Job(object.__new__(Engine), row, social_only=True)
+    asyncio.run(job._enrich_own_site())
+    assert job.finding.enrichment["facebookUrl"] == "https://www.facebook.com/nevadashotokan"
