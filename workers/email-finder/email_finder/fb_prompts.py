@@ -97,7 +97,7 @@ class CommentRequest:
     group_name: str = ""
     group_kind: str = "owners"
     author_role: str = "unknown"
-    standing: str = "member, have commented before"
+    standing: str = "unknown"
     tone: str = "dry and practical"
     length: str = "60-110 words"
     thread_comment: str = ""  # set for mode=thread_reply
@@ -411,7 +411,7 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--group-kind", default="owners")
     parser.add_argument("--author", default="unknown")
     parser.add_argument("--fact", action="append", default=[],
-                        help="a number we may cite (repeatable)")
+                        help="verified identity, capability, result, resource, or group rule (repeatable)")
     parser.add_argument("--avoid", action="append", default=[],
                         help="a phrase we are resting (repeatable)")
     parser.add_argument("--no-cta", action="store_true",

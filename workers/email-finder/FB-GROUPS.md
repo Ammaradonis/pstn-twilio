@@ -193,23 +193,25 @@ commenting on them. The opener quotes something they actually wrote
 
 Two files, and they are the deliverable as much as the code:
 
-- [`prompts/fb-comment-system.md`](prompts/fb-comment-system.md) — persona, the
-  four-beat comment, voice rules, the payout library, the CTA engine, hard bans,
-  modes, self-check, JSON contract.
+- [`prompts/fb-comment-system.md`](prompts/fb-comment-system.md) — truthful identity,
+  useful public answers, curiosity invitations with deliverable follow-ups,
+  thread limits, voice rules, and the JSON contract.
 - [`prompts/fb-comment-user.md`](prompts/fb-comment-user.md) — the fillable
   per-post prompt: market, group, author, thread state, citable facts, phrases
-  being rested, two examples that work and one that does not.
+  being rested, group rules, and the specific comment being answered.
 
-The four beats: **hook** (proves you read their post) → **answer** (the diagnosis
-and the arithmetic, useful even if they never DM) → **earned aside** (first-person
-proof, no product name) → **curiosity CTA** (one concrete artifact, mechanism
-withheld).
+The four beats: **hook** (a specific detail from their post) → **answer** (a useful
+action and a way to check it) → **earned aside** (optional, supported by supplied
+facts) → **curiosity CTA** (a concrete next step, delivered in `dm_followup`).
+Answer the main question publicly. Use first-person proof only when verified;
+draft the promised checklist or script before offering it. Additional replies
+in the same thread add distinct advice without repeating its CTA.
 
 `fb_prompts.py` renders the user prompt from a `CommentRequest`, calls DeepSeek
 (`deepseek-chat`, JSON mode), and then runs `check()` — the gate every comment
 must pass before it can reach a phone:
 
-- word count in range (60–110; 40–80 for a thread reply)
+- word count in range (60–110; 40–90 for a thread reply)
 - no link, no price, no emoji, no exclamation mark, no hashtag, no all-caps
 - no "as an AI", no product name, no corporate vocabulary, no guarantee or fake deadline
 - a CTA in the **last** sentence when the post has one available, with a keyword;

@@ -1,103 +1,56 @@
-# USER PROMPT — one Facebook post in, one comment out
+# USER PROMPT — One owner question or comment
 
-Fill the six marked blocks. Everything above `BEGIN POST` is context; the post itself goes at the bottom. If a block is unknown, write `unknown` — do not delete the label.
+Write one reply using the system prompt. Fill the marked fields; write `unknown` when necessary. Copy only the returned `comment` field into Facebook. Keep `dm_followup` for delivering the promised resource if someone asks.
 
----
+## Context
 
-## CONTEXT
+- Market: <<< MARKET — US or UK >>>
+- Group and audience: <<< GROUP NAME — and what kind of group it is: owners / martial arts / local community >>>
+- Author's known role: <<< owner / instructor / manager / parent / unknown >>>
+- Our actual standing in this group: <<< member since when, whether we have posted before, whether anyone there knows us >>>
+- Tone: <<< e.g. dry and practical / warm but blunt / short and unbothered >>>
+- Original comment length: <<< 60-110 words, default >>>
 
-- **Market:** `<<< MARKET — US or UK >>>`
-- **Group:** `<<< GROUP NAME — and what kind of group it is: owners / martial arts / local community >>>`
-- **Who wrote the post:** `<<< owner / instructor / manager / parent / unknown >>>`
-- **Our standing in this group:** `<<< member since when, whether we have posted before, whether anyone there knows us >>>`
-- **Tone to hit:** `<<< e.g. dry and practical / warm but blunt / short and unbothered >>>`
-- **Length:** `<<< 60-110 words, default >>>`
+## Facts and constraints we may use
 
-## THREAD STATE
+Include our real role; services we actually provide; verified experience or results, if any; a ready-to-send resource, if any; and relevant group rules. Do not copy example numbers unless they are true. If no resource is supplied, draft a useful checklist or script in `dm_followup` before promising it. Proposed checks and numbered steps are allowed; invented performance statistics are not.
 
-- **Have we already commented on this post?** `<<< no / yes: how many times >>>`
-- **Is a CTA still unused on this post?** `<<< yes / no — if no, write the comment without any CTA >>>`
-- **Our earlier comments on this post (do not repeat a phrase or a CTA):**
-
-```
-<<< paste them, or "none" >>>
-```
-
-## FACTS WE MAY CITE
-
-Only these numbers may appear as fact. Anything not listed must be asked as a question or left out.
-
-```
+```text
 <<< e.g. "our answered-call rate went from ~50% to ~90% after 4-9pm cover";
      "average student stays 14 months at $165/mo";
      "we mystery-called 11 schools in our county at 6:40pm, 6 rang out" >>>
 ```
 
-## DO NOT USE
+## Thread state
 
+- Have we already commented on this post? <<< no / yes: how many times >>>
+- Is the thread's single CTA still available? <<< yes / no — if no, write the comment without any CTA >>>
+- Our earlier comments and replies:
+
+```text
+<<< paste them, or "none" >>>
 ```
+
+- Phrases to avoid repeating:
+
+```text
 <<< phrases already worn out this week, e.g. "voicemail is where students go to die" >>>
 ```
 
-## TWO THAT WORK
+## Owner's post
 
-> Price on the phone is a trap you set for yourself. We stopped quoting it. Whoever answers says the first class is free, asks the kid's age, books a time. Cost gets discussed on the mat after they have watched their kid smile. Our answered rate went from about half to nearly all of it once someone other than me picked up between four and nine. DM me "price script" and I'll send the three lines we use, plus what to say when they push.
-
-> Ring your own school at 6:40 on a Tuesday and listen to what a parent gets. Most owners have never done it, and most of them hear a voicemail. You are not short of enquiries. You are short of someone to answer them, and that is a cheaper problem than more ads. I have rung a lot of schools at that hour; the ones that answer are not better at karate. DM me "ringout" and I'll send the test — the reason it lands is not the recording.
-
-## ONE THAT DOES NOT
-
-> As a leading provider of AI receptionist solutions for martial arts schools, we offer 24/7 answering starting at $497/month, book a free demo today! 🔥
-
-Rejected because: it names a product, a price, a company, a link-shaped CTA, an emoji, an exclamation mark, and answers nothing.
-
----
-
-## THE POST
-
-**Author wrote:**
-
-```
+```text
 <<< PASTE THE FACEBOOK POST OR COMMENT HERE, VERBATIM — keep the typos >>>
 ```
 
-**If this is a reply to a specific comment, paste that comment here and set mode to `thread_reply`:**
+If replying to a specific comment, paste it below and set mode to `thread_reply` (40–90 words). Keep the original post above as context. Answer the specific commenter rather than repeating the original advice.
 
-```
+```text
 <<< THREAD COMMENT, or "none" >>>
 ```
 
----
+## Task
 
-## TASK
+Write a specific hook, a useful answer, an optional earned aside based on real facts, and one curiosity CTA if permitted and unused. Leave the reader with a useful action even if they never message us. The CTA offers a concrete next step and a reason to want it, not a vague secret or a withheld answer to their main question. Deliver that next step in `dm_followup`; do not invent results or personal experience.
 
-Write the comment now, following the system prompt exactly.
-
-Constraints, repeated because they matter:
-
-- 60–110 words (`thread_reply`: 40–90).
-- Four beats: hook, answer, earned aside, curiosity CTA.
-- No price, no link, no product name, no emoji, no exclamation mark, no hashtag, no all-caps.
-- Match the market's spelling and currency.
-- The CTA names one concrete thing and withholds why it works — one closing sentence, at most 24 words — and only if a CTA is still available on this post.
-- If this post should not be commented on at all, return `"action": "skip"` with a one-line reason instead of writing anything.
-
-Return JSON only:
-
-```json
-{
-  "action": "comment" | "skip",
-  "mode": "public_comment" | "thread_reply" | "skip",
-  "comment": "the exact text to paste",
-  "word_count": 0,
-  "hook_used": "",
-  "answer_claim": "",
-  "pitch_line": "",
-  "cta_keyword": "",
-  "cta_used": true,
-  "market_spelling": "US",
-  "risk_flags": [],
-  "skip_reason": "",
-  "dm_followup": ""
-}
-```
+Return the system prompt's JSON object only, with `"action": "comment"` or `"action": "skip"`. No explanation outside the JSON.
