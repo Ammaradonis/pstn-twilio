@@ -101,6 +101,9 @@ GROUP_MEMBERS = re.compile(r"([\d.,]+)\s*([km])?\s*(?=members?\b)", re.I)
 # A label that is nothing but the count ("12.4K members"), as opposed to a
 # card that mentions one.
 MEMBER_ONLY = re.compile(r"^[\d.,]+\s*[km]?\s*(?:members?|followers?)$", re.I)
+# A card's metadata can also arrive as its own node ("Public \u00b7 6.2K members").
+# It names no group, so it is not one.
+LEADING_META = re.compile(r"^(?:public|private)\b|^[\d.,]+\s*[km]?\s*members?\b", re.I)
 CARD_META = re.compile(
     r",\s*(?:public|private)\b|\s[·•]\s*(?:public|private)\b|"
     r",?\s*[\d.,]+\s*[km]?\s*members?\b|\s[·•]\s*\d+\+?\s*posts?\b", re.I)
@@ -200,7 +203,7 @@ def _card_from_label(node: Node) -> GroupCandidate | None:
     names neither.
     """
     label = node.label.strip()
-    if not label or SEARCH_CHIP.search(label):
+    if not label or SEARCH_CHIP.search(label) or LEADING_META.match(label):
         return None
     members = GROUP_MEMBERS.search(label)
     if not members:
@@ -618,6 +621,17 @@ class FacebookGroups:
         return await self.phone._screen()
 
     async def _open(self, url: str, package: str = FACEBOOK) -> None:
+        """Wake the phone, clear whatever covers the app, then follow the link.
+
+        A20e leaves the notification shade down after other work, and a link
+        launched behind the shade reads as "the app never opened" on every
+        screen dump. One wake and one Back costs a second and saves a search.
+        """
+        try:
+            await self.phone._shell("input keyevent KEYCODE_WAKEUP")
+            await self.phone._shell("input keyevent KEYCODE_BACK")
+        except PhoneUnavailable:
+            pass
         quoted = url.replace("'", "%27")
         await self.phone._input(
             f"am start -a android.intent.action.VIEW -d '{quoted}' -p {package}")
@@ -640,25 +654,35 @@ class FacebookGroups:
             return "Facebook is signed out on the phone"
         return ""
 
-    async def _reserve(self, action: str) -> tuple[bool, str]:
-        """Book one unit of an action against both counters, or refuse.
-
-        The counters live in the shared cache, so two processes, a restarted
-        worker and a probe script all spend from the same daily allowance.
-        """
+    async def _peek(self, action: str) -> tuple[bool, str]:
+        """May this action run now? Reads the caps without spending a slot."""
         from .fb_engage import can_act, reserve_name
 
         day_name, hour_name = reserve_name(action)
         counts = {action: self.phone.cache.count(day_name), hour_name:
                   self.phone.cache.count(hour_name)}
-        allowed, why = can_act(self.limits, self._session, action, counts)
-        if not allowed:
-            return False, why
+        return can_act(self.limits, self._session, action, counts)
+
+    async def _commit(self, action: str) -> tuple[bool, str]:
+        """Spend one unit of an action's allowance on both counters.
+
+        The counters live in the shared cache, so two processes, a restarted
+        worker and a probe script all spend from the same daily allowance.
+        """
+        from .fb_engage import reserve_name
+
+        day_name, hour_name = reserve_name(action)
         if not self.phone.cache.reserve(day_name, self.limits.cap(action, per_day=True)):
             return False, f"daily {action} cap reached"
         if not self.phone.cache.reserve(hour_name, self.limits.cap(action, per_day=False)):
             return False, f"hourly {action} cap reached"
         return True, ""
+
+    async def _reserve(self, action: str) -> tuple[bool, str]:
+        allowed, why = await self._peek(action)
+        if not allowed:
+            return False, why
+        return await self._commit(action)
 
     async def _turn(self, app: str = "facebook") -> str:
         """None-equivalent '' when the phone may be used now, else why not."""
@@ -682,8 +706,14 @@ class FacebookGroups:
         silently lose a town.
         """
         await self._open(SEARCH_URL.format(query=term.replace(" ", "%20")))
-        await self._settle(2.5)
-        nodes = await self._screen()
+        nodes: list[Node] = []
+        # The A20e takes a few seconds to swap a busy Reels screen for the search
+        # box, and declaring it "never loaded" costs the town its only search.
+        for wait in (2.5, 2.5, 3.0):
+            await self._settle(wait)
+            nodes = await self._screen()
+            if any(n.package.startswith(FACEBOOK) and n.label for n in nodes):
+                break
         if not any(n.package.startswith(FACEBOOK) and n.label for n in nodes):
             return False
         if not group_rows(nodes):
@@ -702,7 +732,7 @@ class FacebookGroups:
         if why:
             log.info("Facebook search skipped (%s): %s", term.term, why)
             return []
-        allowed, why = await self._reserve("search")
+        allowed, why = await self._peek("search")
         if not allowed:
             log.info("Facebook search skipped (%s): %s", term.term, why)
             return []
@@ -711,8 +741,15 @@ class FacebookGroups:
                 return []
             try:
                 if not await self._submit_search(term.term):
+                    # Not counted, and not charged: the cap is for searches that
+                    # reached Facebook, not for attempts that never got there.
                     log.info("Facebook search %r never loaded in the app; not counted",
                              term.term)
+                    return []
+                spent, why = await self._commit("search")
+                if not spent:
+                    log.info("Facebook search %r loaded but had no budget left: %s",
+                             term.term, why)
                     return []
                 found: list[GroupCandidate] = []
                 seen: set[str] = set()

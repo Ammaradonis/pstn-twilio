@@ -237,7 +237,10 @@ class FbGroupsRunner:
                 found += 1
         result.groupsFound = found
         result.stage = "SEARCH" if self.next_searches(1) else "JOIN"
-        return f"{len(terms)} search(es), {found} new group(s)"
+        done = result.searches
+        skipped = len(terms) - done
+        note = f"{done} search(es) done, {found} new group(s)"
+        return note + (f" ({skipped} not run)" if skipped else "")
 
     async def _join(self, count: int, result: Batch) -> str:
         waiting = sorted((record for record in self.store.all()

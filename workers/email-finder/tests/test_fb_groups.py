@@ -116,6 +116,28 @@ def test_the_filter_chips_are_not_groups():
     assert group_rows(nodes) == []
 
 
+def test_a_metadata_only_node_is_not_a_group():
+    # The same card also exposes "Public \u00b7 6.2K members" as its own node.
+    nodes = [
+        node(text="Public \u00b7 6.2K members", bounds=(40, 300, 680, 340)),
+        node(text="Ryukyu Martial Arts,Public \u00b7 6.2K members", clickable=True,
+             bounds=(40, 350, 680, 430)),
+    ]
+    assert [row.name for row in group_rows(nodes)] == ["Ryukyu Martial Arts"]
+
+
+def test_two_cards_that_share_a_band_both_survive():
+    # They sit close enough to merge into one band; parsing per label is what
+    # keeps the second one from being lost.
+    nodes = [
+        node(text="TNT Taekwondo,Public \u00b7 275 members", clickable=True,
+             bounds=(40, 300, 680, 380)),
+        node(text="Korean Martial Arts,Public \u00b7 2.2K members", clickable=True,
+             bounds=(40, 390, 680, 470)),
+    ]
+    assert [row.name for row in group_rows(nodes)] == ["TNT Taekwondo", "Korean Martial Arts"]
+
+
 def test_the_group_name_is_cut_out_of_the_card_text():
     assert card_name("TNT Taekwondo,Public \u00b7 275 members") == "TNT Taekwondo"
     assert card_name("Korean Martial Arts,Public \u00b7 2.2K members \u00b7 3 posts a day") \

@@ -107,6 +107,39 @@ the reason, and a group is never joined twice.
 
 ---
 
+## What the phone actually showed
+
+Calibrating against the Galaxy A20e changed four things that were wrong in the
+first draft, and they are recorded here because the next person will assume the
+opposite:
+
+| Assumption                                                 | What the device did                                                                                                                                                                                                              |
+| ---------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `https://www.facebook.com/search/groups/?q=` opens the app | It resolves to **Chrome**. The app does not claim that URL, so the search never reached Facebook and every search returned nothing. `fb://search?query=` _is_ claimed, and lands on the search box with the query already typed. |
+| The deep link runs the search                              | It only fills the field. Enter submits it, and the results open on an **All results** page whose filter is a chip reading **"Groups search results"**, not a tab called "Groups".                                                |
+| A result card is several nodes (name, then members)        | It is **one accessibility string**: `TNT Taekwondo,Public · 275 members`. The name, the privacy and the count are split back out of it; reading bands merged adjacent cards and lost every second group.                         |
+| A card carries a group URL                                 | It does not. The card is tapped to open the group, which is why `join` and `visit` fall back to `_open_group()` when no URL was captured.                                                                                        |
+
+Two more device facts: a **Page** on the same screen says "followers", not
+"members" (that is how Pages are excluded), and the card's metadata also arrives
+as its own node ("Public · 6.2K members"), which would otherwise parse as a group
+called "Public".
+
+To re-calibrate after a Facebook release, take the phone away from the ambient
+session politely — the worker honour a lock file — and dump what is really there:
+
+```powershell
+cd workers\email-finder
+.venv\Scripts\python.exe -m pytest tests\test_fb_groups.py -q   # the shapes already pinned
+```
+
+The three tests named `test_the_real_group_card_layout_is_parsed`,
+`test_a_page_result_is_not_a_group` and `test_the_filter_chips_are_not_groups`
+use labels copied verbatim from the device; update them from a fresh dump when
+Facebook changes the card.
+
+---
+
 ## 4. Engagement: the rules, in one place
 
 `fb_engage.py` is the Facebook analogue of `ambient.py` — pure decisions, seeded,
