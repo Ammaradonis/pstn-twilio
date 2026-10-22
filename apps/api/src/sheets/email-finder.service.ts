@@ -331,6 +331,13 @@ export class EmailFinderService implements OnModuleDestroy, OnModuleInit {
       });
     }
     await this.redis.client.set(`email-finder:job:${job.id}:had-email`, String(alreadyHadEmail));
+    // Both skips are worth a line: "nothing queued" has two very different
+    // causes, and the counter that cannot be seen from the tab is the one a
+    // confused user asks about.
+    this.logger.log(
+      `${mode} "${sheetTitle}": queued ${queued.length} row(s); ` +
+        `${alreadyHadEmail} already had an email, ${alreadyComplete} already complete.`,
+    );
     this.scheduleFlush(job.id, 100);
     await this.finishIfComplete(job.id);
     return this.status(userId, spreadsheetId, sheetTitle, mode);

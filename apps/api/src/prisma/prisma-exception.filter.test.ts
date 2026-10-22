@@ -31,6 +31,10 @@ class QuotaProbeController {
   }
 }
 
+// Nest's first `app.init()` in a cold worker pulls in the whole DI graph and
+// routinely passes five seconds on a loaded CI runner; the default timeout made
+// this the flake that failed main's CI. The assertion is about the filter, not
+// about how fast a container boots.
 it('registers the filter globally and sends a 503 JSON response over HTTP', async () => {
   const module = await Test.createTestingModule({
     imports: [PrismaModule],
@@ -51,7 +55,7 @@ it('registers the filter globally and sends a 503 JSON response over HTTP', asyn
   } finally {
     await app.close();
   }
-});
+}, 20_000);
 
 describe('database availability errors', () => {
   it.each([

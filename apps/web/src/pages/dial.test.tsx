@@ -91,6 +91,28 @@ vi.mock('../lib/api-client', () => {
     workerOnline: true,
     workerLastSeen: null,
   };
+  // The "FB groups" panel polls this on mount. A rejected status throws inside
+  // the query and turns every dial test into a timeout.
+  const fbGroupsIdle = {
+    runId: null,
+    status: null,
+    stage: null,
+    searches: 0,
+    groupsFound: 0,
+    joined: 0,
+    likes: 0,
+    comments: 0,
+    replies: 0,
+    follows: 0,
+    dms: 0,
+    reviewQueued: 0,
+    note: null,
+    startedAt: null,
+    updatedAt: null,
+    workerOnline: true,
+    workerLastSeen: null,
+    plan: null,
+  };
   class MockApiError extends Error {
     constructor(
       readonly status: number,
@@ -131,6 +153,13 @@ vi.mock('../lib/api-client', () => {
         start: vi.fn().mockResolvedValue(finderStatus),
         status: vi.fn().mockResolvedValue(finderStatus),
         setRunning: vi.fn(),
+      },
+      // The Dial page's "FB groups" panel polls this on mount. Without it the
+      // page throws inside the query and every dial test slows to a timeout.
+      fbGroups: {
+        start: vi.fn().mockResolvedValue(fbGroupsIdle),
+        status: vi.fn().mockResolvedValue(fbGroupsIdle),
+        setRunning: vi.fn().mockResolvedValue(fbGroupsIdle),
       },
     },
   };
