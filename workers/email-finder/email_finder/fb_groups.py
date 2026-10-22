@@ -43,10 +43,17 @@ log = logging.getLogger(__name__)
 FACEBOOK = "com.facebook.katana"
 MESSENGER = "com.facebook.orca"
 
-SEARCH_URL = "https://www.facebook.com/search/groups/?q={query}"
+# Group pages open in the app from an https link (GroupsDeepLinkingAliasActivity),
+# but `https://www.facebook.com/search/groups/?q=` resolves to Chrome: the app
+# does not claim that URL, so a search sent that way never reached Facebook and
+# every search came back with nothing. `fb://search` is claimed by the app and
+# lands on its search screen with the query already typed, but the search still
+# has to be submitted before any results exist.
+SEARCH_URL = "fb://search?query={query}"
 GROUP_URL = "https://www.facebook.com/groups/{group}"
 MESSAGES_URL = "https://www.facebook.com/messages/"
 SEARCH_SETTLE_S = 6.0
+SEARCH_RESULTS_S = 3.0
 PAGE_SETTLE_S = 4.0
 COMPOSER_WAIT_S = 5.0
 MAX_SEARCH_SCROLLS = 4
@@ -67,7 +74,6 @@ SUBMIT_LABELS = {"post", "send", "comment", "reply", "publish"}
 MORE_LABELS = {"see more", "more", "see all"}
 MEMBER_WORDS = ("member", "members", "followers")
 PRIVACY = re.compile(r"\b(public|private)\b", re.I)
-GROUP_SUFFIX = re.compile(r"\b(group|community|owners?|instructors?|network|hub|forum)\b", re.I)
 POST_MARKERS = {"like", "comment", "share", "send"}
 # Text that belongs to the interface, never to a post or a group's name.
 UI_NOISE = {
@@ -83,6 +89,28 @@ UI_NOISE = {
 NOISE_NAME = re.compile(r"buy[\s/-]*(?:and\s*)?sell|swap|marketplace|classifieds|for sale|"
                         r"\bjobs?\b|hiring|rent|housing|dating|singles|memes|crypto|casino|"
                         r"coupon|promo code", re.I)
+# Facebook's search lands on an "All results" page whose filter chips read
+# "Groups search results", "Pages search results", and so on. They look like
+# cards to a geometry parser and are not groups, so they are excluded by name.
+SEARCH_CHIP = re.compile(r"\bsearch results?\b", re.I)
+GROUPS_CHIP = re.compile(r"^groups\b|groups search results", re.I)
+# A group card's accessibility text is one string: "TNT Taekwondo,Public ·
+# 275 members". Members, not followers: a Page on the same screen shows
+# followers, and a Page is not a group.
+GROUP_MEMBERS = re.compile(r"([\d.,]+)\s*([km])?\s*(?=members?\b)", re.I)
+# A label that is nothing but the count ("12.4K members"), as opposed to a
+# card that mentions one.
+MEMBER_ONLY = re.compile(r"^[\d.,]+\s*[km]?\s*(?:members?|followers?)$", re.I)
+CARD_META = re.compile(
+    r",\s*(?:public|private)\b|\s[·•]\s*(?:public|private)\b|"
+    r",?\s*[\d.,]+\s*[km]?\s*members?\b|\s[·•]\s*\d+\+?\s*posts?\b", re.I)
+
+
+def card_name(text: str) -> str:
+    """The group's name out of a card's concatenated accessibility text."""
+    cut = CARD_META.search(text or "")
+    name = (text[: cut.start()] if cut else (text or "")).strip()
+    return name.strip(" ,.|·•\uFFFC").strip()
 # Facebook's own security copy. A checkpoint means the phone goes quiet; a login
 # screen means only that the app needs signing in again.
 CHALLENGE_SCREEN_TEXT = re.compile(
@@ -140,53 +168,100 @@ def is_ui(text: str) -> bool:
 
 
 def longest_text(row: list[Node]) -> str:
-    """The most word-like label in a row: a group name or a post's opening."""
+    """The most word-like label in a row: a group name or a post's opening.
+
+    A label that is *only* a member count is the count line; a card that merely
+    mentions members is the card, and it is what carries the name.
+    """
     candidates = [n.label.strip() for n in row
-                  if not is_ui(n.label) and not MEMBERS.search(n.label)
-                  and not PRIVACY.fullmatch(n.label.strip())]
+                  if not is_ui(n.label) and not MEMBER_ONLY.match(n.label.strip())
+                  and not PRIVACY.fullmatch(n.label.strip())
+                  and not SEARCH_CHIP.search(n.label)]
     if not candidates:
         return ""
     return max(candidates, key=lambda text: (len(text.split()), len(text)))
 
 
-def group_rows(nodes: list[Node]) -> list[GroupCandidate]:
-    """Group search results -> candidates, with member counts when shown.
+def groups_chip(nodes: list[Node]) -> Node | None:
+    """The "Groups search results" filter on Facebook's All-results page."""
+    for node in nodes:
+        if node.clickable and node.center != (0, 0) and GROUPS_CHIP.search(node.label.strip()):
+            return node
+    return find_button(nodes, "Groups")
 
-    The name is the longest sensible text in the card; the URL is the clickable
-    node's own hint when Facebook exposes one, and is left empty otherwise
-    rather than invented.
+
+def _card_from_label(node: Node) -> GroupCandidate | None:
+    """One result card, when Facebook has put it in a single label.
+
+    That is what the app actually does ("TNT Taekwondo,Public \u00b7 275
+    members"), and parsing per label rather than per band means two cards that
+    sit close together cannot be merged into one and lost. A card qualifies by
+    naming members: a Page on the same screen names followers, and a filter chip
+    names neither.
     """
+    label = node.label.strip()
+    if not label or SEARCH_CHIP.search(label):
+        return None
+    members = GROUP_MEMBERS.search(label)
+    if not members:
+        return None
+    name = card_name(label)
+    if not name or len(name) < 3 or not name[0].isalnum():
+        return None
+    found = PRIVACY.search(label)
+    candidate = score_group(name, None, parse_members(members.group(0)))
+    candidate.privacy = found.group(1).casefold() if found else ""
+    return candidate
+
+
+def group_rows(nodes: list[Node]) -> list[GroupCandidate]:
+    """Group search results -> candidates, with member counts when shown."""
+    shown = visible(nodes)
     out: list[GroupCandidate] = []
     seen: set[str] = set()
-    height = screen_height(visible(nodes))
-    for row in bands(visible(nodes), gap=18, max_height=height * 0.30):
-        name = longest_text(row)
-        if not name or len(name) < 3 or not name[0].isalnum():
+    for node in shown:
+        candidate = _card_from_label(node)
+        if candidate is None or candidate.name.casefold() in seen:
             continue
-        if name.casefold() in seen:
+        candidate.url = _url_hint([node])
+        seen.add(candidate.name.casefold())
+        out.append(candidate)
+    if out:
+        return out
+
+    # Older layouts split one card across several nodes; fall back to reading
+    # the band they sit in.
+    height = screen_height(shown)
+    for row in bands(shown, gap=18, max_height=height * 0.30):
+        joined = " ".join(n.label for n in row if n.label)
+        if not GROUP_MEMBERS.search(joined) or SEARCH_CHIP.search(joined):
             continue
-        if not GROUP_SUFFIX.search(name) and not NOISE_NAME.search(name):
-            # A card with no group-ish word and no obvious noise is probably a
-            # heading or a "People also search for"; skip it quietly.
+        name = card_name(longest_text(row))
+        if not name or len(name) < 3 or not name[0].isalnum() or name.casefold() in seen:
             continue
-        members = 0
-        for node in row:
-            found = MEMBERS.search(node.label)
-            if found:
-                members = parse_members(found.group(0))
-                break
-        privacy = ""
-        for node in row:
-            found = PRIVACY.search(node.label)
-            if found:
-                privacy = found.group(1).casefold()
-                break
-        candidate = score_group(name, None, members)
+        found = PRIVACY.search(joined)
+        candidate = score_group(name, None, parse_members(GROUP_MEMBERS.search(joined).group(0)))
+        candidate.privacy = found.group(1).casefold() if found else ""
         candidate.url = _url_hint(row)
-        candidate.privacy = privacy
         seen.add(name.casefold())
         out.append(candidate)
     return out
+
+
+def group_card(nodes: list[Node], name: str) -> Node | None:
+    """The tappable node for a named card, so a group can be opened without a URL."""
+    target = (name or "").casefold().strip()
+    if not target:
+        return None
+    height = screen_height(visible(nodes))
+    for row in bands(visible(nodes), gap=18, max_height=height * 0.30):
+        joined = " ".join(n.label for n in row).casefold()
+        if target not in joined:
+            continue
+        for node in row:
+            if node.clickable and node.center != (0, 0) and target in node.label.casefold():
+                return node
+    return None
 
 
 def _url_hint(row: list[Node]) -> str:
@@ -597,6 +672,30 @@ class FacebookGroups:
 
     # ── discovery ────────────────────────────────────────────────────────────
 
+    async def _submit_search(self, term: str) -> bool:
+        """Open the app's search and run the query. False when it never loaded.
+
+        `fb://search` only opens the search screen with the query typed into the
+        field; pressing Enter is what produces results, and the "Groups" tab is
+        what narrows them to groups. Each step is verified before the next: a
+        search that never loaded must not be recorded as run, or the plan would
+        silently lose a town.
+        """
+        await self._open(SEARCH_URL.format(query=term.replace(" ", "%20")))
+        await self._settle(2.5)
+        nodes = await self._screen()
+        if not any(n.package.startswith(FACEBOOK) and n.label for n in nodes):
+            return False
+        if not group_rows(nodes):
+            await self.phone._key("KEYCODE_ENTER")
+            await self._settle(SEARCH_RESULTS_S)
+            nodes = await self._screen()
+        chip = groups_chip(nodes) if not group_rows(nodes) else None
+        if chip is not None:
+            await self.phone._tap(chip)
+            await self._settle(SEARCH_RESULTS_S)
+        return True
+
     async def search(self, term: SearchTerm) -> list[GroupCandidate]:
         """Run one search phrase and return the groups it shows."""
         why = await self._turn()
@@ -611,16 +710,19 @@ class FacebookGroups:
             if not await self.phone._hold_phone(wait_s=10):
                 return []
             try:
-                await self._open(SEARCH_URL.format(query=term.term.replace(" ", "%20")))
-                await self._settle(SEARCH_SETTLE_S)
+                if not await self._submit_search(term.term):
+                    log.info("Facebook search %r never loaded in the app; not counted",
+                             term.term)
+                    return []
                 found: list[GroupCandidate] = []
                 seen: set[str] = set()
-                for _ in range(MAX_SEARCH_SCROLLS):
+                for attempt in range(MAX_SEARCH_SCROLLS):
                     blocked = await self._guard()
                     if blocked:
                         log.info("Facebook search stopped: %s", blocked)
                         break
-                    for candidate in group_rows(await self._screen()):
+                    rows = group_rows(await self._screen())
+                    for candidate in rows:
                         if candidate.name.casefold() in seen:
                             continue
                         seen.add(candidate.name.casefold())
@@ -629,7 +731,12 @@ class FacebookGroups:
                         scored.privacy = candidate.privacy
                         scored.found_by = term.term
                         found.append(scored)
-                    if not found:
+                    if not rows:
+                        if attempt == 0:
+                            # Results are fetched after the tab settles; one more
+                            # read is cheaper than losing a whole town's search.
+                            await self._settle(SEARCH_RESULTS_S)
+                            continue
                         break
                     width, height = await self.phone._geometry()
                     await self.phone._swipe(_feed_swipe(width, height))
@@ -684,12 +791,13 @@ class FacebookGroups:
             if not await self.phone._hold_phone(wait_s=10):
                 return record
             try:
-                url = candidate.url or await self._resolve_group_url(candidate.name)
-                if not url:
-                    record.state, record.note = "failed", "no group URL on the result"
+                if candidate.url:
+                    record.url = candidate.url
+                    await self._open(candidate.url)
+                elif not await self._open_group(candidate.name):
+                    record.state = "failed"
+                    record.note = "the group could not be opened from its card"
                     return record
-                record.url = url
-                await self._open(url)
                 await self._settle(PAGE_SETTLE_S)
                 blocked = await self._guard()
                 if blocked:
@@ -723,17 +831,24 @@ class FacebookGroups:
                 self.store.put(record)
                 self.phone._release_phone()
 
-    async def _resolve_group_url(self, name: str) -> str:
-        """Search for the exact name and take the matching group's URL."""
-        await self._open(SEARCH_URL.format(query=name.replace(" ", "%20")))
-        await self._settle(SEARCH_SETTLE_S)
-        for _ in range(2):
-            for candidate in group_rows(await self._screen()):
-                if candidate.url and candidate.name.casefold() == name.casefold():
-                    return candidate.url
+    async def _open_group(self, name: str) -> bool:
+        """Open a group by tapping its card, for the results that carry no URL.
+
+        Facebook's search results put a card's text in the accessibility tree but
+        not its link, so the card itself is the only handle. False means the card
+        was not found, which is reported rather than guessed at.
+        """
+        if not await self._submit_search(name):
+            return False
+        for _ in range(3):
+            card = group_card(await self._screen(), name)
+            if card is not None:
+                await self.phone._tap(card)
+                await self._settle(PAGE_SETTLE_S)
+                return True
             await self.phone._swipe(_feed_swipe(*await self.phone._geometry()))
             await self._settle(2.0)
-        return ""
+        return False
 
     # ── the feed ─────────────────────────────────────────────────────────────
 
@@ -759,7 +874,11 @@ class FacebookGroups:
                 visit.blocked = "busy (another process is using the phone)"
                 return visit
             try:
-                await self._open(group.url or GROUP_URL.format(group=group.name))
+                if group.url:
+                    await self._open(group.url)
+                elif not await self._open_group(group.name):
+                    visit.blocked = "the group could not be opened from its card"
+                    return visit
                 await self._settle(PAGE_SETTLE_S)
                 visit.blocked = await self._guard()
                 if visit.blocked:

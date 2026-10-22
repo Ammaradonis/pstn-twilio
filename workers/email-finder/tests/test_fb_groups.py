@@ -19,11 +19,13 @@ from email_finder.fb_groups import (
     GroupStore,
     FacebookGroups,
     bands,
+    card_name,
     challenge_kind,
     clean_text,
     comment_rows,
     composer,
     composer_closed,
+    group_card,
     group_rows,
     input_text_arg,
     join_control,
@@ -46,7 +48,7 @@ def node(text: str = "", desc: str = "", rid: str = "", clickable: bool = False,
                 ((left + right) // 2, (top + bottom) // 2), bounds, selected)
 
 
-def group_card(top: int, name: str, members: str, privacy: str = "Public group") -> list[Node]:
+def card_nodes(top: int, name: str, members: str, privacy: str = "Public group") -> list[Node]:
     return [
         node(text=name, clickable=True, bounds=(40, top, 620, top + 40)),
         node(text=members, bounds=(40, top + 46, 300, top + 70)),
@@ -58,8 +60,8 @@ def group_card(top: int, name: str, members: str, privacy: str = "Public group")
 
 
 def test_a_group_card_yields_its_name_members_and_privacy():
-    nodes = group_card(300, "Martial Arts School Owners", "12.4K members", "Private group")
-    nodes += group_card(560, "Austin Small Business Owners", "3,201 members")
+    nodes = card_nodes(300, "Martial Arts School Owners", "12.4K members", "Private group")
+    nodes += card_nodes(560, "Austin Small Business Owners", "3,201 members")
     found = group_rows(nodes)
     names = [candidate.name for candidate in found]
     assert names == ["Martial Arts School Owners", "Austin Small Business Owners"]
@@ -71,6 +73,62 @@ def test_a_group_card_yields_its_name_members_and_privacy():
 def test_a_card_with_no_word_like_a_group_is_ignored():
     nodes = [node(text="People also search for", clickable=True, bounds=(40, 900, 400, 940))]
     assert group_rows(nodes) == []
+
+
+# The three tests below use labels copied verbatim from the Galaxy A20e, because
+# Facebook puts a whole result card in one accessibility string and the first
+# parser (written from memory) read none of them.
+
+
+def test_the_real_group_card_layout_is_parsed():
+    nodes = [
+        node(text="JIU-JITSU EVERYTHING,Public \u00b7 85K members \u00b7 10+ posts a day",
+             clickable=True, bounds=(40, 300, 680, 380)),
+        node(text="Join", clickable=True, bounds=(560, 390, 680, 440)),
+        node(text="TNT Taekwondo,Public \u00b7 275 members", clickable=True,
+             bounds=(40, 470, 680, 540)),
+        node(text="Korean Martial Arts,Public \u00b7 2.2K members \u00b7 3 posts a day",
+             clickable=True, bounds=(40, 610, 680, 680)),
+    ]
+    rows = group_rows(nodes)
+    assert [row.name for row in rows] == ["JIU-JITSU EVERYTHING", "TNT Taekwondo",
+                                          "Korean Martial Arts"]
+    assert rows[0].members == 85_000 and rows[0].privacy == "public"
+    assert rows[1].members == 275
+    # A martial arts group with no "owners"/"community" in its name still scores
+    # as a martial arts group, and is worth joining on that alone.
+    assert rows[2].kind == "martial-arts"
+
+
+def test_a_page_result_is_not_a_group():
+    # Pages sit on the same search screen and say "followers", not "members".
+    nodes = [node(text="Life Ki-do Martial Arts & Personal Development\uFFFC\uFFFC "
+                       "Martial Arts School \u00b7 1.9K followers", clickable=True,
+                  bounds=(40, 300, 680, 380))]
+    assert group_rows(nodes) == []
+
+
+def test_the_filter_chips_are_not_groups():
+    nodes = [
+        node(text="Groups search results", clickable=True, bounds=(40, 200, 400, 240)),
+        node(text="Pages search results", clickable=True, bounds=(420, 200, 680, 240)),
+    ]
+    assert group_rows(nodes) == []
+
+
+def test_the_group_name_is_cut_out_of_the_card_text():
+    assert card_name("TNT Taekwondo,Public \u00b7 275 members") == "TNT Taekwondo"
+    assert card_name("Korean Martial Arts,Public \u00b7 2.2K members \u00b7 3 posts a day") \
+        == "Korean Martial Arts"
+    assert card_name("Private \u00b7 12 members") == "Private"
+
+
+def test_a_card_can_be_found_to_tap_when_it_has_no_url():
+    nodes = [node(text="TNT Taekwondo,Public \u00b7 275 members", clickable=True,
+                  bounds=(40, 300, 680, 380))]
+    found = group_card(nodes, "TNT Taekwondo")
+    assert found is not None and found.clickable
+    assert group_card(nodes, "A Group We Did Not Search For") is None
 
 
 def test_a_joinable_group_is_recognised():
