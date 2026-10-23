@@ -27,9 +27,35 @@ ROOT = Path(__file__).resolve().parents[2]
 OUT = ROOT / '.cache/meta-ads'
 sys.path.insert(0, str(ROOT / 'workers/email-finder'))
 from email_finder.cookies import import_once, FACEBOOK_HOSTS
-from playwright.async_api import async_playwright
+from playwright.async_api import async_playwright, Error as PlaywrightError, TimeoutError as PlaywrightTimeout
 
 SEEDS = ['martial arts', 'karate', 'taekwondo', 'jiu jitsu', 'kickboxing', 'kung fu', 'judo', 'aikido', 'self defense']
+
+# A page state only the user can clear (a login wall, a checkpoint, a block, or
+# cards this extractor does not recognize). These end the pass on purpose; a
+# timeout or a dropped connection does not, and is handled per query.
+STOP_TEXT = ['temporarily blocked', 'you’re temporarily blocked', 'too many requests', 'confirm you are human']
+
+
+class StopScrape(RuntimeError):
+    """Facebook needs the user; continuing would make it worse."""
+
+
+async def body_text(page) -> str:
+    """The page's visible text, retried.
+
+    The read gets a 15-second timeout and three tries. Its 30-second default
+    raised on a slow ads-library page, and one raised read ended a pass that had
+    hours of evidence behind it (23 Oct).
+    """
+    for attempt in range(3):
+        try:
+            return await page.locator('body').inner_text(timeout=15000)
+        except PlaywrightTimeout:
+            if attempt == 2:
+                raise
+            await page.wait_for_timeout(3000)
+    raise AssertionError('unreachable')
 
 
 def now():
@@ -62,12 +88,69 @@ class Pipeline:
         self.last_sync = 0.0
         self.sync_state = 'disabled' if args.no_sync else 'idle'
         self.sync_note = None
+        self.apply_state = 'idle' if args.apply else 'disabled'
+        self.apply_note = None
         self.counts = {'ads': 0, 'prospects': 0, 'verified': 0, 'searches': 0, 'synced': 0}
 
     def status(self, state, **extra):
         (OUT / 'status.json').write_text(json.dumps({'state': state, 'updatedAt': now(), **self.counts,
                                                      'sync': {'state': self.sync_state, 'note': self.sync_note, 'synced': self.synced},
+                                                     'apply': {'state': self.apply_state, 'note': self.apply_note},
                                                      **extra}, indent=2), encoding='utf-8')
+
+    async def query_reason(self, page, country, query, extractor):
+        """One library search: (why it stopped, cards seen).
+
+        A transient page failure is contained to its own query. It used to raise
+        through the scroll task and take down the whole pass — the run stopped
+        with `interrupted` and hours of collected evidence unexported. It is
+        recorded as 'error', not 'stalled'/'no_results', so a later run retries it.
+        """
+        try:
+            return await self.search(page, country, query, extractor)
+        except PlaywrightError as err:
+            print(json.dumps({'country': country, 'query': query,
+                              'error': str(err)[:300]}), flush=True)
+            return 'error', 0
+
+    async def search(self, page, country, query, extractor):
+        """Scroll one search until it stalls: (stop reason, cards seen)."""
+        params = {'active_status': 'all', 'ad_type': 'all', 'country': country, 'q': query,
+                  'search_type': 'keyword_unordered', 'media_type': 'all'}
+        await page.goto('https://www.facebook.com/ads/library/?' + urlencode(params), wait_until='domcontentloaded', timeout=60000)
+        await page.wait_for_timeout(5000)
+        seen, idle, scrolls = set(), 0, 0
+        while idle < 6:
+            if (OUT / 'STOP').exists():
+                return 'stopped', len(seen)
+            body = await body_text(page)
+            if '/checkpoint' in page.url or '/login' in page.url or await page.locator('input[name="email"], iframe[src*="captcha"]').count():
+                raise StopScrape('Facebook needs manual login or verification; collection stopped.')
+            if any(t in body.lower() for t in STOP_TEXT):
+                raise StopScrape('Facebook access limit encountered; collection stopped.')
+            filters = parse_qs(urlsplit(page.url).query)
+            country_label = 'United States' if country == 'US' else 'United Kingdom'
+            if filters.get('country') != [country] or filters.get('ad_type') != ['all'] or country_label not in body or 'All ads' not in body:
+                raise StopScrape('Could not verify country and All ads filters.')
+            snapshot = await page.evaluate(extractor)
+            if not snapshot and ('No ads match' in body or 'No results found' in body):
+                return 'no_results', 0
+            if not snapshot and scrolls == 0:
+                (OUT / 'unrecognized-page.txt').write_text(body, encoding='utf-8')
+                raise StopScrape('No recognizable ad cards; inspect unrecognized-page.txt. No negative result inferred.')
+            fresh = {a['adId'] for a in snapshot} - seen
+            seen.update(a['adId'] for a in snapshot)
+            idle = 0 if fresh else idle + 1
+            await self.snapshots.put((country, query, page.url, now(), snapshot))
+            # Extraction acknowledges every snapshot before scrolling again.
+            await self.snapshots.join()
+            self.status('running', country=country, query=query, scrolls=scrolls, uniqueInQuery=len(seen))
+            scrolls += 1
+            if self.args.max_scrolls and scrolls >= self.args.max_scrolls:
+                return 'scroll_limit', len(seen)
+            await page.evaluate('window.scrollTo(0, document.documentElement.scrollHeight)')
+            await page.wait_for_timeout(2500)
+        return 'stalled', len(seen)
 
     async def scroll(self, ctx):
         page = await ctx.new_page()
@@ -92,50 +175,12 @@ class Pipeline:
                     prior = self.db.execute('SELECT status FROM searches WHERE country=? AND query=?', (country, query)).fetchone()
                     if prior and prior[0] in ('stalled', 'no_results') and not self.args.refresh:
                         continue
-                    params = {'active_status': 'all', 'ad_type': 'all', 'country': country, 'q': query,
-                              'search_type': 'keyword_unordered', 'media_type': 'all'}
-                    await page.goto('https://www.facebook.com/ads/library/?' + urlencode(params), wait_until='domcontentloaded', timeout=60000)
-                    await page.wait_for_timeout(5000)
-                    seen, idle, scrolls = set(), 0, 0
-                    reason = 'stalled'
-                    while idle < 6:
-                        if (OUT / 'STOP').exists():
-                            reason = 'stopped'
-                            break
-                        body = await page.locator('body').inner_text()
-                        if '/checkpoint' in page.url or '/login' in page.url or await page.locator('input[name="email"], iframe[src*="captcha"]').count():
-                            raise RuntimeError('Facebook needs manual login or verification; collection stopped.')
-                        if any(t in body.lower() for t in ['temporarily blocked', 'you’re temporarily blocked', 'too many requests', 'confirm you are human']):
-                            raise RuntimeError('Facebook access limit encountered; collection stopped.')
-                        filters = parse_qs(urlsplit(page.url).query)
-                        country_label = 'United States' if country == 'US' else 'United Kingdom'
-                        if filters.get('country') != [country] or filters.get('ad_type') != ['all'] or country_label not in body or 'All ads' not in body:
-                            raise RuntimeError('Could not verify country and All ads filters.')
-                        snapshot = await page.evaluate(extractor)
-                        if not snapshot and ('No ads match' in body or 'No results found' in body):
-                            reason = 'no_results'
-                            break
-                        if not snapshot and scrolls == 0:
-                            (OUT / 'unrecognized-page.txt').write_text(body, encoding='utf-8')
-                            raise RuntimeError('No recognizable ad cards; inspect unrecognized-page.txt. No negative result inferred.')
-                        fresh = {a['adId'] for a in snapshot} - seen
-                        seen.update(a['adId'] for a in snapshot)
-                        idle = 0 if fresh else idle + 1
-                        await self.snapshots.put((country, query, page.url, now(), snapshot))
-                        # Extraction acknowledges every snapshot before scrolling again.
-                        await self.snapshots.join()
-                        self.status('running', country=country, query=query, scrolls=scrolls, uniqueInQuery=len(seen))
-                        scrolls += 1
-                        if self.args.max_scrolls and scrolls >= self.args.max_scrolls:
-                            reason = 'scroll_limit'
-                            break
-                        await page.evaluate('window.scrollTo(0, document.documentElement.scrollHeight)')
-                        await page.wait_for_timeout(2500)
+                    reason, ads = await self.query_reason(page, country, query, extractor)
                     self.db.execute('INSERT OR REPLACE INTO searches VALUES(?,?,?,?)', (country, query, reason, now()))
                     self.db.commit()
                     self.counts['searches'] += 1
                     self.export()
-                    print(json.dumps({'country': country, 'query': query, 'ads': len(seen), 'stopReason': reason}), flush=True)
+                    print(json.dumps({'country': country, 'query': query, 'ads': ads, 'stopReason': reason}), flush=True)
         finally:
             await page.close()
             await self.snapshots.put(None)
@@ -253,7 +298,16 @@ class Pipeline:
         self.db.close()
 
     async def apply(self):
+        """Give the verified rows a blue background, best effort.
+
+        A failed write is reported in status.json and the console, not raised:
+        the evidence is already collected and exported, and a database blip must
+        not end a pass that has hours of scrolling behind it. The throttle keeps
+        the next candidate from spawning a bridge every few seconds.
+        """
         self.export()
+        self.last_apply = time.monotonic()
+        code = 1
         for attempt in range(3):
             with (OUT / 'sheets.log').open('a', encoding='utf-8') as log:
                 proc = await asyncio.create_subprocess_exec(
@@ -268,9 +322,13 @@ class Pipeline:
                 # Setting the same background is idempotent; retain every audit.
                 await asyncio.sleep(5 * (attempt + 1))
         if code:
-            raise RuntimeError('Sheets update failed; inspect sheets.log and color-audit files before restarting.')
+            self.apply_state = 'failed'
+            self.apply_note = 'Sheets update failed; inspect sheets.log and color-audit files.'
+            print(json.dumps({'apply': 'failed', 'note': self.apply_note}), flush=True)
+            return
+        self.apply_state = 'ok'
+        self.apply_note = None
         self.applied_count = self.counts['verified']
-        self.last_apply = time.monotonic()
 
     def export(self):
         self.last_export = time.monotonic()

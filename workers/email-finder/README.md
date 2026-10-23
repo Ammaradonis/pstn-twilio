@@ -264,6 +264,14 @@ and send no live messages.
 Logs: `.cache/worker.log`. End only the `email_finder.worker` Python process to
 stop; another instance is prevented with a process lock.
 
+"Waiting for the email finder on your PC" on the Dial page means no heartbeat
+reached the API in the last two minutes. The log then says which half failed:
+`Cannot reach the API from this laptop (...)` is this PC's connection, while
+`Claimed ...` / `Alive: connected ...` lines mean the laptop is fine. If the log
+itself stops while the process is still listed, the event loop is blocked by a
+synchronous call; the worker's own watchdog says so after two minutes and exits
+after ten so the scheduled task starts a clean one (exit code 75).
+
 Reset today's local lookup usage from PowerShell with `./reset-lookup-limits.ps1`.
 It resets the UTC-day Google, CSE, Facebook, Instagram, phone and search-API
 counters in one transaction, and records their previous values in

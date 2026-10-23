@@ -31,6 +31,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import math
 import re
 from datetime import datetime, timezone, timedelta
 from dataclasses import dataclass, field
@@ -1497,18 +1498,20 @@ def _same_address(a: str, b: str) -> bool:
     return bool(num_a and num_a == num_b and fuzz.token_set_ratio(name_a, name_b) >= 85)
 
 
-def _phone_pause_seconds(galaxy, app: str) -> float | None:
+def _phone_pause_seconds(galaxy, app: str) -> int | None:
     """Seconds the phone's app is paused for, if it says so.
 
     A pause is the phone deliberately left alone (a login wall, a checkpoint), so
     a row waiting on it should wait about that long rather than retrying into a
-    wall every few minutes.
+    wall every few minutes. Whole seconds, rounded up: the API takes an integer
+    (a float in retryAfter got the whole result rejected) and erring long only
+    leaves the phone alone a moment more.
     """
     try:
         paused = float(galaxy.paused_for(app) or 0)
     except Exception:  # noqa: BLE001 - a stand-in without the method, or a bad state
         return None
-    return paused if paused > 0 else None
+    return math.ceil(paused) if paused > 0 else None
 
 
 def _facebook_handle(url: str) -> str | None:

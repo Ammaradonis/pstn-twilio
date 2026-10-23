@@ -15,6 +15,7 @@ import os
 import contextlib
 import subprocess
 import sys
+import threading
 import time
 from pathlib import Path
 
@@ -54,6 +55,21 @@ CACHE_MAINTENANCE_SECONDS = 3600
 # A restart waits until the code has been unchanged this long (an edit or
 # git pull in progress shouldn't restart the worker halfway through).
 CODE_SETTLE_SECONDS = 30
+# Everything the worker does — heartbeats, claims, the "worker online" dot on the
+# Dial page — runs on the event loop, so one blocking call silences all of it at
+# once. A thread that only reads a counter watches from outside the loop.
+LOOP_TICK_SECONDS = 5.0
+LOOP_STALL_WARN_SECONDS = 120.0
+LOOP_STALL_RESTART_SECONDS = 600.0
+EXIT_LOOP_STUCK = 75
+
+
+def why(err: BaseException) -> str:
+    """An error's own words, or its type when it has none.
+
+    httpx raises some connection errors with an empty message, and "API
+    unreachable: " said nothing about what had happened."""
+    return str(err).strip() or type(err).__name__
 
 
 def setup_logging() -> None:
@@ -117,19 +133,32 @@ def to_row(data: dict) -> Row:
     )
 
 
+def retry_after_seconds(finding: Finding) -> int | None:
+    """The finding's deferral as the API's integer seconds, or None.
+
+    The phone's pause is time arithmetic, so it arrives with a fraction; the API
+    takes an integer between 60 and 86400 and rejects the whole result otherwise
+    ("results.0.retryAfter: Expected integer, received float"). Every deferred
+    row was then dropped and researched again from scratch."""
+    if not finding.retry_after:
+        return None
+    return min(86400, max(60, int(round(float(finding.retry_after)))))
+
+
 def to_result(row_id: str, f: Finding, lease_token: str, mode: str = "EMAIL") -> dict:
     # All validated addresses for this school, comma-separated (best first).
     all_emails = f.emails if f.emails else ([f.email] if f.email else [])
     emails_csv = ", ".join(e for e in all_emails if e) or None
     social = f.enrichment if mode == "ENRICH" else None
+    retry_after = retry_after_seconds(f)
     # In enrichment mode the row's outcome is the social links, not an address:
     # FOUND means at least one column was filled, so the sheet's write-back and
     # the Dial page's "done" count both make sense.
     if mode == "ENRICH":
-        status = "RETRY" if f.retry_after else (
+        status = "RETRY" if retry_after else (
             "FOUND" if social and not (f.notes and f.notes[0].startswith("error:")) else "NOT_FOUND")
     else:
-        status = "RETRY" if f.retry_after else (
+        status = "RETRY" if retry_after else (
             f.status if not (f.notes and f.notes[0].startswith("error:")) else "FAILED")
     return {
         "id": row_id,
@@ -138,7 +167,7 @@ def to_result(row_id: str, f: Finding, lease_token: str, mode: str = "EMAIL") ->
         # result legitimately carries no email, only social links.
         "mode": mode,
         "researchComplete": f.research_complete,
-        **({"retryAfter": f.retry_after} if f.retry_after else {}),
+        **({"retryAfter": retry_after} if retry_after else {}),
         "status": status,
         "email": emails_csv,
         "emailType": f.email_type,
@@ -152,6 +181,35 @@ def to_result(row_id: str, f: Finding, lease_token: str, mode: str = "EMAIL") ->
     }
 
 
+def loop_watchdog(ticks: list[float], stop: asyncio.Event, exit_process=None) -> None:
+    """Watch the event loop from outside it; runs in its own thread.
+
+    `ticks[0]` is the last time a task got to run. Heartbeats, claims and the
+    API's "worker online" all live on that loop, so a blocking call stops every
+    one of them at once and nothing in the loop is left to say so. This thread
+    only reads a float, so it keeps going: it logs the stall, and ends the
+    process once the loop has clearly not recovered, which is the only thing the
+    10-minute scheduled task can see (a running process, so it does nothing).
+    """
+    exit_process = exit_process or os._exit
+    warned_at = 0.0
+    while not stop.is_set():
+        time.sleep(LOOP_TICK_SECONDS)
+        stuck = time.monotonic() - ticks[0]
+        if stuck >= LOOP_STALL_RESTART_SECONDS:
+            log.critical("The event loop has been blocked for %.0f min; nothing was claimed, "
+                         "answered or reported in that time. Exiting so the scheduled task "
+                         "starts a fresh worker.", stuck / 60)
+            logging.shutdown()
+            exit_process(EXIT_LOOP_STUCK)
+            return
+        if (stuck >= LOOP_STALL_WARN_SECONDS
+                and time.monotonic() - warned_at >= LOOP_STALL_WARN_SECONDS):
+            warned_at = time.monotonic()
+            log.error("The event loop has not ticked for %.0f s: a blocking call is holding it, "
+                      "so nothing is claimed or reported until that call returns.", stuck)
+
+
 def new_code_ready(started: tuple[tuple[str, int], ...], rejected: set) -> bool:
     """True when the code on disk changed, has settled, and imports cleanly.
 
@@ -163,11 +221,20 @@ def new_code_ready(started: tuple[tuple[str, int], ...], rejected: set) -> bool:
         return False
     if time.time() - max(mtime for _, mtime in now) / 1e9 < CODE_SETTLE_SECONDS:
         return False
-    check = subprocess.run(
-        [sys.executable, "-c", "import email_finder.worker"],
-        cwd=PACKAGE_DIR.parent, capture_output=True, text=True, timeout=300,
-        creationflags=subprocess.CREATE_NO_WINDOW if os.name == "nt" else 0,
-    )
+    try:
+        check = subprocess.run(
+            [sys.executable, "-c", "import email_finder.worker"],
+            cwd=PACKAGE_DIR.parent, capture_output=True, text=True, timeout=300,
+            creationflags=subprocess.CREATE_NO_WINDOW if os.name == "nt" else 0,
+        )
+    except (subprocess.TimeoutExpired, OSError) as err:
+        # The import alone (spaCy) has taken minutes on a loaded PC. That is not a
+        # reason to crash: the old worker let this exception escape and died at
+        # 16:33 on 23 Oct instead of restarting. Keep running, look again later.
+        log.error("Worker code changed but the import check failed (%s); keeping the "
+                  "running version.", why(err))
+        rejected.add(now)
+        return False
     if check.returncode != 0:
         log.error("Worker code changed but doesn't import; keeping the running version. %s",
                   (check.stderr.strip().splitlines() or [""])[-1])
@@ -277,7 +344,7 @@ async def run() -> bool:
                     offline_said = now
                     log.warning("Cannot reach the API from this laptop (%s); the work queue is "
                                 "unavailable until the connection is back. %.1f min so far.",
-                                err, (now - offline_since) / 60)
+                                why(err), (now - offline_since) / 60)
                 await _sleep(stop, HEARTBEAT_SECONDS)
                 continue
             now = time.monotonic()
@@ -362,6 +429,23 @@ async def run() -> bool:
 
     beat = asyncio.create_task(heartbeat_loop())
     forms = asyncio.create_task(form_loop())
+    # Everything — heartbeats, claims, the Dial page's "worker online" dot — runs
+    # on the event loop, so one blocking call silences all of it at once: the log
+    # goes quiet, the app reports the worker offline, and the scheduled task that
+    # would restart it sees a live process and leaves it alone. On 23 Oct a cache
+    # read waited for cache maintenance and the worker sat like that for 40
+    # minutes. A thread that only reads a timestamp keeps working, so it can say
+    # what happened and end the process when the loop cannot.
+    ticks = [time.monotonic()]
+
+    async def tick_loop() -> None:
+        while not stop.is_set():
+            ticks[0] = time.monotonic()
+            await _sleep(stop, LOOP_TICK_SECONDS)
+
+    tick = asyncio.create_task(tick_loop())
+    threading.Thread(target=loop_watchdog, args=(ticks, stop), name="loop-watchdog",
+                     daemon=True).start()
     if galaxy is not None and galaxy.start_ambient():
         caps = ", ".join(f"{name} {getattr(settings.ambient, field)}/day"
                          for name, field in (("likes", "likes_per_day"), ("follows", "follows_per_day"),
@@ -408,10 +492,10 @@ async def run() -> bool:
                 if err.response.status_code == 401:
                     log.error("the API rejected the worker token; check EMAIL_FINDER_WORKER_TOKEN")
                 else:
-                    log.warning("claim failed: %s", err)
+                    log.warning("claim failed: %s", why(err))
                 batch, backoff = [], min(backoff * 2, 300)
             except httpx.HTTPError as err:
-                log.warning("API unreachable: %s", err)
+                log.warning("API unreachable: %s", why(err))
                 batch, backoff = [], min(backoff * 2, 300)
             except Exception:  # noqa: BLE001
                 log.exception("worker loop error; retrying shortly")
@@ -426,11 +510,12 @@ async def run() -> bool:
         stop.set()
         beat.cancel()
         forms.cancel()
+        tick.cancel()
         if fb_task is not None:
             fb_task.cancel()
         if galaxy is not None:
             await galaxy.stop_ambient()
-        await asyncio.gather(beat, forms, *([fb_task] if fb_task else []),
+        await asyncio.gather(beat, forms, tick, *([fb_task] if fb_task else []),
                              return_exceptions=True)
         if fb_remote is not None:
             await fb_remote.close()
@@ -483,6 +568,11 @@ def main() -> None:
                 args, cwd=PACKAGE_DIR.parent, close_fds=True,
                 creationflags=subprocess.CREATE_NO_WINDOW | subprocess.CREATE_NEW_PROCESS_GROUP,
             )
+            # Leave at once instead of returning: interpreter shutdown joins the
+            # executor's threads, and one still inside a slow SQLite call kept the
+            # old process alive next to the new one for hours.
+            logging.shutdown()
+            os._exit(0)
         else:
             os.chdir(PACKAGE_DIR.parent)
             os.execv(sys.executable, args)

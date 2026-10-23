@@ -55,4 +55,26 @@ describe('email finder worker results', () => {
         .success,
     ).toBe(false);
   });
+
+  it('rounds a fractional retryAfter instead of rejecting the result', () => {
+    // The worker's phone pause is time arithmetic; requiring an integer threw
+    // away every deferred row ("results.0.retryAfter: Expected integer").
+    const parsed = finderResultsSchema.safeParse({
+      results: [
+        { ...base, status: 'RETRY', researchComplete: false, retryAfter: 21819.450847148895 },
+      ],
+    });
+    expect(parsed.success).toBe(true);
+    if (parsed.success) expect(parsed.data.results[0]?.retryAfter).toBe(21819);
+  });
+
+  it('still refuses a retryAfter outside the queue window', () => {
+    for (const retryAfter of [0, 59.4, 86400.6, Number.POSITIVE_INFINITY]) {
+      expect(
+        finderResultsSchema.safeParse({
+          results: [{ ...base, status: 'RETRY', researchComplete: false, retryAfter }],
+        }).success,
+      ).toBe(false);
+    }
+  });
 });

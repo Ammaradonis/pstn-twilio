@@ -195,6 +195,38 @@ def test_cache_compresses_pages_and_drops_stale_entries(tmp_path):
     assert keys == {'a', 'small', 'r1'}
 
 
+def test_cache_maintenance_deletes_a_large_sweep_and_keeps_lookups_moving(tmp_path):
+    """A maintenance sweep holds the cache lock in slices, not for its whole run.
+
+    On 23 Oct the worker froze for 40 minutes: the hourly maintenance held the
+    lock while one DELETE walked the whole file, and the event loop's next cache
+    read waited for it. Everything downstream of that read — heartbeats, claims,
+    the log — stopped with it, so the app reported the worker offline."""
+    import threading
+    import time as _time
+
+    cache = Cache(tmp_path / 'c.db')
+    now = _time.time()
+    rows = [('page-v2', f'dead-{i}', '{}', now - 1) for i in range(5000)]
+    cache._db.executemany('insert into kv values (?, ?, ?, ?)', rows)
+    cache._db.commit()
+    cache.set('outbox-v2', 'live', {'kind': 'research'}, 3600)
+
+    sweep = threading.Thread(target=cache.maintain)
+    sweep.start()
+    waited = []
+    while sweep.is_alive():
+        started = _time.monotonic()
+        assert cache.get('outbox-v2', 'live') == {'kind': 'research'}
+        waited.append(_time.monotonic() - started)
+        _time.sleep(0.01)
+    sweep.join()
+
+    assert waited and max(waited) < 5.0, 'a lookup waited for the whole sweep'
+    keys = [k for (k,) in cache._db.execute('select k from kv')]
+    assert keys == ['live']
+
+
 def test_every_numbered_brave_key_is_a_provider(tmp_path, monkeypatch):
     from email_finder import config
     for name in list(config.os.environ):

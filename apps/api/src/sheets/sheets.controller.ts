@@ -374,7 +374,18 @@ export const finderResultsSchema = z.object({
           // Cleaned field by field in the service: one odd link mustn't reject a result.
           enrichment: z.record(z.string().max(1000)).nullish(),
           researchComplete: z.boolean(),
-          retryAfter: z.number().int().min(60).max(86400).optional(),
+          // Seconds. The worker's phone pause is time arithmetic, so it arrives
+          // with a fraction; demanding an integer rejected the whole result
+          // ("results.0.retryAfter: Expected integer, received float") and every
+          // deferred row was silently dropped.
+          retryAfter: z
+            .number()
+            .finite()
+            .transform((seconds) => Math.round(seconds))
+            .refine((seconds) => seconds >= 60 && seconds <= 86400, {
+              message: 'retryAfter must be between 60 and 86400 seconds',
+            })
+            .optional(),
           // Which pass produced this result. Enrichment rows succeed on a social
           // profile alone, so they are the one case where FOUND carries no email.
           mode: z.enum(['EMAIL', 'ENRICH']).optional(),

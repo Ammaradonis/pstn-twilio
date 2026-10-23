@@ -44,8 +44,10 @@ each unique school name (schools with saved Facebook URLs go first).
 Each search scrolls until six passes yield no new ad IDs; this is recorded as
 `stalled`, not as proof of exhaustive coverage. Use `--refresh` to revisit these
 searches. Interrupted and scroll-limited searches restart on the next run, while
-stored ads are deduplicated by country and Library ID. `--max-scrolls=N` bounds a
-test pass; `--seed-only --seeds=1` runs only the first discovery term per country.
+stored ads are deduplicated by country and Library ID. A page that times out or
+drops mid-search is recorded as `error` and retried on a later run: one slow read
+used to raise through the pass and end it. `--max-scrolls=N` bounds a test pass;
+`--seed-only --seeds=1` runs only the first discovery term per country.
 
 ## Outputs and stopping
 
@@ -56,7 +58,9 @@ Everything containing school data or login state stays under ignored
 - `ads.sqlite`: durable ad evidence and query progress.
 - `advertisers.csv`: full advertiser names, account URLs, ad IDs and dates.
 - `prospects.csv` / `prospects.json`: matching rows and explicit review reasons.
-- `status.json`: progress, any interruption, and the upload state under `sync`.
+- `status.json`: progress, any interruption, the upload state under `sync`, and
+  the sheet write under `apply`. A failed write is reported there and retried
+  after five minutes; it no longer ends the pass.
 - `sheets.log`, `color-audit-*.json`: write outcomes and previous row formats.
 - `sync.log`: rejected or failed uploads to the app, with the API's reply.
 
