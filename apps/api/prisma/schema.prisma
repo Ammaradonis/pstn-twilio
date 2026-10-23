@@ -487,6 +487,8 @@ model SheetsPushLog {
   tags            Json // string[] in selection order
   customNote      String?   @map("custom_note")
   cellValue       String    @map("cell_value")
+  // The personalised sentences the cell carries (see status-sentences.ts).
+  personalisation Json?     @map("personalisation")
   timeZone        String    @map("time_zone")
   schoolName      String?   @map("school_name")
   // NONE | PENDING | SENDING | SENT | FAILED | CANCELLED | MANUAL (contact form, sent by hand)
@@ -567,6 +569,13 @@ model EmailFinderRow {
   method           String?
   // Verified details for the sheet's empty cells (websiteUrl, phoneNumber, facebookUrl, ...)
   enrichment       Json?
+  // 1-based sheet row when the tab was queued. The push that writes a row's
+  // Status cell finds the school's profile through it (see school-profile.ts);
+  // rows queued before the column existed fall back to a phone-number match.
+  rowIndex         Int?      @map("row_index")
+  // What the school publishes about itself: programmes, instructors, timetable,
+  // events, offers, age. Written by the worker's profile pass only.
+  profile          Json?
   writtenAt        DateTime? @map("written_at")
   createdAt        DateTime  @default(now()) @map("created_at")
   updatedAt        DateTime  @updatedAt @map("updated_at")

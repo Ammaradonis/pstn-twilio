@@ -301,6 +301,19 @@ export function PostCallStatusPanel({
             Row {pushed.rowIndex} of {pushed.sheetTitle} updated:
           </p>
           <p className="font-mono">{pushed.cellValue}</p>
+          {(pushed.personalisation?.length ?? 0) > 0 && (
+            <div>
+              <p className="font-medium">Personalised from their site:</p>
+              <ul className="list-disc pl-4">
+                {(pushed.personalisation ?? []).map((sentence) => (
+                  <li key={sentence}>{sentence}</li>
+                ))}
+              </ul>
+            </div>
+          )}
+          {pushed.personalisationNote && (
+            <p className="text-emerald-800">{pushed.personalisationNote}</p>
+          )}
           <p>
             Time zone {pushed.timeZone}
             {pushed.timeZoneSource === 'guess' && (

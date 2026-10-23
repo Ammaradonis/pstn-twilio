@@ -241,6 +241,20 @@ reply, follow, DM) through the two DeepSeek prompts in `prompts/`. It reuses
 caps are its own. See [FB-GROUPS.md](FB-GROUPS.md) and
 `python scripts/fb_groups.py --help`.
 
+## Profiles for the status cell
+
+A third job mode runs beside the address hunt and the social enrichment:
+`PROFILE` reads what each row's school publishes about itself — programmes,
+instructors, the timetable, events, first-class offers, how long it has been
+running — from its own site (home plus class/about/contact pages) and, only when
+the site says nothing, from its Facebook or Instagram profile. It writes no sheet
+column; the facts are stored per row and the Dial page's **Personalize** button
+queues them for a tab. `email_finder/profile.py` does the reading (spaCy for the
+people, patterns for the rest) and is deliberately strict: a fact is only reported
+when the page says it, so a row with a vague site gets no profile rather than a
+wrong one. The three sentences built from those facts, and the sentence bank they
+come from, are described in [docs/status-sentences.md](../../docs/status-sentences.md).
+
 ## Recovery, limits and evaluation
 
 SQLite caches searches and pages, stores daily request reservations and keeps an

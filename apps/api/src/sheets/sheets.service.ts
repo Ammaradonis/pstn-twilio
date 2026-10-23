@@ -38,7 +38,9 @@ import {
 } from '../common/secret-box';
 import { PrismaService } from '../prisma/prisma.service';
 
+import type { FinderRowInput } from './email-finder.service';
 import { rowRecord, type RowData } from './follow-up-vars';
+import { cleanProfile } from './school-profile';
 import {
   cityKey,
   parseUsAddress,
@@ -56,6 +58,7 @@ import {
   normalizeHeader,
   stripCountryCode,
 } from './sheets.util';
+import { personaliseStatus } from './status-sentences';
 
 // Optional: lets the follow-up sweep see replies and stop a sequence.
 export const GMAIL_READ_SCOPE = 'https://www.googleapis.com/auth/gmail.readonly';
@@ -268,7 +271,22 @@ export class SheetsService {
 
     const callEndedAt = new Date(dto.callEndedAt);
     const { timeZone, source } = await this.tz.resolve(rowAddress(row, cols), dto.destinationE164);
-    const cellValue = buildCellValue(dto, formatStatusTime(callEndedAt, timeZone));
+    const schoolName = cols.school !== -1 ? text(row[cols.school]).trim() || null : null;
+    // The three sentences come from the profile the worker built for this row
+    // (programmes, instructors, timetable), never from anything fetched here.
+    const profile = await this.findSchoolProfile(userId, dto, rowIdx + 1, cols, row);
+    const personalisation = personaliseStatus({
+      tags: dto.orderedTags,
+      profile,
+      school: schoolName,
+      // A re-push of the same row and statuses writes the same sentences.
+      seed: `${dto.spreadsheetId}:${dto.sheetTitle}:${rowIdx + 1}:${dto.orderedTags.join('|')}`,
+    });
+    const cellValue = buildCellValue(
+      dto,
+      formatStatusTime(callEndedAt, timeZone),
+      personalisation.sentences,
+    );
 
     const data = [
       {
@@ -330,8 +348,11 @@ export class SheetsService {
           tags: dto.orderedTags,
           customNote: dto.customNote?.trim() || null,
           cellValue,
+          ...(personalisation.sentences.length
+            ? { personalisation: personalisation.sentences }
+            : {}),
           timeZone,
-          schoolName: cols.school !== -1 ? text(row[cols.school]).trim() || null : null,
+          schoolName,
           emailStatus: email.status,
           emailTo: email.to,
           emailTemplate: email.template,
@@ -349,6 +370,8 @@ export class SheetsService {
       rowIndex: rowIdx + 1,
       duplicateRows: matches.slice(1).map((i) => i + 1),
       cellValue,
+      personalisation: personalisation.sentences,
+      personalisationNote: personalisation.note,
       timeZone,
       timeZoneSource: source,
       emailStatus: email.status,
@@ -357,6 +380,61 @@ export class SheetsService {
       emailDueAt: dueAt?.toISOString() ?? null,
       emailNote: email.note,
     };
+  }
+
+  /**
+   * The profile the worker built for this sheet row, if it has one.
+   *
+   * The finder row carries the profile and the sheet row it came from. A row
+   * queued after the profile feature knows its index; rows from before it fall
+   * back to the dialled number, which is what identifies a lead anyway. Nothing
+   * is fetched here: a page read belongs to the worker, and a push must stay
+   * fast and never invent a fact.
+   */
+  private async findSchoolProfile(
+    userId: string,
+    dto: PushCallResultDto,
+    rowIndex: number,
+    cols: Columns,
+    row: Row,
+  ): Promise<ReturnType<typeof cleanProfile>> {
+    const jobs = await this.prisma.emailFinderJob.findMany({
+      where: { userId, spreadsheetId: dto.spreadsheetId, sheetTitle: dto.sheetTitle },
+      select: { id: true },
+    });
+    if (jobs.length === 0) return null;
+    const jobIds = jobs.map((job) => job.id);
+
+    const byIndex = await this.prisma.emailFinderRow.findMany({
+      where: { jobId: { in: jobIds }, rowIndex },
+      orderBy: { updatedAt: 'desc' },
+      select: { profile: true },
+    });
+    for (const candidate of byIndex) {
+      const profile = cleanProfile(candidate.profile);
+      if (profile) return profile;
+    }
+
+    // Rows queued before the index existed: match the row's own number, or the
+    // website host when the number is written differently in the two places.
+    // Newest first and a hard cap, so a tab with thousands of rows and no
+    // profiles costs one bounded read rather than all of its JSON on every push.
+    const target = nationalDigits(dto.destinationE164);
+    const host = cols.website !== -1 ? text(row[cols.website]).trim() : '';
+    const rows = await this.prisma.emailFinderRow.findMany({
+      where: { jobId: { in: jobIds } },
+      orderBy: { updatedAt: 'desc' },
+      select: { input: true, profile: true },
+      take: 1000,
+    });
+    for (const candidate of rows) {
+      const profile = cleanProfile(candidate.profile);
+      if (!profile) continue;
+      const input = candidate.input as unknown as FinderRowInput;
+      const sameNumber = target && nationalDigits(input.phone ?? '') === target;
+      if (sameNumber || (host && (input.website ?? '').trim() === host)) return profile;
+    }
+    return null;
   }
 
   private async planFollowUp(
@@ -783,11 +861,24 @@ export function firstEmptyColumn(rows: Row[], skip: number[] = []): number {
   return c;
 }
 
-/** "Voicemail, Not interested, <note>, from: 6672206726, time: 9:45am" */
-export function buildCellValue(dto: PushCallResultDto, localTime: string): string {
+/**
+ * "Voicemail, <note>, <sentences>, from: 6672206726, time: 9:45am on a Friday"
+ *
+ * The sentences are the personalised explanation the task asks for: three
+ * lines built from what the school publishes about itself. They sit after the
+ * note (the caller's own words) and before the caller/number/time trailer, so
+ * the cell still reads as tags first and the row's own facts last.
+ */
+export function buildCellValue(
+  dto: PushCallResultDto,
+  localTime: string,
+  sentences: readonly string[] = [],
+): string {
   const parts: string[] = [dto.orderedTags.join(', ')];
   const note = dto.customNote?.replace(/\s+/g, ' ').trim();
   if (note) parts.push(note);
+  const personal = sentences.map((s) => s.replace(/\s+/g, ' ').trim()).filter(Boolean);
+  if (personal.length) parts.push(personal.join(' '));
   parts.push(`from: ${stripCountryCode(dto.callerE164)}`, `time: ${localTime}`);
   return parts.join(', ');
 }

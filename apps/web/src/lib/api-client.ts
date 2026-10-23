@@ -474,6 +474,28 @@ export const api = {
   },
 
   /**
+   * School profiles: the facts behind the three personalised sentences the
+   * Status cell carries after a call. A separate finder job from the address
+   * hunt and the social enrichment; it writes no sheet column, so it is safe to
+   * run while the others do.
+   */
+  personalisation: {
+    start: (spreadsheetId: string, sheetTitle: string) =>
+      request<EmailFinderStatusDto>('/email-finder/profile', {
+        method: 'POST',
+        body: { spreadsheetId, sheetTitle },
+      }),
+    status: (spreadsheetId: string, sheetTitle: string) =>
+      request<EmailFinderStatusDto>('/email-finder/profile/status', {
+        query: { spreadsheetId, sheetTitle },
+      }),
+    setRunning: (jobId: string, action: 'pause' | 'resume' | 'cancel') =>
+      request<EmailFinderStatusDto>(`/email-finder/${encodeURIComponent(jobId)}/${action}`, {
+        method: 'POST',
+      }),
+  },
+
+  /**
    * Facebook groups: one rolling run, driven by the worker on the PC. Starting
    * it is idempotent — an open run is resumed rather than duplicated.
    */

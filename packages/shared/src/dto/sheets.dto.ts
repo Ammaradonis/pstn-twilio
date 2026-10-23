@@ -55,6 +55,13 @@ export interface SheetsStatusDto {
   duplicateRows: number[];
   /** Exact text written to the Status cell. */
   cellValue: string;
+  /**
+   * The personalised sentences the cell carries, built by the worker's profile
+   * of the school (programmes, instructors, timetable) and the status chosen.
+   */
+  personalisation: string[];
+  /** Why there are fewer than three sentences (usually: no profile yet). */
+  personalisationNote: string | null;
   timeZone: string;
   timeZoneSource: SheetsTimeZoneSource;
   emailStatus: SheetsEmailStatus;
@@ -147,6 +154,8 @@ export interface EmailFinderStatusDto {
   issues?: { school: string; note: string }[];
   /** The tab's latest finds, newest first. */
   recentFinds?: EmailFinderFindDto[];
+  /** Profile mode: rows whose school published something a sentence can use. */
+  withProfile?: number;
 }
 
 // ---------------------------------------------------------------------------

@@ -168,6 +168,35 @@ describe('status cell', () => {
     );
   });
 
+  it('puts the personalised sentences before the caller and time trailer', () => {
+    const cell = buildCellValue(
+      {
+        ...base,
+        orderedTags: ['Voicemail'],
+        customNote: 'rang twice',
+        callerE164: '+16672206726',
+      },
+      '9:29pm on a Friday',
+      [
+        'I rang on Tuesday, right around your kids karate class, so this note is shorter than the voicemail.',
+        'You have taught karate since 1998; the calls that arrive mid-class are the ones that book.',
+      ],
+    );
+    expect(cell).toBe(
+      'Voicemail, rang twice, ' +
+        'I rang on Tuesday, right around your kids karate class, so this note is shorter than the voicemail. ' +
+        'You have taught karate since 1998; the calls that arrive mid-class are the ones that book., ' +
+        'from: 6672206726, time: 9:29pm on a Friday',
+    );
+    // No sentences, no extra comma: pushing without a profile reads as before.
+    expect(
+      buildCellValue(
+        { ...base, orderedTags: ['Voicemail'], callerE164: '+16672206726' },
+        '9:29pm on a Friday',
+      ),
+    ).toBe('Voicemail, from: 6672206726, time: 9:29pm on a Friday');
+  });
+
   it('builds quoted A1 ranges', () => {
     expect(a1('New York', 'AB12')).toBe("'New York'!AB12");
     expect(a1("O'Fallon")).toBe("'O''Fallon'");

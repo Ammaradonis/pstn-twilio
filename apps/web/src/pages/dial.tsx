@@ -13,6 +13,7 @@ import { EmailFinderStatus } from '../components/email-finder-status';
 import { FbGroupsButton } from '../components/fb-groups-button';
 import { MetaAdFilterButton } from '../components/meta-ad-filter-button';
 import { MicrophonePicker } from '../components/microphone-picker';
+import { PersonalizeButton } from '../components/personalize-button';
 import { postCallDraftKey, PostCallStatusPanel } from '../components/post-call-status-panel';
 import { SocialEnrichmentButton } from '../components/social-enrichment-button';
 import { readPersistedSpreadsheet, SpreadsheetPicker } from '../components/spreadsheet-picker';
@@ -925,6 +926,13 @@ export function DialPage() {
         {spreadsheetId && sheetTitle && (
           <SocialEnrichmentButton
             key={`enrich:${spreadsheetId}:${sheetTitle}`}
+            spreadsheetId={spreadsheetId}
+            sheetTitle={sheetTitle}
+          />
+        )}
+        {spreadsheetId && sheetTitle && (
+          <PersonalizeButton
+            key={`personalize:${spreadsheetId}:${sheetTitle}`}
             spreadsheetId={spreadsheetId}
             sheetTitle={sheetTitle}
           />

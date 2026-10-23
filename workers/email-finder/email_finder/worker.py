@@ -154,8 +154,11 @@ def to_result(row_id: str, f: Finding, lease_token: str, mode: str = "EMAIL") ->
     retry_after = retry_after_seconds(f)
     # In enrichment mode the row's outcome is the social links, not an address:
     # FOUND means at least one column was filled, so the sheet's write-back and
-    # the Dial page's "done" count both make sense.
-    if mode == "ENRICH":
+    # the Dial page's "done" count both make sense. Profile mode is the same
+    # idea: FOUND means the school published something a sentence can use.
+    if mode == "PROFILE":
+        status = "RETRY" if retry_after else ("FOUND" if f.profile else "NOT_FOUND")
+    elif mode == "ENRICH":
         status = "RETRY" if retry_after else (
             "FOUND" if social and not (f.notes and f.notes[0].startswith("error:")) else "NOT_FOUND")
     else:
@@ -179,6 +182,7 @@ def to_result(row_id: str, f: Finding, lease_token: str, mode: str = "EMAIL") ->
         "notes": "; ".join(f.notes)[:1000] or None,
         "method": f.method[:200] if f.method and f.email else None,
         **({"enrichment": f.enrichment} if f.enrichment else {}),
+        **({"profile": f.profile} if f.profile else {}),
     }
 
 
@@ -414,20 +418,26 @@ async def run() -> bool:
             log.error("API is outdated: deploy the email finder recovery migration and API build.")
             return
         row = to_row(item["input"])
-        # The API says which pass this row belongs to: the address hunt, or the
-        # social-column enrichment (Engine.enrich) that never scores addresses.
-        mode = "ENRICH" if str(item.get("mode") or "").upper() == "ENRICH" else "EMAIL"
-        run = engine.enrich if mode == "ENRICH" else engine.find
+        # The API says which pass this row belongs to: the address hunt, the
+        # social-column enrichment (Engine.enrich) that never scores addresses,
+        # or the profile pass (Engine.profile) behind the Status cell's sentences.
+        requested = str(item.get("mode") or "").upper()
+        mode = requested if requested in ("ENRICH", "PROFILE") else "EMAIL"
+        run = {"ENRICH": engine.enrich, "PROFILE": engine.profile}.get(mode, engine.find)
         try:
             finding = await asyncio.wait_for(run(row), timeout=settings.row_timeout)
         except asyncio.TimeoutError:
             finding = Finding(notes=["Research time limit reached; will resume using cached pages"], retry_after=1800, research_complete=False)
         result = to_result(item["id"], finding, item["leaseToken"], mode)
         social = ", ".join(sorted(finding.enrichment)) if mode == "ENRICH" else ""
-        log.info("Research finished: %s (%s) row=%s%s%s%s", result["status"],
+        facts = ""
+        if mode == "PROFILE" and finding.profile:
+            facts = ", ".join((finding.profile.get("programs") or finding.profile.get("styles") or [])[:2])
+        log.info("Research finished: %s (%s) row=%s%s%s%s%s", result["status"],
                  finding.email_type or "unresolved", item["id"],
                  f" — {finding.method}" if finding.method else "",
                  f" — social: {social}" if social else "",
+                 f" — profile: {facts}" if facts else "",
                  f"; retry in {finding.retry_after}s" if finding.retry_after else "")
         cache.set("outbox-v2", item["id"], {"kind": "research", "result": result}, 365 * 86400)
         finished[0] += 1

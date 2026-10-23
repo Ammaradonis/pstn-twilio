@@ -197,11 +197,10 @@ export class GoogleSheetsOAuthController {
 type TabQuery = { spreadsheetId?: string; sheetTitle?: string; mode?: string };
 
 function modeFrom(body: TabQuery): FinderMode {
-  return String(body.mode ?? '')
+  const mode = String(body.mode ?? '')
     .trim()
-    .toUpperCase() === 'ENRICH'
-    ? 'ENRICH'
-    : 'EMAIL';
+    .toUpperCase();
+  return mode === 'ENRICH' || mode === 'PROFILE' ? mode : 'EMAIL';
 }
 
 function tabFrom(body: TabQuery): { spreadsheetId: string; sheetTitle: string } {
@@ -235,6 +234,26 @@ export class EmailFinderController {
   enrich(@Req() req: AuthedRequest, @Body() body: TabQuery) {
     const { spreadsheetId, sheetTitle } = tabFrom(body);
     return userFacing(this.finder.start(req.user.id, spreadsheetId, sheetTitle, 'ENRICH'));
+  }
+
+  /**
+   * Profile mode: read what each row's school publishes about itself (its
+   * programmes, instructors, timetable, events) so the Status cell's three
+   * sentences can be built from facts. Writes no sheet column; a separate job
+   * from the address hunt and the social enrichment.
+   */
+  @Post('profile')
+  @HttpCode(200)
+  profile(@Req() req: AuthedRequest, @Body() body: TabQuery) {
+    const { spreadsheetId, sheetTitle } = tabFrom(body);
+    return userFacing(this.finder.start(req.user.id, spreadsheetId, sheetTitle, 'PROFILE'));
+  }
+
+  /** Profile progress for the selected tab (same shape as `status`). */
+  @Get('profile/status')
+  profileStatus(@Req() req: AuthedRequest, @Query() query: TabQuery) {
+    const { spreadsheetId, sheetTitle } = tabFrom(query);
+    return this.finder.status(req.user.id, spreadsheetId, sheetTitle, 'PROFILE');
   }
 
   @Get('status')
@@ -373,6 +392,9 @@ export const finderResultsSchema = z.object({
           method: z.string().max(200).nullish(),
           // Cleaned field by field in the service: one odd link mustn't reject a result.
           enrichment: z.record(z.string().max(1000)).nullish(),
+          // Profile mode's facts. Cleaned by cleanProfile in the service, which
+          // also decides whether there is anything worth a sentence.
+          profile: z.unknown().optional(),
           researchComplete: z.boolean(),
           // Seconds. The worker's phone pause is time arithmetic, so it arrives
           // with a fraction; demanding an integer rejected the whole result
@@ -387,17 +409,24 @@ export const finderResultsSchema = z.object({
             })
             .optional(),
           // Which pass produced this result. Enrichment rows succeed on a social
-          // profile alone, so they are the one case where FOUND carries no email.
-          mode: z.enum(['EMAIL', 'ENRICH']).optional(),
+          // profile alone and profile rows on facts alone, so those are the cases
+          // where FOUND carries no email.
+          mode: z.enum(['EMAIL', 'ENRICH', 'PROFILE']).optional(),
         })
         .superRefine((r, ctx) => {
-          const enrich = r.mode === 'ENRICH';
-          if (r.status === 'FOUND' && !r.email && !enrich)
+          const factsOnly = r.mode === 'ENRICH' || r.mode === 'PROFILE';
+          if (r.status === 'FOUND' && !r.email && !factsOnly)
             ctx.addIssue({ code: 'custom', message: 'FOUND requires email' });
-          if (enrich && !r.enrichment && r.status === 'FOUND') {
+          if (r.mode === 'ENRICH' && !r.enrichment && r.status === 'FOUND') {
             ctx.addIssue({
               code: 'custom',
               message: 'An enrichment FOUND needs at least one social link',
+            });
+          }
+          if (r.mode === 'PROFILE' && !r.profile && r.status === 'FOUND') {
+            ctx.addIssue({
+              code: 'custom',
+              message: 'A profile FOUND needs the facts it found',
             });
           }
           if (

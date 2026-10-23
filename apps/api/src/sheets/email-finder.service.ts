@@ -20,6 +20,7 @@ import {
   OnModuleDestroy,
   OnModuleInit,
 } from '@nestjs/common';
+import type { Prisma } from '@prisma/client';
 import type {
   EmailFinderFindDto,
   EmailFinderJobStatus,
@@ -30,6 +31,7 @@ import { PrismaService } from '../prisma/prisma.service';
 import { RealtimeService } from '../realtime/realtime.service';
 import { RedisService } from '../redis/redis.service';
 
+import { cleanProfile } from './school-profile';
 import {
   FINDER_HEADERS,
   SheetsService,
@@ -77,6 +79,8 @@ export interface FinderResult {
   notes?: string | null;
   method?: string | null;
   enrichment?: Record<string, string> | null;
+  /** Profile mode only: what the school publishes about itself (see school-profile.ts). */
+  profile?: unknown;
 }
 
 /** Details the finder verified for a row's empty cells, by sheet column. */
@@ -93,10 +97,12 @@ const ENRICHMENT_COLUMNS = [
 
 /**
  * EMAIL hunts addresses; ENRICH hunts the social profile URLs and fills those
- * columns. They are separate jobs so a tab can run both, and so enrichment
- * never waits behind a queued address run.
+ * columns; PROFILE reads what the school publishes about itself (programmes,
+ * instructors, the timetable) so the Status cell can be personalised. They are
+ * separate jobs so a tab can run them independently, and so one never waits
+ * behind another's queue.
  */
-export type FinderMode = 'EMAIL' | 'ENRICH';
+export type FinderMode = 'EMAIL' | 'ENRICH' | 'PROFILE';
 
 /** The sheet columns enrichment mode owns: it overwrites these by design. */
 const SOCIAL_COLUMNS = new Set([
@@ -235,13 +241,19 @@ export class EmailFinderService implements OnModuleDestroy, OnModuleInit {
       if (host) domainCounts.set(host, (domainCounts.get(host) ?? 0) + 1);
     }
 
-    const queued: { fingerprint: string; input: FinderRowInput }[] = [];
+    const queued: { fingerprint: string; input: FinderRowInput; rowIndex: number }[] = [];
     let alreadyHadEmail = 0;
     let alreadyComplete = 0;
     const seen = new Set<string>();
-    for (const row of rows.slice(1)) {
+    const rowIndexByFingerprint = new Map<string, number>();
+    const dataRows = rows.slice(1);
+    for (let i = 0; i < dataRows.length; i++) {
+      const row = dataRows[i]!;
       const title = text(row[cols.school]).trim();
       if (!title) continue;
+      // Every data row's sheet position, for the rows already queued before this
+      // column existed (see the backfill below).
+      rowIndexByFingerprint.set(fingerprint(row, cols), i + 2);
       // The address hunt skips rows that already have an address. Enrichment
       // must not: an address says nothing about whether the social columns are
       // filled, and those are exactly what it was asked for.
@@ -255,21 +267,32 @@ export class EmailFinderService implements OnModuleDestroy, OnModuleInit {
         alreadyComplete++;
         continue;
       }
+      // Profile mode needs somewhere to read: the site or a social profile.
+      // A row with none of them has nothing to personalise a sentence with.
+      const website = text(row[cols.website]).trim();
+      const facebook = text(row[cols.facebook]).trim();
+      const instagram = text(row[cols.instagram]).trim();
+      if (mode === 'PROFILE' && !website && !facebook && !instagram) {
+        alreadyComplete++;
+        continue;
+      }
       const fp = fingerprint(row, cols);
       if (seen.has(fp)) continue;
       seen.add(fp);
-      const website = text(row[cols.website]).trim();
+      const domainCountsKey = domainCounts.get(hostOf(website)) ?? 1;
       queued.push({
         fingerprint: fp,
+        // The sheet row the facts belong to: a push finds the profile by it.
+        rowIndex: i + 2,
         input: {
           title,
           website,
           address: rowAddress(row, cols) ?? '',
           phone: text(row[cols.phone]).trim(),
           category: text(row[cols.category]).trim(),
-          facebook: text(row[cols.facebook]).trim(),
-          instagram: text(row[cols.instagram]).trim(),
-          sharedDomainCount: domainCounts.get(hostOf(website)) ?? 1,
+          facebook,
+          instagram,
+          sharedDomainCount: domainCountsKey,
         },
       });
     }
@@ -288,12 +311,13 @@ export class EmailFinderService implements OnModuleDestroy, OnModuleInit {
       });
     }
     // Create the output columns as soon as a sheet is selected, even if no address is found.
-    await this.writeToSheet(job, []);
+    // Profile mode writes no column at all: its output is the row's profile.
+    if (mode !== 'PROFILE') await this.writeToSheet(job, []);
 
     // Upgrade pre-v2 identities in place so existing pending work remains writable.
     const existingRows = await this.prisma.emailFinderRow.findMany({
       where: { jobId: job.id },
-      select: { id: true, fingerprint: true, input: true },
+      select: { id: true, fingerprint: true, input: true, rowIndex: true },
     });
     const fingerprints = new Set(existingRows.map((r) => r.fingerprint));
     const inputColumns = findColumns(['title', 'phone', 'website', 'address']);
@@ -309,6 +333,15 @@ export class EmailFinderService implements OnModuleDestroy, OnModuleInit {
           data: { fingerprint: upgraded },
         });
         fingerprints.add(upgraded);
+      }
+      // Rows queued before this column existed get their sheet row now, so the
+      // Status cell's push can find their profile.
+      const sheetRow = rowIndexByFingerprint.get(row.fingerprint);
+      if (row.rowIndex === null && sheetRow) {
+        await this.prisma.emailFinderRow.update({
+          where: { id: row.id },
+          data: { rowIndex: sheetRow },
+        });
       }
     }
     await this.prisma.emailFinderRow.updateMany({
@@ -326,6 +359,7 @@ export class EmailFinderService implements OnModuleDestroy, OnModuleInit {
           jobId: job.id,
           fingerprint: q.fingerprint,
           input: q.input as never,
+          rowIndex: q.rowIndex,
         })),
         skipDuplicates: true,
       });
@@ -395,6 +429,12 @@ export class EmailFinderService implements OnModuleDestroy, OnModuleInit {
       take: RECENT_FINDS,
       select: FIND_FIELDS,
     });
+    // Profile mode's "found" rows carry a profile instead of an address; the
+    // Dial button shows that count, so it is not reported as nothing found.
+    const withProfile =
+      mode === 'PROFILE'
+        ? await this.prisma.emailFinderRow.count({ where: { jobId: job.id, status: 'FOUND' } })
+        : undefined;
     return {
       jobId: job.id,
       status: job.status as EmailFinderJobStatus,
@@ -410,6 +450,7 @@ export class EmailFinderService implements OnModuleDestroy, OnModuleInit {
         note: r.notes ?? '',
       })),
       recentFinds: finds.map((r) => toFind(r, job)),
+      withProfile,
       workerOnline,
       workerLastSeen: lastSeen,
     };
@@ -490,10 +531,11 @@ export class EmailFinderService implements OnModuleDestroy, OnModuleInit {
         select: {
           jobId: true,
           input: true,
-          job: { select: { userId: true, spreadsheetId: true, sheetTitle: true } },
+          job: { select: { userId: true, spreadsheetId: true, sheetTitle: true, mode: true } },
         },
       });
       if (!row) continue;
+      const profile = cleanProfile(r.profile);
       const updated = await this.prisma.emailFinderRow.updateMany({
         where: { id: r.id, status: 'CLAIMED', leaseToken: r.leaseToken },
         data: {
@@ -515,6 +557,9 @@ export class EmailFinderService implements OnModuleDestroy, OnModuleInit {
           notes: clip(r.notes, 1000),
           method: r.status === 'FOUND' ? clip(r.method, 200) : null,
           ...(cleanEnrichment(r.enrichment) ? { enrichment: cleanEnrichment(r.enrichment)! } : {}),
+          // A profile is kept until a newer one replaces it; a retry or a
+          // "nothing specific on the pages" result must not wipe it.
+          ...(profile ? { profile: profile as unknown as Prisma.InputJsonValue } : {}),
         },
       });
       if (!updated.count) continue;
@@ -572,10 +617,14 @@ export class EmailFinderService implements OnModuleDestroy, OnModuleInit {
     const rows = await this.prisma.emailFinderRow.findMany({
       where: { jobId, writtenAt: null, status: { in: FINAL } },
     });
-    const useful = rows.filter(
-      (r) => r.email || r.contactFormUrl || r.decisionMaker || cleanEnrichment(r.enrichment),
-    );
-    if (useful.length > 0) await this.writeToSheet(job, useful);
+    // Profile mode writes no column: its output stays in the row, where the
+    // Status-cell push reads it.
+    if (job.mode !== 'PROFILE') {
+      const useful = rows.filter(
+        (r) => r.email || r.contactFormUrl || r.decisionMaker || cleanEnrichment(r.enrichment),
+      );
+      if (useful.length > 0) await this.writeToSheet(job, useful);
+    }
     if (rows.length > 0) {
       await this.prisma.emailFinderRow.updateMany({
         where: { id: { in: rows.map((r) => r.id) } },

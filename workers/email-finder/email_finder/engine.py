@@ -146,6 +146,10 @@ class Finding:
     # holds every address that passed DNS validation and scoring minimum,
     # comma-separated when written to the sheet.
     emails: list[str] = field(default_factory=list)
+    # What the school publishes about itself (programmes, instructors, the
+    # timetable, events, offers, age). Profile mode fills it; the API turns it
+    # into the three personalised sentences in the Status cell.
+    profile: dict | None = None
 
     @property
     def status(self) -> str:
@@ -203,6 +207,98 @@ class Engine:
         except Exception as err:  # noqa: BLE001
             log.exception("enrichment failed: %s", row.title)
             return Finding(notes=[f"error: {err}"])
+
+    async def profile(self, row: Row) -> Finding:
+        """What the school publishes about itself: programmes, staff, timetable.
+
+        Profile mode. The facts become the three sentences in the Status cell
+        after a call, so this reads what a visitor reads: the site's home page
+        and its class/about/contact pages, and the Facebook or Instagram profile
+        when the site has no programmes of its own. Pages come from the same
+        cache the address hunt fills, so a tab it already researched costs no
+        requests. No addresses, forms or searches: this pass writes no sheet
+        column, it only fills the row's profile.
+        """
+        from .profile import extract  # spaCy only when a profile is asked for
+
+        pages: list[tuple[str, str]] = []
+        read: list[str] = []
+
+        async def read_page(url: str) -> PageInfo | None:
+            page = await self.fetcher.get(url)
+            if page is None or page.blocked or not page.html:
+                return None
+            info = parse_page(page.final_url or url, page.html)
+            if len(info.text.strip()) < 400 and self.fetcher.use_browser:
+                # A JavaScript-only site hands a plain request an empty shell;
+                # the browser render is what a visitor actually sees.
+                rendered = await self.fetcher.render(page.final_url or url)
+                if rendered and rendered.html and not rendered.blocked:
+                    info = parse_page(rendered.final_url or url, rendered.html)
+            if info.text.strip():
+                pages.append((url, info.text))
+                read.append(url)
+            return info
+
+        site = row.website.strip()
+        info = await read_page(site) if site else None
+        if info is not None:
+            for url in self._profile_links(info, site):
+                await read_page(url)
+        facts = extract(pages, title=row.title, category=row.category)
+        if not facts.facts() and (row.facebook or row.instagram):
+            # The social profile is the last resort: it costs one of the day's
+            # social lookups, so it is only spent when the site said nothing.
+            for url in (row.facebook, row.instagram):
+                if not url:
+                    continue
+                page = (await self.fetcher.fetch_fb_profile(url) if "facebook" in url.lower()
+                        else await self.fetcher.fetch_ig_profile(url))
+                if page is None or page.blocked or not page.html:
+                    continue
+                text = parse_page(page.final_url or url, page.html).text
+                if text.strip():
+                    pages.append((url, text))
+                    read.append(url)
+            facts = extract(pages, title=row.title, category=row.category)
+        if not read:
+            return Finding(notes=["No page with text could be read for this row"],
+                           research_complete=True)
+        notes = [f"Read {len(read)} page(s)"] if facts.facts() else [
+            "Nothing specific about programmes, staff or the timetable on the pages read"]
+        log.info("Profile: %d programme(s), %d instructor(s), %d day(s) from %d page(s) for %s",
+                 len(facts.programs), len(facts.instructors), len(facts.days), len(read), row.title)
+        return Finding(profile=facts.to_dict() if facts.facts() else None,
+                       notes=notes, research_complete=True)
+
+    def _profile_links(self, info: PageInfo, site: str, limit: int = 4) -> list[str]:
+        """Same-site pages that hold programmes and timetables, best first."""
+        host = _host(site)
+        wanted = re.compile(
+            r"class|program|timetable|schedule|lesson|course|junior|kids|adult|beginner|"
+            r"about|instructor|team|coach|staff|contact", re.I)
+        scored: list[tuple[int, str]] = []
+        seen: set[str] = set()
+        for link, anchor in info.links:
+            parts = urlsplit(link)
+            if parts.netloc.lower().removeprefix("www.") != host or link in seen:
+                continue
+            if re.search(r"\.(pdf|jpg|jpeg|png|gif|zip|mp4|docx?)$", parts.path, re.I):
+                continue
+            seen.add(link)
+            hay = f"{parts.path} {anchor}"
+            if not wanted.search(hay):
+                continue
+            score = 0
+            if re.search(r"timetable|schedule|class|program|lesson|course", hay, re.I):
+                score += 5
+            if re.search(r"about|team|instructor|coach|staff|junior|kids|adult", hay, re.I):
+                score += 3
+            if re.search(r"contact", hay, re.I):
+                score += 1
+            scored.append((score, link))
+        scored.sort(key=lambda item: -item[0])
+        return [link for _, link in scored[:limit]]
 
 
 class _Job:

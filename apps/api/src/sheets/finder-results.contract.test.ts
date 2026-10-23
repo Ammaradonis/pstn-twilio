@@ -56,6 +56,38 @@ describe('email finder worker results', () => {
     ).toBe(false);
   });
 
+  it('accepts a PROFILE result: facts, no email', () => {
+    const parsed = finderResultsSchema.safeParse({
+      results: [
+        {
+          ...base,
+          mode: 'PROFILE',
+          status: 'FOUND',
+          email: null,
+          profile: {
+            programs: ['kids karate'],
+            instructors: ['Sensei John Smith'],
+            days: ['Tuesday'],
+            times: ['5–6pm'],
+          },
+        },
+      ],
+    });
+    expect(parsed.success).toBe(true);
+  });
+
+  it('rejects a PROFILE FOUND that carries no facts', () => {
+    const parsed = finderResultsSchema.safeParse({
+      results: [{ ...base, mode: 'PROFILE', status: 'FOUND', email: null }],
+    });
+    expect(parsed.success).toBe(false);
+    if (!parsed.success) {
+      expect(parsed.error.issues.map((i) => i.message)).toContain(
+        'A profile FOUND needs the facts it found',
+      );
+    }
+  });
+
   it('rounds a fractional retryAfter instead of rejecting the result', () => {
     // The worker's phone pause is time arithmetic; requiring an integer threw
     // away every deferred row ("results.0.retryAfter: Expected integer").
