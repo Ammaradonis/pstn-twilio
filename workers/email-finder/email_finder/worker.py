@@ -8,6 +8,7 @@ time; unfinished rows return to the queue after 20 minutes.
 from __future__ import annotations
 
 import asyncio
+import faulthandler
 import logging
 import logging.handlers
 import signal
@@ -187,9 +188,10 @@ def loop_watchdog(ticks: list[float], stop: asyncio.Event, exit_process=None) ->
     `ticks[0]` is the last time a task got to run. Heartbeats, claims and the
     API's "worker online" all live on that loop, so a blocking call stops every
     one of them at once and nothing in the loop is left to say so. This thread
-    only reads a float, so it keeps going: it logs the stall, and ends the
-    process once the loop has clearly not recovered, which is the only thing the
-    10-minute scheduled task can see (a running process, so it does nothing).
+    only reads a float, so it keeps going: it dumps the stacks (the blocked call
+    is in them), logs the stall, and ends the process once the loop has clearly
+    not recovered, which is the only thing the 10-minute scheduled task can see
+    (a running process, so it does nothing).
     """
     exit_process = exit_process or os._exit
     warned_at = 0.0
@@ -197,6 +199,7 @@ def loop_watchdog(ticks: list[float], stop: asyncio.Event, exit_process=None) ->
         time.sleep(LOOP_TICK_SECONDS)
         stuck = time.monotonic() - ticks[0]
         if stuck >= LOOP_STALL_RESTART_SECONDS:
+            dump_stacks(f"the event loop was blocked for {stuck / 60:.0f} min")
             log.critical("The event loop has been blocked for %.0f min; nothing was claimed, "
                          "answered or reported in that time. Exiting so the scheduled task "
                          "starts a fresh worker.", stuck / 60)
@@ -206,8 +209,23 @@ def loop_watchdog(ticks: list[float], stop: asyncio.Event, exit_process=None) ->
         if (stuck >= LOOP_STALL_WARN_SECONDS
                 and time.monotonic() - warned_at >= LOOP_STALL_WARN_SECONDS):
             warned_at = time.monotonic()
+            dump_stacks(f"the event loop has not ticked for {stuck:.0f} s")
             log.error("The event loop has not ticked for %.0f s: a blocking call is holding it, "
-                      "so nothing is claimed or reported until that call returns.", stuck)
+                      "so nothing is claimed or reported until that call returns. Its stack is "
+                      "in .cache/stall-traceback.txt.", stuck)
+
+
+def dump_stacks(reason: str) -> None:
+    """Every thread's Python stack, in the file the watchdog points the log at.
+
+    Called while the event loop is blocked, so it must not need the loop: the
+    main thread's frames name the call that is holding it."""
+    try:
+        with (CACHE_DIR / "stall-traceback.txt").open("a", encoding="utf-8") as out:
+            out.write(f"\n=== {time.strftime('%Y-%m-%d %H:%M:%S')} {reason}\n")
+            faulthandler.dump_traceback(file=out, all_threads=True)
+    except Exception:  # noqa: BLE001 - a diagnostic must not become the failure
+        log.exception("could not write the stall traceback")
 
 
 def new_code_ready(started: tuple[tuple[str, int], ...], rejected: set) -> bool:

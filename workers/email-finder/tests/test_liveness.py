@@ -51,25 +51,31 @@ def _run_watchdog(ticks, stop, exit_process):
     assert not thread.is_alive()
 
 
-def test_a_frozen_event_loop_is_reported_from_outside_it(monkeypatch, caplog):
+def test_a_frozen_event_loop_is_reported_from_outside_it(monkeypatch, caplog, tmp_path):
     monkeypatch.setattr(worker, 'LOOP_TICK_SECONDS', 0.01)
     monkeypatch.setattr(worker, 'LOOP_STALL_WARN_SECONDS', 0.0)
     monkeypatch.setattr(worker, 'LOOP_STALL_RESTART_SECONDS', 600.0)
+    monkeypatch.setattr(worker, 'CACHE_DIR', tmp_path)
     caplog.set_level(logging.ERROR, logger='email_finder.worker')
     # The loop last ticked a minute ago, as a blocked call leaves it.
     _run_watchdog([time.monotonic() - 60], _Stop(after=2), lambda code: None)
     assert any('has not ticked' in record.message for record in caplog.records)
+    # The stacks name the call that is holding the loop.
+    dumped = (tmp_path / 'stall-traceback.txt').read_text(encoding='utf-8')
+    assert 'the event loop has not ticked' in dumped and 'File "' in dumped
 
 
-def test_a_loop_that_never_recovers_ends_the_process(monkeypatch):
+def test_a_loop_that_never_recovers_ends_the_process(monkeypatch, tmp_path):
     monkeypatch.setattr(worker, 'LOOP_TICK_SECONDS', 0.01)
     monkeypatch.setattr(worker, 'LOOP_STALL_WARN_SECONDS', 0.0)
     monkeypatch.setattr(worker, 'LOOP_STALL_RESTART_SECONDS', 0.0)
+    monkeypatch.setattr(worker, 'CACHE_DIR', tmp_path)
     # The real shutdown() closes handlers the rest of the suite still uses.
     monkeypatch.setattr(worker.logging, 'shutdown', lambda: None)
     exits = []
     _run_watchdog([time.monotonic() - 900], _Stop(after=50), exits.append)
     assert exits == [worker.EXIT_LOOP_STUCK]
+    assert 'blocked for 15 min' in (tmp_path / 'stall-traceback.txt').read_text(encoding='utf-8')
 
 
 def test_a_running_loop_is_left_alone(monkeypatch):
