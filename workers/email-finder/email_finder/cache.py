@@ -46,6 +46,10 @@ class Cache:
         # still works, it just falls back.
         try:
             self._db.execute("pragma journal_mode=wal")
+            # With WAL, NORMAL is crash-safe and does not fsync on every commit;
+            # a page commit on a busy disk was a synchronous stall in the middle of
+            # the event loop. A lost cache entry only costs one more fetch.
+            self._db.execute("pragma synchronous=normal")
         except sqlite3.OperationalError as err:
             log.warning("Cache stays in the default journal mode (%s).", err)
         self._db.execute(

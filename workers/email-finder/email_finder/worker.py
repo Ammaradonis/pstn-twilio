@@ -569,7 +569,13 @@ def main() -> None:
         kernel = ctypes.windll.kernel32
         kernel.GetCurrentProcess.restype = wintypes.HANDLE
         kernel.SetPriorityClass.argtypes = (wintypes.HANDLE, wintypes.DWORD)
-        kernel.SetPriorityClass(kernel.GetCurrentProcess(), 0x4000)
+        # NORMAL, not BELOW_NORMAL (0x4000, what this was): on a busy PC a
+        # below-normal worker is starved to a fraction of a core while the
+        # browsers it spawns run at normal priority. Its event loop then takes
+        # minutes to walk one Playwright reply, so the log goes quiet and the app
+        # shows it offline - 23 Oct: 32-minute and 193-second stalls, then a
+        # 10-minute one with the loop's thread inside Playwright's dispatch.
+        kernel.SetPriorityClass(kernel.GetCurrentProcess(), 0x20)  # NORMAL_PRIORITY_CLASS
 
     try:
         restart = asyncio.run(run())

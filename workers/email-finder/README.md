@@ -269,8 +269,11 @@ reached the API in the last two minutes. The log then says which half failed:
 `Cannot reach the API from this laptop (...)` is this PC's connection, while
 `Claimed ...` / `Alive: connected ...` lines mean the laptop is fine. If the log
 itself stops while the process is still listed, the event loop is blocked by a
-synchronous call; the worker's own watchdog says so after two minutes and exits
-after ten so the scheduled task starts a clean one (exit code 75).
+synchronous call: the worker's watchdog names the call's stack in
+`.cache/stall-traceback.txt` after two minutes and exits after ten so the
+scheduled task starts a clean one (exit code 75). On 23 Oct those stalls were
+Playwright's own reply handling while the PC ran at 100% and this process sat at
+below-normal priority, so it now runs at normal priority.
 
 Reset today's local lookup usage from PowerShell with `./reset-lookup-limits.ps1`.
 It resets the UTC-day Google, CSE, Facebook, Instagram, phone and search-API
