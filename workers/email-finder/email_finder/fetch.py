@@ -70,9 +70,34 @@ FIRST_PAUSE, LONGEST_PAUSE = 30 * 60, 8 * 3600
 USER_AGENT = _USER_AGENTS[0]  # kept for legacy callers
 MAX_BYTES = 2_500_000
 PAGE_TTL = 7 * 24 * 3600
+# Bumped when a stored page could have been saved wrong. v4: the client asked
+# for Brotli without a Brotli decoder (so Brotli pages were cached as binary
+# noise) and every page was decoded with the header's charset (so a UTF-8 page
+# that called itself iso-8859-1 was cached full of U+FFFD). Both read as junk.
+PAGE_NS = "page-v4"
 CHALLENGE = re.compile(r"verify (?:that )?you are human|verify you.re human|checking your browser|"
                        r"just a moment.{0,30}cloudflare|cf-chl-|challenge-platform|"
                        r"please complete the security check|unusual traffic from your", re.I)
+
+def _decode(raw: bytes, charset: str | None) -> str:
+    """The page's bytes as text, guessing less badly than the header does.
+
+    Plenty of older sites still declare iso-8859-1 or windows-1252 and send
+    UTF-8, or declare nothing at all: decoding those with the header turned
+    every dash and accent into U+FFFD, so a timetable read "4pm\uFFFD8pm" and the
+    sentence built from it was unusable. UTF-8 first (it fails loudly on bytes
+    that are not UTF-8), then whatever the header claims, then cp1252, which
+    cannot fail.
+    """
+    for encoding in ("utf-8", charset, "cp1252"):
+        if not encoding:
+            continue
+        try:
+            return raw.decode(encoding)
+        except (UnicodeDecodeError, LookupError):
+            continue
+    return raw.decode("utf-8", errors="replace")
+
 
 @dataclass
 class Page:
@@ -108,7 +133,11 @@ class Fetcher:
                 "User-Agent": random.choice(_USER_AGENTS),
                 "Accept-Language": "en-US,en;q=0.9",
                 "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
-                "Accept-Encoding": "gzip, deflate, br",
+                # Accept-Encoding is left to httpx on purpose: it advertises only
+                # the decoders that are installed. This used to say "br" always,
+                # and without the brotli package every Brotli-served page (much
+                # of the web) was decoded as raw bytes: the finder read binary
+                # noise, so those schools had no email, no programme, no facts.
                 "DNT": "1",
             },
             follow_redirects=False, timeout=httpx.Timeout(15, connect=8),
@@ -181,7 +210,7 @@ class Fetcher:
         self._host_last[host] = time.monotonic()
 
     async def get(self, url: str) -> Page | None:
-        cached = self.cache.get("page-v2", url)
+        cached = self.cache.get(PAGE_NS, url)
         if cached is not None:
             return Page(**cached)
         if not await self.allowed(url):
@@ -189,13 +218,13 @@ class Fetcher:
         host = urlsplit(url).netloc.lower()
         async with self._host_locks.setdefault(host, asyncio.Lock()):
             # Another row may have fetched this URL while this row was waiting.
-            cached = self.cache.get("page-v2", url)
+            cached = self.cache.get(PAGE_NS, url)
             if cached is not None:
                 return Page(**cached)
             await self._pace(host)
             page = await self._download(url)
         if page and not page.blocked:
-            self.cache.set("page-v2", url, page.__dict__, PAGE_TTL)
+            self.cache.set(PAGE_NS, url, page.__dict__, PAGE_TTL)
         return page
 
     async def _download(self, url: str) -> Page | None:
@@ -221,7 +250,7 @@ class Fetcher:
                         if size > MAX_BYTES:
                             return None
                         chunks.append(chunk)
-                    html = b"".join(chunks).decode(res.encoding or "utf-8", errors="replace")
+                    html = _decode(b"".join(chunks), res.charset_encoding)
                     return Page(url, res.status_code, html, str(res.url), bool(CHALLENGE.search(html)))
         except (httpx.HTTPError, UnicodeError, ValueError):
             return None

@@ -242,6 +242,38 @@ def test_every_numbered_brave_key_is_a_provider(tmp_path, monkeypatch):
     assert [c for p, c, _ in search.providers if p == 'brave'] == ['k1', 'k2', 'k3']
 
 
+def test_a_page_is_not_requested_with_an_encoding_we_cannot_decode(tmp_path):
+    """Advertising Brotli without the brotli package read whole sites as noise.
+
+    The fetcher's client said "Accept-Encoding: gzip, deflate, br" whatever was
+    installed, so a Brotli-served page (much of the web) arrived as raw bytes and
+    decoded to binary junk: no email, no programme, no facts."""
+    from email_finder.fetch import Fetcher
+
+    fetcher = Fetcher(Cache(tmp_path / 'c.db'), per_host_delay=0, use_browser=False)
+    seen: dict[str, str] = {}
+
+    def handler(request):
+        seen['encoding'] = request.headers.get('accept-encoding', '')
+        return httpx.Response(
+            200,
+            headers={'content-type': 'text/html; charset=utf-8'},
+            text='<a href="mailto:info@dojo.org">email</a>',
+        )
+
+    fetcher._client = httpx.AsyncClient(transport=httpx.MockTransport(handler))
+
+    async def run():
+        page = await fetcher.get('https://example.com/')
+        await fetcher.close()
+        return page
+
+    page = asyncio.run(run())
+    assert page is not None and 'info@dojo.org' in page.html
+    assert 'gzip' in seen['encoding']
+    assert 'br' not in seen['encoding']
+
+
 def test_exhausted_brave_key_falls_through_to_the_next(tmp_path):
     async def run():
         used = []
