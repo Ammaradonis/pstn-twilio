@@ -126,9 +126,7 @@ async def _search(groups: FacebookGroups, store: GroupStore, limit: int,
 async def _join(groups: FacebookGroups, store: GroupStore, top: int) -> None:
     from email_finder.fb_vocab import GroupCandidate
 
-    candidates = sorted((record for record in store.all()
-                         if record.state == "candidate" and record.score >= 45),
-                        key=lambda record: -record.score)[:top]
+    candidates = store.join_queue()[:top]
     if not candidates:
         print("No unjoined candidates above the threshold.")
         return
@@ -155,7 +153,7 @@ async def _engage(groups: FacebookGroups, store: GroupStore, count: int) -> None
 
 async def _outreach(groups: FacebookGroups, store: GroupStore, dms: int) -> None:
     sent_total = 0
-    for group in store.needs_visit():
+    for group in store.joined():
         if sent_total >= dms:
             break
         sent = await groups.outreach(group, max_dms=dms - sent_total)
@@ -181,11 +179,19 @@ def _review(store: GroupStore) -> None:
 def _report(store: GroupStore) -> None:
     limits = fb_limits()
     groups = store.all()
+    state = store.state()
     print(json.dumps({
         "groups": len(groups),
         "joined": len([g for g in groups if g.state == "joined"]),
         "requested": len([g for g in groups if g.state == "requested"]),
         "candidates": len([g for g in groups if g.state == "candidate"]),
+        "eligible_join_queue": len(store.join_queue()),
+        "unverified_candidates": sum(not (g.members or g.privacy or g.url) for g in groups),
+        "failed_or_refused": [{"name": g.name, "state": g.state, "reason": g.note}
+                              for g in groups if g.state in ("failed", "refused")],
+        "verified_actions": {key: len(state.get(key) or []) for key in
+                             ("liked_posts", "commented_posts", "replied_comments",
+                              "followed_authors", "dm_sent")},
         "searches_run": store.search_count(),
         "caps_per_day": {name: limits.cap(name, per_day=True) for name in
                          ("like", "comment", "reply", "follow", "dm", "join", "search")},

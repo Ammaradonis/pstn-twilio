@@ -196,7 +196,7 @@ def test_capped_search_does_not_starve_joining(tmp_path, monkeypatch):
 
 def test_capped_join_does_not_starve_engagement(tmp_path, monkeypatch):
     runner, _, groups = make(tmp_path, monkeypatch, None)
-    record = GroupRecord(name="Martial Arts School Owners", score=88, state="candidate")
+    record = GroupRecord(name="Martial Arts School Owners", score=88, state="candidate", members=500)
     runner.store.put(record)
 
     async def capped(candidate, **kwargs):
@@ -235,6 +235,59 @@ def test_join_leaves_low_scoring_candidates_alone(tmp_path, monkeypatch):
     result = asyncio.run(runner.step(run("JOIN")["run"], {"joins": 2}))
     assert groups.joined == []
     assert result.stage == "ENGAGE"
+
+
+@pytest.mark.parametrize("stage,key", [("JOIN", "joins"), ("ENGAGE", "engagements"), ("OUTREACH", "dms")])
+def test_zero_budget_never_performs_an_action(tmp_path, monkeypatch, stage, key):
+    runner, _, groups = make(tmp_path, monkeypatch, None)
+    runner.store.put(GroupRecord(name="candidate", url="https://facebook.com/groups/1", score=90))
+    runner.store.put(GroupRecord(name="joined", state="joined"))
+    result = asyncio.run(runner.step(run(stage)["run"], {key: 0}))
+    assert groups.joined == groups.visited == groups.outreached == []
+    assert result.stage == stage and "no " in result.note
+
+
+def test_quiet_hours_stop_before_any_stage_touches_phone(tmp_path, monkeypatch):
+    runner, _, groups = make(tmp_path, monkeypatch, None)
+    monkeypatch.setattr("email_finder.ambient.in_quiet_hours", lambda *args: True)
+    result = asyncio.run(runner.step(run("SEARCH")["run"], {"searches": 3}))
+    assert groups.searches == []
+    assert result.note.startswith("quiet hours")
+
+
+def test_recent_visit_does_not_remove_group_from_outreach(tmp_path, monkeypatch):
+    import time
+    runner, _, groups = make(tmp_path, monkeypatch, None)
+    runner.store.put(GroupRecord(name="recent", state="joined", last_visit=time.time()))
+    result = asyncio.run(runner.step(run("OUTREACH")["run"], {"dms": 1}))
+    assert groups.outreached == ["recent"] and result.dms == 1
+
+
+def test_blocked_visit_reason_survives_in_report(tmp_path, monkeypatch):
+    runner, _, groups = make(tmp_path, monkeypatch, None)
+    runner.store.put(GroupRecord(name="joined", state="joined"))
+
+    async def unavailable(group):
+        return GroupVisit(group=group.name, blocked="phone unavailable")
+
+    groups.visit = unavailable
+    result = asyncio.run(runner.step(run("ENGAGE")["run"], {"engagements": 1}))
+    assert "phone unavailable" in result.note
+
+
+def test_cached_plan_summary_counts_actual_addresses(tmp_path, monkeypatch):
+    from types import SimpleNamespace
+    runner, _, _ = make(tmp_path, monkeypatch, None)
+    runner._plan = {"terms": [{}, {}], "ledger": {"one": ["query"], "two": ["other"]}}
+    snapshot = tmp_path / "addresses.json"
+    snapshot.write_text("[]")
+    monkeypatch.setattr(runner_module, "CACHE_FILE", snapshot)
+    monkeypatch.setattr(runner_module, "load", lambda path: [
+        SimpleNamespace(address="one", usable=True), SimpleNamespace(address="one", usable=True),
+        SimpleNamespace(address="two", usable=True), SimpleNamespace(address="", usable=False)])
+    summary = runner.plan_summary()
+    assert summary["addresses"] == summary["covered"] == 3
+    assert summary["uncovered"] == 0
 
 
 def test_engage_visits_a_due_group_and_moves_to_outreach(tmp_path, monkeypatch):

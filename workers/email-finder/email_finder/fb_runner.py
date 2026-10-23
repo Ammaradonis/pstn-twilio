@@ -161,10 +161,13 @@ class FbGroupsRunner:
         if self._plan is None:
             self.plan()
         if self._plan_summary is None and self._plan is not None:
+            ledger = self._plan.get("ledger") or {}
+            addresses = [r.address for r in load(CACHE_FILE) if r.usable] if CACHE_FILE.is_file() else list(ledger)
+            covered = sum(bool(ledger.get(address)) for address in addresses)
             self._plan_summary = {
-                "addresses": 0, "covered": 0,
+                "addresses": len(addresses), "covered": covered,
                 "searches": len(self._plan.get("terms") or []),
-                "uncovered": 0, "builtAt": None,
+                "uncovered": len(addresses) - covered, "builtAt": None,
             }
         return self._plan_summary
 
@@ -185,11 +188,15 @@ class FbGroupsRunner:
     # ── the stages ───────────────────────────────────────────────────────────
 
     async def step(self, run: dict, batch: dict) -> Batch:
+        from .ambient import in_quiet_hours
         result = Batch(stage=str(run.get("stage") or "SEARCH").upper())
         if result.stage not in STAGE_CYCLE:
             result.stage = "SEARCH"
         if not self.limits.enabled:
             result.note = "engagement is switched off (FB_GROUPS_ENGAGE=off)"
+            return result
+        if in_quiet_hours(self.limits.quiet_hours):
+            result.note = "quiet hours; no phone actions attempted"
             return result
         before = len(self.store.review_queue())
         if result.stage == "SEARCH":
@@ -245,31 +252,41 @@ class FbGroupsRunner:
         return note + (f" ({skipped} not run)" if skipped else "")
 
     async def _join(self, count: int, result: Batch) -> str:
-        waiting = sorted((record for record in self.store.all()
-                          if record.state == "candidate" and record.score >= JOIN_THRESHOLD),
-                         key=lambda record: -record.score)
+        if count <= 0:
+            return "no join budget in this batch"
+        waiting = self.store.join_queue()
         if not waiting:
             result.stage = "ENGAGE"
             return "no group left to join; moving on to engaging"
         joined = 0
-        for record in waiting[: max(1, count)]:
+        notes = []
+        requested = 0
+        for record in waiting[:count]:
             joined_record = await self.groups.join(
                 GroupCandidate(name=record.name, url=record.url, members=record.members,
                                score=record.score, kind=record.kind,
                                privacy=record.privacy, found_by=record.found_by),
                 country=record.country, covers=record.covers)
-            if joined_record.state in ("joined", "requested"):
+            if joined_record.state == "joined":
                 joined += 1
+            elif joined_record.state == "requested":
+                requested += 1
+            if joined_record.note:
+                notes.append(f"{record.name}: {joined_record.note}")
         result.joined = joined
         # Pending candidates and a join cooldown must not starve existing groups.
         result.stage = "ENGAGE"
-        return f"joined {joined} group(s)" if joined else "no join went through this batch"
+        return (f"{joined} confirmed join(s), {requested} pending request(s)"
+                + ("; " + "; ".join(notes) if notes else ""))
 
     async def _engage(self, count: int, result: Batch) -> str:
-        due = self.store.needs_visit()[: max(1, count)]
+        if count <= 0:
+            return "no engagement budget in this batch"
+        due = self.store.needs_visit()[:count]
         if not due:
             result.stage = "OUTREACH"
             return "no group due a visit; moving on to outreach"
+        blocked = []
         for group in due:
             visit = await self.groups.visit(group)
             result.likes += visit.likes
@@ -277,15 +294,18 @@ class FbGroupsRunner:
             result.replies += visit.replies
             result.follows += visit.follows
             if visit.blocked:
-                result.note = visit.blocked
+                blocked.append(f"{group.name}: {visit.blocked}")
         result.stage = "OUTREACH"
         return (f"{result.likes} like(s), {result.comments} comment(s), "
-                f"{result.replies} reply(ies), {result.follows} follow(s)")
+                f"{result.replies} reply(ies), {result.follows} follow(s)"
+                + ("; blocked: " + "; ".join(blocked) if blocked else ""))
 
     async def _outreach(self, count: int, result: Batch) -> str:
-        budget = max(1, count)
+        if count <= 0:
+            return "no outreach budget in this batch"
+        budget = count
         sent = 0
-        for group in self.store.needs_visit():
+        for group in self.store.joined():
             if sent >= budget:
                 break
             messages = await self.groups.outreach(group, max_dms=budget - sent)
@@ -316,7 +336,7 @@ class FbGroupsRunner:
             try:
                 result = await self.run_once()
                 if result is not None:
-                    delay = POLL_SECONDS
+                    delay = 300 if result.note.startswith("quiet hours") else POLL_SECONDS
             except httpx.HTTPStatusError as err:
                 if err.response.status_code == 401:
                     log.error("the API rejected the worker token for Facebook groups; "

@@ -24,6 +24,7 @@ releases, its deep links do not, and a URL that fails is a cheap failure.
 from __future__ import annotations
 
 import asyncio
+import hashlib
 import logging
 import random
 import re
@@ -257,13 +258,19 @@ def group_card(nodes: list[Node], name: str) -> Node | None:
     target = (name or "").casefold().strip()
     if not target:
         return None
+    # A search field/suggestion containing the query is not a result card.
+    for node in visible(nodes):
+        candidate = _card_from_label(node)
+        if candidate and candidate.name.casefold() == target and node.clickable:
+            return node
     height = screen_height(visible(nodes))
     for row in bands(visible(nodes), gap=18, max_height=height * 0.30):
         joined = " ".join(n.label for n in row).casefold()
-        if target not in joined:
+        if not GROUP_MEMBERS.search(joined):
             continue
         for node in row:
-            if node.clickable and node.center != (0, 0) and target in node.label.casefold():
+            if (node.clickable and node.center != (0, 0)
+                    and card_name(node.label).casefold() == target):
                 return node
     return None
 
@@ -278,11 +285,16 @@ def _url_hint(row: list[Node]) -> str:
     return ""
 
 
-def join_control(nodes: list[Node]) -> tuple[Node | None, str]:
+def join_control(nodes: list[Node], group_name: str = "") -> tuple[Node | None, str]:
     """The Join button, or the state that says there is nothing to tap."""
-    for node in nodes:
+    for node in visible(nodes):
         label = node.label.casefold().strip()
-        if label in JOIN_LABELS and node.clickable:
+        if label in JOINED_LABELS:
+            return None, label
+    for node in visible(nodes):
+        label = node.label.casefold().strip()
+        named_join = bool(group_name) and label == f"join {group_name.casefold()} group"
+        if (label in JOIN_LABELS or named_join) and node.clickable:
             return node, "joinable"
         if label in JOINED_LABELS:
             return None, label
@@ -459,6 +471,9 @@ def looks_published(nodes: list[Node], text: str) -> bool:
     if not needle:
         return False
     for node in nodes:
+        if ("edit" in node.rid.casefold()
+                or (node.clickable and node.label.strip() == text.strip())):
+            continue  # text still sitting in a composer is not publication
         haystack = re.sub(r"\W+", " ", node.label).casefold()
         if needle[:40] and needle[:40] in haystack:
             return True
@@ -496,6 +511,8 @@ class GroupRecord:
     last_visit: float = 0.0
     note: str = ""
     reasons: list[str] = field(default_factory=list)
+    join_attempts: int = 0
+    retry_at: float = 0.0
 
 
 class GroupStore:
@@ -530,7 +547,20 @@ class GroupStore:
         self._flush()
 
     def joined(self) -> list[GroupRecord]:
-        return [g for g in self._groups.values() if g.state in ("joined", "requested")]
+        return [g for g in self._groups.values() if g.state == "joined"]
+
+    def join_queue(self, now: float | None = None) -> list[GroupRecord]:
+        now = time.time() if now is None else now
+        # Retry only failures known to precede a Join tap. An uncertain tap is
+        # reviewed, never automatically repeated.
+        retryable = {"the group could not be opened from its card",
+                     "no Join control on the group page"}
+        return sorted((g for g in self.all() if g.score >= 45
+                       and (g.members or g.privacy or g.url)
+                       and (g.join_attempts < 3 or g.state == "requested") and g.retry_at <= now
+                       and (g.state in ("candidate", "requested") or
+                            (g.state in ("failed", "refused") and g.note in retryable))),
+                      key=lambda g: (g.join_attempts, -g.score))
 
     def needs_visit(self, now: float | None = None, every_s: float = 6 * 3600) -> list[GroupRecord]:
         now = now if now is not None else time.time()
@@ -595,6 +625,12 @@ class GroupVisit:
     skipped: int = 0
     blocked: str = ""
     notes: list[str] = field(default_factory=list)
+
+
+def post_key(group: GroupRecord, author: str, text: str) -> str:
+    """Stable across Python restarts, scoped to the group and author."""
+    payload = "\0".join((group.url or group.name, author, " ".join(text.split())))
+    return "fb-post:" + hashlib.sha256(payload.encode("utf-8")).hexdigest()
 
 
 class FacebookGroups:
@@ -662,7 +698,13 @@ class FacebookGroups:
         day_name, hour_name = reserve_name(action)
         counts = {action: self.phone.cache.count(day_name), hour_name:
                   self.phone.cache.count(hour_name)}
-        return can_act(self.limits, self._session, action, counts)
+        allowed, why = can_act(self.limits, self._session, action, counts)
+        if not allowed:
+            return allowed, why
+        until = self.phone.cache.get("fb-action-cooldown", action) or 0
+        if float(until) > time.time():
+            return False, f"{action} cooldown"
+        return True, ""
 
     async def _commit(self, action: str) -> tuple[bool, str]:
         """Spend one unit of an action's allowance on both counters.
@@ -677,6 +719,11 @@ class FacebookGroups:
             return False, f"daily {action} cap reached"
         if not self.phone.cache.reserve(hour_name, self.limits.cap(action, per_day=False)):
             return False, f"hourly {action} cap reached"
+        from .fb_engage import COOLDOWN
+        lo, hi = COOLDOWN.get(action, (0, 0))
+        if hi:
+            self.phone.cache.set("fb-action-cooldown", action,
+                                 time.time() + random.uniform(lo, hi), hi + 60)
         return True, ""
 
     async def _reserve(self, action: str) -> tuple[bool, str]:
@@ -687,6 +734,12 @@ class FacebookGroups:
 
     async def _turn(self, app: str = "facebook") -> str:
         """None-equivalent '' when the phone may be used now, else why not."""
+        from .ambient import in_quiet_hours
+
+        if not self.limits.enabled:
+            return "Facebook groups are switched off"
+        if in_quiet_hours(self.limits.quiet_hours):
+            return "quiet hours"
         if self.phone.phone_paused_for():
             return "the phone is paused after a security check"
         if self.phone.paused_for(app):
@@ -713,26 +766,34 @@ class FacebookGroups:
         for wait in (2.5, 2.5, 3.0):
             await self._settle(wait)
             nodes = await self._screen()
-            if any(n.package.startswith(FACEBOOK) and n.label for n in nodes):
+            query_shown = any(n.package.startswith(FACEBOOK) and n.clickable
+                              and n.label.casefold().strip() == term.casefold().strip()
+                              and n.bounds[1] < 250 for n in nodes)
+            if query_shown and any(n.label.casefold() == "clear text" for n in nodes):
                 break
-        if not any(n.package.startswith(FACEBOOK) and n.label for n in nodes):
+        else:
             return False
-        if not group_rows(nodes):
+        if groups_chip(nodes) is None:
             await self.phone._key("KEYCODE_ENTER")
             await self._settle(SEARCH_RESULTS_S)
             nodes = await self._screen()
-        chip = groups_chip(nodes) if not group_rows(nodes) else None
-        if chip is not None:
+        chip = groups_chip(nodes)
+        if chip is not None and not chip.selected:
             await self.phone._tap(chip)
             await self._settle(SEARCH_RESULTS_S)
-        return True
+        for _ in range(3):
+            nodes = await self._screen()
+            chip = groups_chip(nodes)
+            empty = any(re.search(r"no results|couldn.t find any results", n.label, re.I)
+                        for n in visible(nodes))
+            if chip is not None and chip.selected and (group_rows(nodes) or empty):
+                return True
+            await self._settle(SEARCH_RESULTS_S)
+        log.info("Group results did not verify for %r; keeping the search queued", term)
+        return False
 
     async def search(self, term: SearchTerm) -> list[GroupCandidate]:
         """Run one search phrase and return the groups it shows."""
-        why = await self._turn()
-        if why:
-            log.info("Facebook search skipped (%s): %s", term.term, why)
-            return []
         allowed, why = await self._peek("search")
         if not allowed:
             log.info("Facebook search skipped (%s): %s", term.term, why)
@@ -741,6 +802,10 @@ class FacebookGroups:
             if not await self.phone._hold_phone(wait_s=10):
                 return []
             try:
+                why = await self._turn()
+                if why:
+                    log.info("Facebook search skipped (%s): %s", term.term, why)
+                    return []
                 if not await self._submit_search(term.term):
                     # Not counted, and not charged: the cap is for searches that
                     # reached Facebook, not for attempts that never got there.
@@ -801,14 +866,15 @@ class FacebookGroups:
         """
         terms = sorted((t for t in plan.get("terms", []) if t["tier"] in tiers),
                        key=lambda t: (t["tier"], -t.get("covers", 0), t["term"]))
+        terms = [t for t in terms
+                 if not self.store.searched(term_key(t["term"], t.get("country", "")))]
         if limit is not None:
             # Top `limit` per tier, so a capped run still covers every tier.
             picked: list[dict] = []
             for tier in tiers:
                 picked += [t for t in terms if t["tier"] == tier][:limit]
             terms = picked
-        return [t for t in terms
-                if not self.store.searched(term_key(t["term"], t.get("country", "")))]
+        return terms
 
     async def join(self, candidate: GroupCandidate, country: str = "",
                    covers: int = 0) -> GroupRecord:
@@ -817,23 +883,34 @@ class FacebookGroups:
             name=candidate.name, url=candidate.url, score=candidate.score,
             kind=candidate.kind, members=candidate.members, privacy=candidate.privacy,
             found_by=candidate.found_by, covers=covers, country=country)
-        why = await self._turn()
-        if why:
-            record.note = why
+        if record.state == "joined":
             return record
-        allowed, why = await self._reserve("join")
-        if not allowed:
-            record.note = why
-            return record
+        pending = record.state == "requested"
+        if record.state in ("failed", "refused") and record.note in {
+                "the group could not be opened from its card", "no Join control on the group page"}:
+            record.state = "candidate"
+        if not pending:
+            allowed, why = await self._peek("join")
+            if not allowed:
+                record.note = why
+                return record
         async with self.phone._lock:
             if not await self.phone._hold_phone(wait_s=10):
                 return record
+            tapped = False
             try:
+                why = await self._turn()
+                if why:
+                    record.note = why
+                    return record
+                if not pending:
+                    record.join_attempts += 1
+                record.retry_at = time.time() + 3600
                 if candidate.url:
                     record.url = candidate.url
                     await self._open(candidate.url)
                 elif not await self._open_group(candidate.name):
-                    record.state = "failed"
+                    record.state = "requested" if pending else "failed"
                     record.note = "the group could not be opened from its card"
                     return record
                 await self._settle(PAGE_SETTLE_S)
@@ -842,12 +919,20 @@ class FacebookGroups:
                     record.note = blocked
                     return record
                 nodes = await self._screen()
-                button, state = join_control(nodes)
+                button, state = join_control(nodes, record.name)
                 if state == "joinable" and button is not None:
+                    if pending:
+                        record.note = "pending membership is not confirmed; Join was not tapped again"
+                        return record
+                    allowed, why = await self._reserve("join")
+                    if not allowed:
+                        record.note = why
+                        return record
+                    tapped = True
                     await self.phone._tap(button)
                     await self._settle(2.5)
                     after = await self._screen()
-                    _, now_state = join_control(after)
+                    _, now_state = join_control(after, record.name)
                     if now_state in JOINED_LABELS:
                         record.state = "requested" if "request" in now_state else "joined"
                         record.joined_at = time.time()
@@ -856,14 +941,21 @@ class FacebookGroups:
                     else:
                         record.state = "failed"
                         record.note = "Join tapped but the state did not change"
+                        self.store.review({"kind": "join-unverified", "group": record.name,
+                                           "why": record.note})
                 elif state in JOINED_LABELS:
                     record.state = "requested" if "request" in state else "joined"
                     record.note = f"already {state}"
                 else:
-                    record.state, record.note = "refused", "no Join control on the group page"
+                    record.state = "requested" if pending else "refused"
+                    record.note = "no Join control on the group page"
                 return record
             except PhoneUnavailable as err:
-                record.state, record.note = "failed", str(err)
+                record.state = "requested" if pending else ("failed" if tapped else "candidate")
+                record.note = str(err)
+                if tapped:
+                    self.store.review({"kind": "join-unverified", "group": record.name,
+                                       "why": str(err)})
                 return record
             finally:
                 self.store.put(record)
@@ -900,9 +992,8 @@ class FacebookGroups:
         from .fb_engage import EngagementState, GroupSession, plan_post, read_post
 
         visit = GroupVisit(group=group.name)
-        why = await self._turn()
-        if why:
-            visit.blocked = why
+        if group.state != "joined":
+            visit.blocked = "membership has not been confirmed"
             return visit
         state = _engagement_state(self.store)
         session = self._session or GroupSession(self.limits)
@@ -912,6 +1003,9 @@ class FacebookGroups:
                 visit.blocked = "busy (another process is using the phone)"
                 return visit
             try:
+                visit.blocked = await self._turn()
+                if visit.blocked:
+                    return visit
                 if group.url:
                     await self._open(group.url)
                 elif not await self._open_group(group.name):
@@ -930,8 +1024,10 @@ class FacebookGroups:
                         visit.notes.append("no posts on screen")
                         break
                     author, text = posts[0]
+                    visit.posts_seen += 1
+                    group.last_visit = time.time()
                     post = read_post(text, author=author, group=group.name,
-                                     url=f"{group.url}#{abs(hash(text)) % 10**8}")
+                                     url=post_key(group, author, text))
                     decision = plan_post(post, session, state, self.limits)
                     if decision.skip:
                         visit.skipped += 1
@@ -945,19 +1041,27 @@ class FacebookGroups:
                         visit.likes += 1
                         state.liked_posts.add(post.url)
                         state.touch(author, text)
-                    if decision.comment and await self._comment(group, post, decision.cta):
-                        visit.comments += 1
-                        state.commented_posts.add(post.url)
-                        state.author_last_comment[author] = time.time()
-                        state.touch(author, text)
+                    if decision.comment:
+                        _save_engagement_state(self.store, state)
+                        commented = await self._comment(group, post, decision.cta)
+                        state = _engagement_state(self.store)
+                        if commented:
+                            visit.comments += 1
+                            state.commented_posts.add(post.url)
+                            state.author_last_comment[author] = time.time()
+                            state.touch(author, text)
                     if "reply" in decision.actions:
+                        _save_engagement_state(self.store, state)
                         replied = await self._reply_thread(group, post, decision.reply_to[:2])
+                        state = _engagement_state(self.store)
                         visit.replies += replied
                         if replied:
                             state.touch(author, text)
-                    if "follow" in decision.actions and await self._follow(author):
-                        visit.follows += 1
-                        state.followed_authors.add(author)
+                    if "follow" in decision.actions:
+                        if await self._follow(author):
+                            visit.follows += 1
+                            state.followed_authors.add(author)
+                        break  # A follow attempt navigates away from the group feed.
                     handled += 1
                     group.last_visit = time.time()
                     await self._next_post()
@@ -1058,7 +1162,7 @@ class FacebookGroups:
             prior_comments=state.prior_for(post.url),
         )
         try:
-            generation = self._prompts(request)
+            generation = await asyncio.to_thread(self._prompts, request)
         except Exception as err:  # noqa: BLE001 - a failed draft must not stop the pass
             log.info("Draft failed: %s", err)
             self.store.review({"kind": "draft-error", "group": group.name,
@@ -1077,6 +1181,9 @@ class FacebookGroups:
                                "text": post.text[:300], "comment": reply.comment,
                                "why": "; ".join(problems)})
             return ""
+        if reply.cta_used and reply.dm_followup:
+            self.store.cache.set("fb-dm-drafts", f"{group.name}\0{post.author}",
+                                 {"post": post.url, "text": reply.dm_followup}, self.store.TTL)
         return reply.comment
 
     async def _enter_text(self, text: str) -> bool:
@@ -1147,10 +1254,12 @@ class FacebookGroups:
         await self.phone._tap(submit)
         await self._settle(2.5)
         after = await self._screen()
-        if looks_published(after, safe) or composer_closed(nodes, after):
+        if looks_published(after, safe):
             log.info("Comment posted and verified (%d words)", len(safe.split()))
             return True
         log.info("The comment did not appear to post")
+        self.store.review({"kind": "comment-unverified", "post": key,
+                           "text": safe, "why": "Submit was tapped but publication was not verified"})
         return False
 
     async def _follow(self, author: str) -> bool:
@@ -1193,6 +1302,8 @@ class FacebookGroups:
         from .fb_engage import dm_eligible
 
         sent: list[tuple[str, str]] = []
+        if group.state != "joined" or max_dms <= 0:
+            return sent
         state = _engagement_state(self.store)
         candidates = sorted(state.author_touches.items(), key=lambda kv: -kv[1])
         for author, _ in candidates:
@@ -1202,16 +1313,28 @@ class FacebookGroups:
             if not ok:
                 log.debug("No DM for %s: %s", author, why)
                 continue
-            allowed, why = await self._reserve("dm")
+            allowed, why = await self._peek("dm")
             if not allowed:
                 break
             line = await self._dm_text(group, author)
             if not line:
                 continue
-            if await self._send_dm(author, line):
-                state.dm_sent.add(author)
-                sent.append((author, line))
-                _save_engagement_state(self.store, state)
+            async with self.phone._lock:
+                if not await self.phone._hold_phone(wait_s=10):
+                    break
+                try:
+                    if await self._turn():
+                        break
+                    if await self._send_dm(author, line):
+                        state.dm_sent.add(author)
+                        sent.append((author, line))
+                        _save_engagement_state(self.store, state)
+                except PhoneUnavailable as err:
+                    self.store.review({"kind": "dm-unverified", "author": author,
+                                       "group": group.name, "why": str(err)})
+                    break
+                finally:
+                    self.phone._release_phone()
         return sent
 
     async def _dm_text(self, group: GroupRecord, author: str) -> str:
@@ -1220,25 +1343,27 @@ class FacebookGroups:
         A DM that could have been sent to anybody is a blast, and a blast from a
         new account is how a group membership ends.
         """
-        from .fb_engage import dm_line
-
         state = _engagement_state(self.store)
-        their_words = state.author_last_text.get(author, "")
-        keyword = next(iter([k for k in ("ringout", "price script", "show-up", "math",
-                                         "third ring", "questions", "january")
-                             if k in their_words.casefold()]), "")
-        return dm_line(their_words or f"you posted in {group.name}", keyword)
+        draft = self.store.cache.get("fb-dm-drafts", f"{group.name}\0{author}") or {}
+        # Only send a complete payoff offered in a successfully published comment.
+        # The old opener claimed to include a resource but included no resource.
+        text = str(draft.get("text") or "").strip()
+        if draft.get("post") not in state.commented_posts or len(text) > 1200:
+            return ""
+        return text
 
     async def _send_dm(self, author: str, text: str) -> bool:
         """Open Messenger, find the thread, send, verify."""
+        if self.store.cache.get("fb-dm-attempt", author):
+            return False  # an unverified send must not be repeated after restart
         await self._open(MESSAGES_URL, MESSENGER)
         await self._settle(PAGE_SETTLE_S)
         nodes = await self._screen()
-        thread = next((n for n in nodes if n.clickable
-                       and author.casefold() in n.label.casefold()), None)
-        if thread is None:
+        threads = [n for n in nodes if n.package.startswith(MESSENGER) and n.clickable
+                   and author.casefold() == n.label.casefold().strip()]
+        if len(threads) != 1:
             return False
-        await self.phone._tap(thread)
+        await self.phone._tap(threads[0])
         await self._settle(1.5)
         nodes = await self._screen()
         field_node = next((n for n in nodes if n.package.startswith(MESSENGER)
@@ -1252,6 +1377,10 @@ class FacebookGroups:
                      if n.label.casefold().strip() == "send" and n.clickable), None)
         if send is None:
             return False
+        allowed, why = await self._reserve("dm")
+        if not allowed:
+            return False
+        self.store.cache.set("fb-dm-attempt", author, {"at": time.time()}, self.store.TTL)
         await self.phone._tap(send)
         await self._settle(2.0)
         return looks_published(await self._screen(), text)
