@@ -43,16 +43,24 @@ const filterSchema = z.object({
   mode: z.enum(['ACTIVE', 'PAST']).default('ACTIVE'),
 });
 
+// Google's tab ids are positive int32 values, so they go up to 2,147,483,647.
+// The first version of this schema capped them at 2,000,000,000, and every tab
+// above that (Massachusetts was 2,079,617,744) made the worker's whole batch
+// fail with a 400: nothing was stored for it and the filter looked dead.
+export const MAX_SHEET_ID = 2_147_483_647;
+export const MAX_ROW_INDEX = 10_000_000;
+
 export const evidenceSchema = z.object({
   observations: z
     .array(
       z.object({
         spreadsheetId: z.string().min(20).max(200),
-        sheetId: z.number().int().min(0).max(2_000_000_000),
+        sheetId: z.number().int().min(0).max(MAX_SHEET_ID),
         sheetTitle: z.string().min(1).max(200),
-        rowIndex: z.number().int().min(2).max(1_000_000),
+        rowIndex: z.number().int().min(2).max(MAX_ROW_INDEX),
         schoolTitle: z.string().min(1).max(500),
-        facebookUrl: z.string().min(1).max(1000),
+        // Empty when the match was by name and the tab has no page of its own.
+        facebookUrl: z.string().max(1000),
         advertiserName: z.string().min(1).max(500),
         advertiserUrl: z.string().min(1).max(1000),
         adId: z.string().regex(/^\d{1,30}$/),
@@ -60,6 +68,9 @@ export const evidenceSchema = z.object({
         startedAt: isoDay.nullable(),
         endedAt: isoDay.nullable(),
         observedAt: z.string().datetime({ offset: true }),
+        // Older workers only uploaded page-verified pairs, so a missing field
+        // means "page".
+        matchKind: z.enum(['page', 'name']).default('page'),
       }),
     )
     .min(1)

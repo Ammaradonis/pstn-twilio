@@ -1,0 +1,12 @@
+-- How each stored match was made.
+--
+-- The worker used to upload only pairs whose Facebook page matched the tab's
+-- own facebookUrl cell, and 92% of the tabs have no such cell: 188 of the 209
+-- candidates on 23 Oct were dropped as "missing_facebook_url", so the Meta ad
+-- filter had two rows in the whole database and looked dead.
+--
+-- The worker now also uploads an exact normalized school name match, and this
+-- column says which one it was. Null (rows stored before this migration) means
+-- "page": that is all the old worker ever sent. The filter tab carries it in
+-- the metaMatch column so a name-only match is never presented as a page match.
+ALTER TABLE "meta_ad_evidence" ADD COLUMN "match_kind" TEXT;

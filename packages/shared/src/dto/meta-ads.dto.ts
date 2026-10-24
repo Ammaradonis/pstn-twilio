@@ -19,6 +19,15 @@ export type MetaAdFilterMode = 'ACTIVE' | 'PAST';
 
 export type MetaAdEvidenceStatus = 'ACTIVE' | 'INACTIVE';
 
+/**
+ * How the worker tied the tab's row to the advertiser:
+ *  - `page`: the tab's own `facebookUrl` cell is the ad's page (blue backgrounds
+ *    in the sheet require this).
+ *  - `name`: the tab has no page URL, so an exact normalized school name is
+ *    what matched. The filter tab shows the advertiser's page next to it.
+ */
+export type MetaAdMatchKind = 'page' | 'name';
+
 /** One verified school↔ad pair the worker observed in the Ads Library. */
 export interface MetaAdEvidenceDto {
   spreadsheetId: string;
@@ -28,7 +37,12 @@ export interface MetaAdEvidenceDto {
   rowIndex: number;
   /** The tab's `title` cell at the time of the match. */
   schoolTitle: string;
-  /** The tab's `facebookUrl` cell; the advertiser's page matched this URL. */
+  /**
+   * The tab's `facebookUrl` cell. Empty when the match was by name and the cell
+   * was empty. A worker older than the API may have sent the advertiser's page
+   * here instead — an earlier API rejected an empty string — which is why
+   * `matchKind` is the authority on how the row was matched.
+   */
   facebookUrl: string;
   /** The advertiser name Meta printed on the ad card. */
   advertiserName: string;
@@ -43,6 +57,8 @@ export interface MetaAdEvidenceDto {
   endedAt: string | null;
   /** When the worker read the Ads Library. */
   observedAt: string;
+  /** Which identity matched; older uploads are treated as `page`. */
+  matchKind?: MetaAdMatchKind;
 }
 
 /** The worker's upload: a batch of verified observations. */

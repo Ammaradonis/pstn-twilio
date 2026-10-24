@@ -37,7 +37,9 @@ const SHEETS = 'https://sheets.googleapis.com/v4/spreadsheets/';
 
 /**
  * Appended after the source tab's own columns so every filtered row can be
- * traced back to the ad it was matched on.
+ * traced back to the ad it was matched on. `metaMatch` says which identity
+ * matched: "page" (the tab's own Facebook page is the ad's page) or "name" (the
+ * tab has no page URL, so the exact school name is what matched).
  */
 export const META_HEADERS = [
   'metaAdId',
@@ -46,6 +48,7 @@ export const META_HEADERS = [
   'metaAdEnded',
   'metaAdvertiser',
   'metaAdObservedAt',
+  'metaMatch',
 ] as const;
 
 export type StoredEvidence = {
@@ -57,6 +60,7 @@ export type StoredEvidence = {
   advertiserName: string;
   advertiserUrl: string;
   facebookUrl: string;
+  matchKind: 'page' | 'name';
 };
 
 type RowMatch = { row: Row; evidence: StoredEvidence };
@@ -93,6 +97,8 @@ export class MetaAdsService {
         advertiserUrl: o.advertiserUrl,
         adId: o.adId,
         status: o.status,
+        // Older workers only sent page-verified pairs, so a missing field is "page".
+        matchKind: o.matchKind ?? 'page',
         startedAt: o.startedAt ? new Date(`${o.startedAt}T00:00:00Z`) : null,
         endedAt: o.endedAt ? new Date(`${o.endedAt}T00:00:00Z`) : null,
         observedAt: new Date(o.observedAt),
@@ -215,6 +221,7 @@ export class MetaAdsService {
         advertiserName: e.advertiserName,
         advertiserUrl: e.advertiserUrl,
         facebookUrl: e.facebookUrl,
+        matchKind: e.matchKind === 'name' ? 'name' : 'page',
       };
       push(byIdentity, schoolKey(e.schoolTitle, e.facebookUrl), stored);
       push(byTitle, nameKey(e.schoolTitle), stored);
@@ -265,6 +272,7 @@ export class MetaAdsService {
             isoDate(e.endedAt),
             e.advertiserName,
             isoDate(e.observedAt),
+            e.matchKind,
           ],
           width,
         ),
@@ -426,11 +434,21 @@ function push(map: Map<string, StoredEvidence[]>, key: string, value: StoredEvid
   else map.set(key, [value]);
 }
 
+/** The page an evidence row proves: the advertiser's, else the tab's own cell. */
+export function evidencePage(evidence: StoredEvidence): string {
+  return facebookKey(evidence.advertiserUrl) || facebookKey(evidence.facebookUrl);
+}
+
 /**
- * The evidence for one row. Title + facebookUrl is the identity the worker
- * verified; if the row's URL cell is empty (or was filled in later), a title
- * match is accepted only when the tab's evidence holds exactly one page for
- * that name. Nothing is guessed beyond that.
+ * The evidence for one row.
+ *
+ * A row that names a page only accepts ads that ran from *that* page; an ad from
+ * another page is a different school, whatever the names say. A row with no page
+ * URL (92% of the tabs) is matched by its exact normalized school name, and only
+ * when every ad for that name comes from one page — two advertisers sharing a
+ * name say nothing about which one is this school. The name case is why the
+ * worker uploads name-only evidence at all: without it those rows could never
+ * match, and the button looked dead.
  */
 export function matchRow(
   title: string,
@@ -438,13 +456,21 @@ export function matchRow(
   byIdentity: Map<string, StoredEvidence[]>,
   byTitle: Map<string, StoredEvidence[]>,
 ): StoredEvidence[] {
-  const exact = byIdentity.get(schoolKey(title, facebookUrl)) ?? [];
-  if (exact.length > 0) return exact;
-  // A row pointing at a different page is a different school: no title fallback.
-  if (facebookKey(facebookUrl)) return [];
+  const page = facebookKey(facebookUrl);
   const sameName = byTitle.get(nameKey(title)) ?? [];
-  const pages = new Set(sameName.map((e) => facebookKey(e.facebookUrl)));
-  return pages.size === 1 ? sameName : [];
+  if (page) {
+    // The evidence the worker verified against this exact row keeps its weight
+    // even when the ad card's page did not parse, so identity is not lost.
+    const exact = byIdentity.get(schoolKey(title, facebookUrl)) ?? [];
+    return unique([...sameName.filter((e) => evidencePage(e) === page), ...exact]);
+  }
+  const pages = new Set(sameName.map(evidencePage).filter(Boolean));
+  if (pages.size !== 1) return [];
+  return sameName;
+}
+
+function unique(items: StoredEvidence[]): StoredEvidence[] {
+  return [...new Set(items)];
 }
 
 function isoDate(date: Date | null): string {

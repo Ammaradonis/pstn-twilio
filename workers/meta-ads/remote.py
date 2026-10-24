@@ -58,13 +58,13 @@ def worker_token() -> str | None:
 
 def observation(result: dict) -> dict | None:
     """One API observation from one pipeline result, or None if it cannot be one."""
-    if not result.get('verified'):
+    if not result.get('evidence'):
         return None
     lead, ad = result.get('lead') or {}, result.get('ad') or {}
     status = STATUS.get(ad.get('status', ''))
     ad_id = str(ad.get('adId') or '')
     required = (lead.get('spreadsheetId'), lead.get('sheetTitle'), lead.get('title'),
-                lead.get('facebookUrl'), ad.get('name'), ad.get('facebookUrl'), ad.get('observedAt'))
+                ad.get('name'), ad.get('facebookUrl'), ad.get('observedAt'))
     if not status or not ad_id.isdigit() or not all(required):
         return None
     dates = ad_dates(ad)
@@ -74,7 +74,10 @@ def observation(result: dict) -> dict | None:
         'sheetTitle': lead['sheetTitle'],
         'rowIndex': int(lead['row']),
         'schoolTitle': lead['title'],
-        'facebookUrl': lead['facebookUrl'],
+        # A name-only match has no page cell to send. The advertiser's page goes
+        # here so an API older than this worker (it required a URL) still takes
+        # the batch; `matchKind` below is what says the match was by name.
+        'facebookUrl': lead['facebookUrl'] or ad['facebookUrl'],
         'advertiserName': ad['name'],
         'advertiserUrl': ad['facebookUrl'],
         'adId': ad_id,
@@ -83,6 +86,10 @@ def observation(result: dict) -> dict | None:
         'startedAt': dates[0].isoformat() if dates else None,
         'endedAt': dates[1].isoformat() if dates and status == 'INACTIVE' else None,
         'observedAt': ad['observedAt'],
+        # 'page': the tab's own facebookUrl cell is the ad's page.
+        # 'name': the tab has no page URL, so the exact school name is what
+        # matched; the filter tab shows the advertiser's page alongside it.
+        'matchKind': 'page' if result.get('urlMatch') else 'name',
     }
 
 
@@ -100,6 +107,21 @@ def batches(rows: list[dict], size: int = MAX_BATCH) -> Iterator[list[dict]]:
         yield rows[start : start + size]
 
 
+def by_tab(rows: list[dict], size: int = MAX_BATCH) -> Iterator[list[dict]]:
+    """Batches of one tab's observations: a tab the API rejects costs only itself.
+
+    The API validated Google's sheet ids against a 2,000,000,000 ceiling, which
+    is below the real int32 range: a batch holding a tab above it (Massachusetts
+    at 2,079,617,744) was rejected whole, so none of the other tabs in it reached
+    the button either. One tab per request keeps that failure local.
+    """
+    tabs: dict[tuple, list[dict]] = {}
+    for row in rows:
+        tabs.setdefault((row['spreadsheetId'], row['sheetId']), []).append(row)
+    for chunk in tabs.values():
+        yield from batches(chunk, size)
+
+
 async def upload(
     rows: list[dict],
     *,
@@ -107,29 +129,38 @@ async def upload(
     base: str | None = None,
     transport: httpx.AsyncBaseTransport | None = None,
 ) -> dict:
-    """POST the observations in batches. Raises RuntimeError with the API's reply."""
+    """POST the observations, one tab per batch; raise with the API's first refusal."""
     if not rows:
         return {'saved': 0, 'tabs': 0}
     token = token or worker_token()
     if not token:
         raise RuntimeError('EMAIL_FINDER_WORKER_TOKEN is not set, so matches cannot reach the app.')
     saved, tabs = 0, 0
+    rejected: list[str] = []
     async with httpx.AsyncClient(
         base_url=f'{(base or api_base()).rstrip("/")}/api/meta-ads/worker',
         headers={'x-worker-token': token},
         timeout=60,
         transport=transport,
     ) as client:
-        for chunk in batches(rows):
+        for chunk in by_tab(rows):
             response = await client.post('evidence', json={'observations': chunk})
             if response.status_code >= 400:
-                raise RuntimeError(
-                    f'evidence upload failed ({response.status_code}): {response.text[:300]}'
+                # Keep going: the other tabs are still worth storing, and the
+                # refusal is reported once at the end (status.json + sync.log).
+                rejected.append(
+                    f'{chunk[0]["sheetTitle"]}: {response.status_code} {response.text[:200]}'
                 )
+                continue
             try:
                 body = response.json() or {}
             except ValueError:  # a proxy's HTML page, not our API
                 body = {}
             saved += int(body.get('saved') or 0)
             tabs = max(tabs, int(body.get('tabs') or 0))
+    if rejected:
+        raise RuntimeError(
+            f'evidence upload failed for {len(rejected)} tab(s), {saved} row(s) saved; '
+            f'first refusal: {rejected[0]}'
+        )
     return {'saved': saved, 'tabs': tabs}

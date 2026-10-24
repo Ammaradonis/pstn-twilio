@@ -20,7 +20,7 @@ from datetime import date, datetime, timezone
 from pathlib import Path
 from urllib.parse import urlencode, urlsplit, parse_qs
 
-from matching import name_key, facebook_key, qualifies
+from matching import (name_key, facebook_key, qualifies, has_own_page, is_evidence, match_kind)
 from remote import evidence_rows, upload
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -90,7 +90,8 @@ class Pipeline:
         self.sync_note = None
         self.apply_state = 'idle' if args.apply else 'disabled'
         self.apply_note = None
-        self.counts = {'ads': 0, 'prospects': 0, 'verified': 0, 'searches': 0, 'synced': 0}
+        self.counts = {'ads': 0, 'prospects': 0, 'verified': 0, 'evidence': 0, 'searches': 0,
+                       'synced': 0}
 
     def status(self, state, **extra):
         (OUT / 'status.json').write_text(json.dumps({'state': state, 'updatedAt': now(), **self.counts,
@@ -237,24 +238,45 @@ class Pipeline:
             key = facebook_key(lead['facebookUrl'])
             equal_url = bool(key and key == facebook_key(ad['facebookUrl']))
             eligible = qualifies(ad, self.args.start, self.args.end, self.args.include_active, self.args.all_time)
+            # Two identities count as evidence for the filter tab: the page one
+            # (the tab's own facebookUrl cell is the ad's page) and the name one
+            # (the tab has no page URL, so an exact school name is the handle).
+            # The blue backgrounds (--apply) still require the page match.
+            is_evidence_row = is_evidence(name_match=equal_name, url_match=equal_url,
+                                          own_page=bool(key), eligible=eligible)
+            if equal_name and equal_url and eligible:
+                reason = 'verified'
+            elif is_evidence_row:
+                reason = 'name_only'
+            elif not equal_name:
+                reason = 'name_review'
+            elif not key:
+                reason = 'missing_facebook_url'
+            elif not equal_url:
+                reason = 'facebook_url_mismatch'
+            else:
+                reason = 'dates_pending_or_outside_range'
             result = {'lead': lead, 'ad': ad, 'nameMatch': equal_name, 'urlMatch': equal_url,
                       'dateMatch': eligible, 'verified': equal_name and equal_url and eligible,
-                      'reason': 'verified' if equal_name and equal_url and eligible else
-                          'name_review' if not equal_name else 'missing_facebook_url' if not key else
-                          'facebook_url_mismatch' if not equal_url else 'dates_pending_or_outside_range'}
+                      'evidence': is_evidence_row,
+                      'matchKind': match_kind(equal_url),
+                      'reason': reason}
             self.results[(lead['spreadsheetId'], lead['sheetId'], lead['row'], ad['adId'])] = result
             self.counts['prospects'] = len(self.results)
             self.counts['verified'] = sum(r['verified'] for r in self.results.values())
+            self.counts['evidence'] = sum(r['evidence'] for r in self.results.values())
             await self.sync()
             if self.args.apply and self.counts['verified'] > self.applied_count and time.monotonic() - self.last_apply > 300:
                 await self.apply()
 
     async def sync(self, force=False):
-        """Upload verified matches so the app's Meta ad filter can use them.
+        """Upload the evidence so the app's Meta ad filter can use it.
 
-        Best effort: an upload failure never aborts a scrape that may have hours
-        of evidence behind it. Nothing is counted as synced then, so the next
-        pass retries, and the reason is kept in status.json and sync.log.
+        Every row whose school was matched to an ad goes up: by page when the
+        tab had a facebookUrl, by exact name when it did not. Best effort: an
+        upload failure never aborts a scrape that may have hours of evidence
+        behind it. Nothing is counted as synced then, so the next pass retries,
+        and the reason is kept in status.json and sync.log.
         """
         if self.args.no_sync:
             return
@@ -285,10 +307,20 @@ class Pipeline:
         payload = json.loads((OUT / 'prospects.json').read_text(encoding='utf-8'))
         for r in payload.get('results', []):
             lead, ad = r.get('lead') or {}, r.get('ad') or {}
+            # Old result files predate `evidence`, and the rule for what counts
+            # may have changed since the pass ran: decide again from the flags
+            # the pass stored, so --sync-only uploads what verify() would.
+            own_page = has_own_page(lead.get('facebookUrl'))
+            r['evidence'] = is_evidence(name_match=r.get('nameMatch') is True,
+                                        url_match=r.get('urlMatch') is True,
+                                        own_page=own_page,
+                                        eligible=r.get('dateMatch') is True)
+            r['matchKind'] = match_kind(r.get('urlMatch') is True)
             self.results[(lead.get('spreadsheetId'), lead.get('sheetId'), lead.get('row'), ad.get('adId'))] = r
         self.counts['prospects'] = len(self.results)
-        # Only verified rows are evidence; the rest are review reasons.
+        # Only evidenced rows are uploaded; the rest are review reasons.
         self.counts['verified'] = sum(1 for r in self.results.values() if r.get('verified'))
+        self.counts['evidence'] = sum(1 for r in self.results.values() if r.get('evidence'))
         await self.sync(force=True)
         state = 'synced' if self.synced else 'nothing_to_sync'
         if self.sync_state == 'failed':

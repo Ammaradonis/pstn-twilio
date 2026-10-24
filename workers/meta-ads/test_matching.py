@@ -1,6 +1,6 @@
 import unittest
 from datetime import date
-from matching import facebook_key, name_key, qualifies
+from matching import facebook_key, has_own_page, is_evidence, match_kind, name_key, qualifies
 
 
 class MatchingTest(unittest.TestCase):
@@ -35,6 +35,39 @@ class MatchingTest(unittest.TestCase):
             ad = {'status': status, 'dateText': 'Unknown', 'observedAt': '2026-10-22T12:00:00Z'}
             self.assertTrue(qualifies(ad, None, None, False, all_time=True))
         self.assertFalse(qualifies({'status': 'Unknown'}, None, None, True, all_time=True))
+
+
+class EvidenceTest(unittest.TestCase):
+    """What may be uploaded for the Dial page's filter, and what may be blue.
+
+    On 23 Oct only 2 of 209 name-matched candidates were uploaded: 188 tabs hold
+    no facebookUrl, so the page identity could never match and the filter looked
+    dead. The name identity is now evidence - but never a blue background."""
+
+    def test_the_page_identity_is_evidence(self):
+        self.assertTrue(is_evidence(name_match=True, url_match=True, own_page=True, eligible=True))
+        self.assertTrue(is_evidence(name_match=False, url_match=True, own_page=True, eligible=True))
+        self.assertEqual(match_kind(True), 'page')
+
+    def test_an_exact_name_without_a_page_is_evidence(self):
+        self.assertTrue(is_evidence(name_match=True, url_match=False, own_page=False, eligible=True))
+        self.assertEqual(match_kind(False), 'name')
+
+    def test_a_name_that_does_not_match_is_not_evidence(self):
+        self.assertFalse(is_evidence(name_match=False, url_match=False, own_page=False, eligible=True))
+
+    def test_a_row_with_a_page_that_is_not_the_ads_page_is_not_evidence(self):
+        self.assertFalse(is_evidence(name_match=True, url_match=False, own_page=True, eligible=True))
+
+    def test_dates_outside_the_policy_are_not_evidence(self):
+        self.assertFalse(is_evidence(name_match=True, url_match=False, own_page=False, eligible=False))
+        self.assertFalse(is_evidence(name_match=True, url_match=True, own_page=True, eligible=False))
+
+    def test_a_blank_cell_is_not_a_page(self):
+        self.assertFalse(has_own_page(''))
+        self.assertFalse(has_own_page('   '))
+        self.assertTrue(has_own_page('https://www.facebook.com/dallaskarate'))
+
 
 if __name__ == '__main__':
     unittest.main()

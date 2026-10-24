@@ -654,6 +654,9 @@ model MetaAdEvidence {
   adId           String    @map("ad_id")
   // ACTIVE | INACTIVE, as Meta's Ad Library showed it when the worker read it.
   status         String
+  // page | name: how the row was tied to the advertiser (see meta-ads.dto.ts).
+  // Null on rows stored before the column existed: those were page matches.
+  matchKind      String?   @map("match_kind")
   // The days Meta printed on the ad card, when it printed them.
   startedAt      DateTime? @map("started_at")
   endedAt        DateTime? @map("ended_at")

@@ -190,6 +190,7 @@ describe('row matching on added or missing URLs', () => {
     advertiserName: e.advertiserName,
     advertiserUrl: e.advertiserUrl,
     facebookUrl: e.facebookUrl,
+    matchKind: e.matchKind === 'name' ? 'name' : 'page',
   });
   const byIdentity = new Map<string, StoredEvidence[]>();
   const byTitle = new Map<string, StoredEvidence[]>();
@@ -234,6 +235,85 @@ describe('row matching on added or missing URLs', () => {
   });
 });
 
+describe('name-only evidence, the case most tabs are in', () => {
+  const index = (rows: MetaAdEvidenceDto[]) => {
+    const byIdentity = new Map<string, StoredEvidence[]>();
+    const byTitle = new Map<string, StoredEvidence[]>();
+    for (const e of rows) {
+      const stored: StoredEvidence = {
+        adId: e.adId,
+        status: e.status,
+        startedAt: null,
+        endedAt: null,
+        observedAt: new Date(e.observedAt),
+        advertiserName: e.advertiserName,
+        advertiserUrl: e.advertiserUrl,
+        facebookUrl: e.facebookUrl,
+        matchKind: e.matchKind === 'name' ? 'name' : 'page',
+      };
+      const key = schoolKey(e.schoolTitle, e.facebookUrl);
+      byIdentity.set(key, [...(byIdentity.get(key) ?? []), stored]);
+      const name = nameKey(e.schoolTitle);
+      byTitle.set(name, [...(byTitle.get(name) ?? []), stored]);
+    }
+    return { byIdentity, byTitle };
+  };
+
+  // What the worker uploads when the tab's facebookUrl cell is empty: the
+  // advertiser's page, and the exact school name as the identity.
+  const nameOnly = evidence({
+    schoolTitle: 'Dallas Karate',
+    facebookUrl: '',
+    advertiserName: 'Dallas Karate',
+    advertiserUrl: 'https://www.facebook.com/dallaskarate',
+    matchKind: 'name',
+  });
+
+  it('matches a row whose facebookUrl cell is empty', () => {
+    const { byIdentity, byTitle } = index([nameOnly]);
+    expect(matchRow('Dallas Karate', '', byIdentity, byTitle)).toHaveLength(1);
+  });
+
+  it('still matches when the row page is filled in later', () => {
+    // "Enrich socials" fills the cell after the worker ran: the page is the one
+    // the ad ran from, so the row keeps its evidence.
+    const { byIdentity, byTitle } = index([nameOnly]);
+    expect(
+      matchRow(
+        'Dallas Karate',
+        'https://m.facebook.com/DallasKarate/?ref=page',
+        byIdentity,
+        byTitle,
+      ),
+    ).toHaveLength(1);
+  });
+
+  it('refuses the row when it names a different page', () => {
+    const { byIdentity, byTitle } = index([nameOnly]);
+    expect(
+      matchRow('Dallas Karate', 'https://www.facebook.com/dallaskarate-old', byIdentity, byTitle),
+    ).toHaveLength(0);
+  });
+
+  it('refuses a name two different advertisers use', () => {
+    const { byIdentity, byTitle } = index([
+      nameOnly,
+      evidence({
+        schoolTitle: 'Dallas Karate',
+        adId: '9999999999',
+        facebookUrl: '',
+        advertiserUrl: 'https://www.facebook.com/dallaskarate2',
+        matchKind: 'name',
+      }),
+    ]);
+    expect(matchRow('Dallas Karate', '', byIdentity, byTitle)).toHaveLength(0);
+    // Naming the row's own page resolves the ambiguity.
+    expect(
+      matchRow('Dallas Karate', 'https://www.facebook.com/dallaskarate2', byIdentity, byTitle),
+    ).toHaveLength(1);
+  });
+});
+
 describe('the Meta ad filter', () => {
   it('keeps only rows advertising now by default', async () => {
     const sheets = stubSheets();
@@ -260,12 +340,15 @@ describe('the Meta ad filter', () => {
       'metaAdEnded',
       'metaAdvertiser',
       'metaAdObservedAt',
+      'metaMatch',
     ]);
     expect(values.slice(1).map((r) => r[0])).toEqual(['Austin Shotokan', 'Dallas Karate']);
     expect(values[1]![5]).toBe('1234567890');
     expect(values[1]![6]).toBe('Running');
     expect(values[1]![7]).toBe('2026-01-05');
     expect(values[1]![8]).toBe('');
+    // Which identity matched: this tab's own page was the ad's page.
+    expect(values[1]![11]).toBe('page');
   });
 
   it('offers the past filter separately', async () => {
@@ -280,6 +363,31 @@ describe('the Meta ad filter', () => {
     expect(values[1]![0]).toBe('San Antonio Krav');
     expect(values[1]![6]).toBe('Ended');
     expect(values[1]![8]).toBe('2025-03-01');
+    expect(values[1]![11]).toBe('page');
+  });
+
+  it('copies a name-only match and labels it as one', async () => {
+    const sheets = stubSheets();
+    const service = new MetaAdsService(
+      stubPrisma([
+        evidence({
+          schoolTitle: 'Dallas Karate',
+          rowIndex: 3,
+          facebookUrl: '',
+          advertiserUrl: 'https://www.facebook.com/dallaskarate',
+          matchKind: 'name',
+        }),
+      ]),
+      sheets.service,
+    );
+    const result = await service.filter('user', 'sheet-1', 'Texas', 'ACTIVE');
+    expect(result.rows).toBe(1);
+    const written = sheets.calls.find((c) => c.method === 'PUT')!;
+    const values = (written.body as { values: string[][] }).values;
+    expect(values[1]![0]).toBe('Dallas Karate');
+    expect(values[1]![5]).toBe('1234567890');
+    // The tab never presents a name match as a page match.
+    expect(values[1]![11]).toBe('name');
   });
 
   it('rewrites its own tab on a second press instead of stacking copies', async () => {

@@ -52,3 +52,27 @@ def qualifies(ad, start, end, include_active, all_time=False):
         return False
     dates = ad_dates(ad)
     return bool(dates and dates[0] <= end and dates[1] >= start)
+
+
+def has_own_page(facebook_url):
+    """True when the tab's own facebookUrl cell names a page."""
+    return bool(facebook_key(facebook_url or ''))
+
+
+def is_evidence(*, name_match, url_match, own_page, eligible):
+    """Whether a pair may be uploaded as evidence for the Dial page's filter.
+
+    Two identities count. The page one is strict: the tab's own facebookUrl cell
+    and the ad's page are the same page. The name one covers the case most tabs
+    are in - the sheet holds no page URL at all, so an exact normalized school
+    name is the only handle there is, and the ad's page is copied into the filter
+    tab so the reader can see where it ran. Blue backgrounds (--apply) are
+    stricter and still require the page match.
+    """
+    named_only = bool(name_match and not own_page)
+    return bool(eligible and (url_match or named_only))
+
+
+def match_kind(url_match):
+    """'page' when the page identity matched, 'name' when only the name did."""
+    return 'page' if url_match else 'name'

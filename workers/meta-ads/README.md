@@ -5,7 +5,7 @@ extract advertiser evidence, compare school names across both workbooks, then
 verify Facebook URLs and export matches. With `--apply`, the fourth worker also
 calls the Sheets bridge to color verified rows light blue (`#9fc5e8`).
 
-Every verified match is also uploaded to the app (`remote.py`), so the Dial
+Every evidenced match is also uploaded to the app (`remote.py`), so the Dial
 page's **Meta ad filter** button can copy the matching rows into a new tab of the
 selected spreadsheet. See [The app's Meta ad filter](#the-apps-meta-ad-filter).
 
@@ -77,7 +77,23 @@ qualify for blue. Tracking parameters, mobile hosts, trailing slashes and
 numeric `profile.php` / `people` URLs are normalized. Different handles and
 handle-versus-ID pairs are left for review; no identity is guessed. Missing
 Facebook URLs, name differences, duplicated identities and changed rows are
-exported for review. Nothing writes a missing Facebook URL automatically.
+exported for review as `name_review`, `missing_facebook_url`,
+`facebook_url_mismatch` and `dates_pending_or_outside_range`.
+
+There are **two** match decisions, and they are not the same one:
+
+| decision   | what it needs                                           | what it does                    |
+| ---------- | ------------------------------------------------------- | ------------------------------- |
+| `verified` | the name **and** the page                               | blue background with `--apply`  |
+| `evidence` | the page, **or** an exact name when the tab has no page | uploaded for the Meta ad filter |
+
+The second one exists because 92% of the rows in both workbooks have no
+`facebookUrl` at all. On 23 Oct, 188 of the 209 candidates were dropped as
+`missing_facebook_url`, only two rows reached the app, and the Dial page's
+button looked dead. An exact normalized name with no page on the row is now
+evidence, tagged `matchKind: "name"`, and the filter tab carries the advertiser's
+page in `metaAdvertiser` so the reader can see where the ad ran. Blue stays
+strict: a name alone never colours a row.
 
 Before coloring, the bridge refreshes the workbooks, relocates the exact
 name/URL within the same tab, then checks the live row again. It saves previous
@@ -106,22 +122,26 @@ selected tab whose school advertises on Meta:
   has ended ads and is running new ones appears in both lists.
 
 Each copied row keeps every source column and gains `metaAdId`, `metaAdStatus`,
-`metaAdStarted`, `metaAdEnded`, `metaAdvertiser` and `metaAdObservedAt`, so any
-row can be traced back to the ad that matched it. The tab is named
-`Meta ads - running now - <tab>` or `Meta ads - ran in the past - <tab>`;
+`metaAdStarted`, `metaAdEnded`, `metaAdvertiser`, `metaAdObservedAt` and
+`metaMatch`, so any row can be traced back to the ad that matched it. `metaMatch`
+is `page` when the tab's own `facebookUrl` cell is the ad's page and `name` when
+the tab had no page URL and the exact school name is what matched. The tab is
+named `Meta ads - running now - <tab>` or `Meta ads - ran in the past - <tab>`;
 pressing the button again rewrites that tab instead of stacking copies.
 
 The evidence behind it is uploaded as the run progresses (at most every two
 minutes, and once when the run ends), so the button works while a long scrape is
-still going. Rows are matched on the worker's verified identity — the `title`
-cell _and_ the `facebookUrl` page — never on the name alone; a row whose URL
-points at a different page is left out, and a tab that was sorted since the match
-still lines up.
+still going. A row that names a page only accepts ads from that page; a row with
+no page URL is matched by its exact name, and only when every ad for that name
+comes from one page. A tab that was sorted since the match still lines up.
 
 Uploads use `EMAIL_FINDER_WORKER_TOKEN` and the API at `META_ADS_API_BASE`, then
 `EMAIL_FINDER_API_BASE`, `PUBLIC_BASE_URL`, then `https://api.bestsoftphone.site`.
+They go one tab per request, so a tab the API rejects costs only itself.
 Turn them off with `--no-sync`; upload an earlier run's `prospects.json` without
-opening a browser with `--sync-only`.
+opening a browser with `--sync-only` (it re-decides `evidence` from the stored
+`nameMatch`/`urlMatch`/`dateMatch` flags, so a rule change applies without a new
+scrape).
 
 ```powershell
 workers/email-finder/.venv/Scripts/python.exe workers/meta-ads/run.py --sync-only
