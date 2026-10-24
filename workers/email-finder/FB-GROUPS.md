@@ -105,6 +105,39 @@ Join is verified: the control is tapped, the screen is re-read, and only
 `Joined` / `Requested` is recorded as a success. Anything else is `failed` with
 the reason, and a group is never joined twice.
 
+### 3a. The membership-questions sheet
+
+Tapping Join on a group that screens its members does not send the request: it
+opens a form. Reading that as "the state did not change" was the bug behind
+"stuck at the application form" — the group was marked failed for good, the sheet
+stayed open on the phone (so the next search read a modal), and every attempt had
+already spent a join from the day's allowance, which is how a queue drains into
+`daily join cap reached` with nothing joined.
+
+`read_form()` recognises the three shapes the sheet takes — a rules screen with
+one **Agree**, a questions form, a **pending approval** screen — and
+`_answer_application()` answers what it can and sends:
+
+| the sheet asks                                        | what happens                                                                   |
+| ----------------------------------------------------- | ------------------------------------------------------------------------------ |
+| "Do you agree to the group rules?" / "Have you read…" | taps **Yes** / **I agree**                                                     |
+| "Which of these best describes you?"                  | taps **Business owner** (truthful for this account)                            |
+| "Why do you want to join?" / "Tell us about…"         | types `FB_GROUPS_JOIN_ANSWER` (one honest line)                                |
+| "How did you hear about us?"                          | "I found the group while searching Facebook…"                                  |
+| phone, e-mail, address, town, age, paperwork          | **never invented**: the sheet is closed and the group goes to the review queue |
+
+A rules screen is answered with its Agree. A confirmation dialog ("Join group" +
+"Cancel") is confirmed once. Multi-step forms are followed for up to three
+screens, and a long sheet is scrolled once to reach a Submit below the fold. A
+checkpoint arriving mid-form leaves the group a `candidate` (retryable) rather
+than a refusal, and a group that cannot be answered is `refused` for seven days
+with `{kind: "join-questions"}` in the review queue, so the same wall is not hit
+five times a day.
+
+The join allowance is spent on the _outcome_: the worker peeks at the cap before
+the tap and only commits once a request actually went in. A tap that opens a form,
+does nothing, or is handed over costs nothing.
+
 ---
 
 ## What the phone actually showed
@@ -355,6 +388,7 @@ go faster; that is the one change that turns a slow account into a banned one.
 | `FB_GROUPS_AUTHOR_COOLDOWN_DAYS`                                                   | 7       | before commenting on the same person again    |
 | `FB_GROUPS_DM_AFTER_DAYS`                                                          | 3       | history required before a DM                  |
 | `FB_GROUPS_MAX_REPLIES_PER_POST`                                                   | 3       | replies under one question                    |
+| `FB_GROUPS_JOIN_ANSWER`                                                            | —       | answer typed to "why do you want to join?"    |
 | `DEEPSEEK_API_KEY`                                                                 | —       | unset means "render the prompts, do not call" |
 
 The phone itself is configured exactly as the Instagram worker's: `EMAIL_FINDER_GALAXY`,

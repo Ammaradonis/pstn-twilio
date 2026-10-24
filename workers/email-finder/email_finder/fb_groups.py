@@ -26,6 +26,7 @@ from __future__ import annotations
 import asyncio
 import hashlib
 import logging
+import os
 import random
 import re
 import time
@@ -75,6 +76,62 @@ MESSAGE_LABELS = {"message", "send message", "message me"}
 SUBMIT_LABELS = {"post", "send", "comment", "reply", "publish"}
 MORE_LABELS = {"see more", "more", "see all"}
 MEMBER_WORDS = ("member", "members", "followers")
+
+# ── the membership-questions sheet ───────────────────────────────────────────
+# Tapping Join on a group that screens its members opens a form instead of
+# sending the request: a rules screen ("Agree"), or questions ("why do you want
+# to join?", yes/no options, "I agree to the rules"). The worker used to read
+# that as "the state did not change", mark the group failed for good and leave
+# the sheet open on the phone: the next search then ran behind a modal, and each
+# attempt had already spent a join from the day's allowance, so the queue
+# drained into "daily join cap reached" with nothing joined.
+FORM_TITLE = re.compile(
+    r"membership questions?|answer (?:the |these )?(?:required )?questions?|"
+    r"questions? (?:before|to) (?:join|joining)|before you join|"
+    r"request to join|membership request|group rules|rules (?:of|for) (?:the|this) group", re.I)
+FORM_SUBMIT = {"submit", "send request", "request to join", "submit answers", "answer"}
+FORM_NEXT = {"next", "continue"}
+FORM_AGREE = {"agree", "i agree", "accept", "i accept", "join group", "join anyway"}
+FORM_CLOSE = {"close", "cancel", "not now", "back", "dismiss"}
+FORM_DONE = re.compile(
+    r"request (?:to join )?(?:was |has been )?(?:sent|submitted)|"
+    r"your request (?:to join )?(?:was|has been) (?:sent|submitted|received)|"
+    r"answer(?:s)? submitted|awaiting (?:admin |administrator )?approval|"
+    r"pending (?:admin |administrator )?approval", re.I)
+FORM_ERROR = re.compile(
+    r"required|must (?:answer|select|choose|agree|respond)|answer (?:this|all|the)(?: required)? questions?|"
+    r"select (?:an|one) option|choose (?:an|one) option|please (?:answer|select|agree|respond)", re.I)
+FORM_AGREEMENT = re.compile(
+    r"\b(?:agree|accept|read|rules|terms|polic(?:y|ies)|guidelines|consent|"
+    r"over 18|18 or older|old enough)\b", re.I)
+# A question that can be answered with Yes: "Do you agree...", "Have you read...".
+# "Which town do you live in?" mentions living but is not a yes/no question.
+FORM_YESNO = re.compile(r"^\s*(?:do|does|are|is|have|has|will|can|could|would|did)\b", re.I)
+FORM_FOUND = re.compile(r"how did you (?:hear|find)|where did you (?:hear|find)|referr", re.I)
+FORM_BUSINESS = re.compile(
+    r"why (?:do|would) you|what brings you|tell us (?:a bit )?about|about (?:yourself|you)|"
+    r"introduce yourself|what (?:do|is) your (?:business|trade|work)|your (?:business|trade)|"
+    r"how did you (?:hear|find)|where did you (?:hear|find)|referr|what (?:are you )?(?:looking|hoping)|"
+    r"interest(?:ed)? in|describe you|best describ|what (?:kind|type) of (?:business|member)|"
+    r"who are you", re.I)
+# Never guessed, whatever the question says: these are facts about the person
+# that the worker does not have, and a wrong one is worse than a skipped join.
+FORM_PERSONAL = re.compile(
+    r"phone|telephone|mobile|\bcell\b|e ?mail|address|postcode|postal code|\bzip\b|"
+    r"birth|age|medical|injur|allerg|gender|licen[cs]e|insurance|passport|tax", re.I)
+FORM_YES = re.compile(r"^(?:yes|yep|yeah|sure|i agree|agree|accepted|accept|i accept|true|correct|"
+                      r"i have read.*|have read.*|i understand.*|understood)$", re.I)
+FORM_HINT = re.compile(
+    r"^(?:answer|your answer|answers|write (?:an |your )?answer|type (?:an |your )?answer|"
+    r"add an answer|write something|type something|add a response|response|write a response)$", re.I)
+MAX_FORM_STEPS = 3
+
+# What the worker says when a question asks why it wants in. Truthful, short,
+# and about the business the account actually runs; FB_GROUPS_JOIN_ANSWER
+# replaces it without a code change.
+JOIN_ANSWER = ("I run a local business and would like to follow the group, learn from the "
+               "posts and join the conversation where I can help.")
+
 PRIVACY = re.compile(r"\b(public|private)\b", re.I)
 POST_MARKERS = {"like", "comment", "share", "send"}
 # Text that belongs to the interface, never to a post or a group's name.
@@ -299,6 +356,180 @@ def join_control(nodes: list[Node], group_name: str = "") -> tuple[Node | None, 
         if label in JOINED_LABELS:
             return None, label
     return None, ""
+
+
+@dataclass
+class FormSheet:
+    """What Facebook's membership-questions sheet is asking for."""
+
+    title: str = ""
+    questions: list[str] = field(default_factory=list)
+    choices: list[Node] = field(default_factory=list)
+    fields: list[Node] = field(default_factory=list)
+    submit: Node | None = None
+    next: Node | None = None
+    agree: Node | None = None
+    close: Node | None = None
+    done: bool = False  # the request has been sent / is waiting for approval
+
+    @property
+    def question(self) -> str:
+        """The sheet's question, longest first, for the answer and the log."""
+        return max(self.questions, key=len, default="")[:400]
+
+
+def join_answer_text() -> str:
+    """What the worker writes when a question asks why it wants to join."""
+    return (os.environ.get("FB_GROUPS_JOIN_ANSWER") or JOIN_ANSWER).strip()
+
+
+def join_answer(question: str) -> str | None:
+    """A truthful answer for one membership question, or None for a human.
+
+    Rules and yes/no questions get "Yes"; openers about why the account wants in
+    get the business line. Anything about the person's own phone, email, address,
+    age or paperwork is never invented: those are exactly the fields Facebook's
+    own policy says must be real, and a made-up one can get the account removed.
+    """
+    text = (question or "").strip()
+    if not text:
+        return None
+    if FORM_PERSONAL.search(text):
+        return None
+    if FORM_AGREEMENT.search(text) and (FORM_YESNO.search(text) or text.endswith("?")):
+        return "Yes"
+    if FORM_FOUND.search(text):
+        # True: the group came out of a search for local businesses.
+        return "I found the group while searching Facebook for local businesses."
+    if FORM_BUSINESS.search(text):
+        return join_answer_text()
+    return None
+
+
+def positive_choice(choices: list[Node]) -> Node | None:
+    """The "Yes"/"I agree" option of a yes/no question, if it offers one."""
+    for node in choices:
+        if FORM_YES.match(node.label.strip()):
+            return node
+    return None
+
+
+BUSINESS_OPTION = re.compile(
+    r"\b(?:business owner|business|owner|entrepreneur|founder|marketer|marketing|agency|"
+    r"freelanc\w*|self[- ]employed|small business|advertis\w*|consultant)\b", re.I)
+
+
+def business_choice(choices: list[Node]) -> Node | None:
+    """The option that says what this account is, for "which describes you?".
+
+    The account does run a business; picking that option is truthful. Anything
+    else in a list of options ("Parent", "Coach", "Student") is a guess, so it is
+    left alone and the sheet goes to the user.
+    """
+    for node in choices:
+        if BUSINESS_OPTION.search(node.label):
+            return node
+    return None
+
+
+def _sheet_swipe(width: int, height: int) -> "Gesture":
+    """A short swipe inside a sheet: enough to scroll, not enough to dismiss it."""
+    from .ambient import Gesture
+
+    x = int(random.uniform(0.4, 0.6) * width)
+    return Gesture(x, int(0.62 * height), x + random.randint(-6, 6),
+                   int(0.34 * height), random.randint(240, 420), "sheet")
+
+
+def form_done(nodes: Iterable[Node]) -> bool:
+    """True when the screen says the request was sent or is waiting for an admin."""
+    return any(FORM_DONE.search(node.label) for node in visible(nodes))
+
+
+def _text_fields(nodes: Iterable[Node]) -> list[Node]:
+    """Boxes a question's answer is typed into.
+
+    An empty answer box has no label, and `visible()` keeps only labelled nodes,
+    so this reads the raw tree: the resource id is what says "editable".
+    """
+    out: list[Node] = []
+    for node in nodes:
+        if not node.package.startswith(FACEBOOK):
+            continue
+        left, top, right, bottom = node.bounds
+        if right <= left or bottom <= top:
+            continue
+        rid = node.rid.casefold()
+        editable = (any(part in rid for part in ("edit", "textfield", "text_field", "answer"))
+                    or bool(FORM_HINT.match(node.label.strip())))
+        if editable and (node.clickable or "edit" in rid or FORM_HINT.match(node.label.strip())):
+            out.append(node)
+    return sorted(out, key=lambda n: (n.bounds[1], n.bounds[0]))
+
+
+def read_form(nodes: Iterable[Node], group_name: str = "") -> FormSheet | None:
+    """The membership-questions sheet on screen, or None when there is none.
+
+    Facebook opens it instead of sending the request, in three shapes: a rules
+    screen with one "Agree", a form of questions, or a "pending approval" page
+    once the answers are in. The background group page stays in the tree behind
+    the sheet, so the title and the sheet's own controls are what identify it -
+    a page that merely says "Group rules" in its About section is not a form.
+    """
+    shown = visible(nodes)
+    if not shown:
+        return None
+    if form_done(shown):
+        return FormSheet(done=True)
+    sheet = FormSheet()
+    folded = [(node, node.label.strip()) for node in shown]
+    sheet.close = find_button(shown, *FORM_CLOSE)
+    sheet.submit = find_button(shown, *FORM_SUBMIT)
+    sheet.next = find_button(shown, *FORM_NEXT)
+    title = next((text for _, text in folded
+                  if FORM_TITLE.search(text) and len(text) <= 120), "")
+    # "Join group" belongs to the group page (and to a confirmation dialog, which
+    # `join_dialog_confirm` answers); only "Agree"/"Accept" mean a rules screen.
+    sheet.agree = find_button(shown, *(FORM_AGREE - {"join group"}))
+    sheet.fields = _text_fields(nodes)
+    buttons = FORM_SUBMIT | FORM_NEXT | FORM_AGREE | FORM_CLOSE | JOIN_LABELS | JOINED_LABELS
+    sheet.choices = [
+        node for node, text in folded
+        if node.clickable and text.casefold() not in buttons and len(text) <= 80
+        and not is_ui(text) and not text.endswith("?") and not MEMBER_ONLY.match(text)
+        and not PRIVACY.fullmatch(text) and node.center != (0, 0)
+    ]
+    sheet.questions = [text for _, text in folded
+                       if len(text) >= 10 and text != title and not is_ui(text)
+                       and text.casefold() not in buttons and not MEMBER_ONLY.match(text)
+                       and not SEARCH_CHIP.search(text)][:4]
+    feed = any(text.casefold() in POST_MARKERS for _, text in folded)
+    _, join_state = join_control(shown, group_name)
+    is_form = bool(title and (sheet.submit or sheet.next or sheet.agree)) or bool(
+        (sheet.submit or sheet.next) and (sheet.fields or sheet.choices)) or bool(
+        # A long sheet can put Submit below the fold: no submit is visible, but
+        # the title and an answer control are, and the page behind is not the feed.
+        title and (sheet.fields or sheet.choices) and not feed and not join_state)
+    if not is_form:
+        return None
+    sheet.title = title
+    return sheet
+
+
+def join_dialog_confirm(nodes: Iterable[Node]) -> Node | None:
+    """The confirm button of a "Join group?" dialog, when one is open.
+
+    A dialog is the one screen that shows a Join with a Cancel/Close next to it.
+    Without that pair the page's own Join is all there is, and tapping it again
+    would only be the same tap.
+    """
+    shown = visible(nodes)
+    if not shown or find_button(shown, "cancel", "not now", "close", "dismiss") is None:
+        return None
+    for node in shown:
+        if node.clickable and node.label.strip().casefold() in (JOIN_LABELS | FORM_AGREE):
+            return node
+    return None
 
 
 def search_box(nodes: list[Node]) -> Node | None:
@@ -552,9 +783,12 @@ class GroupStore:
     def join_queue(self, now: float | None = None) -> list[GroupRecord]:
         now = time.time() if now is None else now
         # Retry only failures known to precede a Join tap. An uncertain tap is
-        # reviewed, never automatically repeated.
+        # reviewed, never automatically repeated - except the one that used to be
+        # the questions sheet: that is answered now, and a page that says
+        # "Joined"/"Cancel request" stops a second request anyway.
         retryable = {"the group could not be opened from its card",
-                     "no Join control on the group page"}
+                     "no Join control on the group page",
+                     "Join tapped but the state did not change"}
         return sorted((g for g in self.all() if g.score >= 45
                        and (g.members or g.privacy or g.url)
                        and (g.join_attempts < 3 or g.state == "requested") and g.retry_at <= now
@@ -876,6 +1110,173 @@ class FacebookGroups:
             terms = picked
         return terms
 
+    async def _close_form(self) -> None:
+        """Leave a question sheet the worker cannot answer.
+
+        A sheet left open is what made every later search and join read the
+        modal instead of the page, so this always runs on a refusal."""
+        for _ in range(2):
+            sheet = read_form(await self._screen())
+            if sheet is None:
+                return
+            if sheet.close is not None:
+                await self.phone._tap(sheet.close)
+            else:
+                await self.phone._key("KEYCODE_BACK")
+            await self._settle(1.5)
+
+    async def _fill_step(self, sheet: FormSheet, question: str) -> int:
+        """Tap the answer a sheet allows. Returns how many were answered."""
+        choice = positive_choice(sheet.choices)
+        if choice is not None and (sheet.agree is not None or join_answer(question) == "Yes"):
+            await self.phone._tap(choice)
+            await self._settle(1.2)
+            return 1
+        # "Which of these describes you?" offers options rather than a box, and
+        # "business owner" is what this account is.
+        described = business_choice(sheet.choices)
+        if described is not None and FORM_BUSINESS.search(question or ""):
+            await self.phone._tap(described)
+            await self._settle(1.2)
+            return 1
+        if sheet.agree is not None:
+            await self.phone._tap(sheet.agree)
+            await self._settle(1.2)
+            return 1
+        if sheet.fields:
+            text = join_answer(question)
+            if not text:
+                return 0
+            await self.phone._tap(sheet.fields[0])
+            await self._settle(0.8)
+            await self._enter_text(text)
+            await self._settle(0.8)
+            return 1
+        return 0
+
+    async def _answer_application(self, group_name: str, nodes: list[Node]) -> tuple[str, str]:
+        """Fill in and send Facebook's membership questions.
+
+        Returns ("requested", why) when a request went in, ("blocked", why) when a
+        security check interrupted it, or ("refused", why) when the sheet asks
+        something the worker cannot answer truthfully. The phone is never left on
+        the sheet, and a question it cannot answer is handed to the review queue
+        instead of being guessed at.
+        """
+        answered = 0
+        question = ""
+        scrolled = False
+        answered_questions: set[str] = set()
+        for _ in range(MAX_FORM_STEPS):
+            sheet = read_form(nodes, group_name)
+            if sheet is None:
+                if answered:
+                    return "requested", f"answered {answered} membership question(s)"
+                return "refused", "the membership questions could not be read"
+            if sheet.done:
+                return "requested", f"answered {answered} membership question(s)" if answered \
+                    else "the screen says the request was sent"
+            question = sheet.question
+            filled = 0
+            if not question or question not in answered_questions:
+                filled = await self._fill_step(sheet, question)
+                if filled and question:
+                    answered_questions.add(question)
+            answered += filled
+            button = sheet.next or sheet.submit
+            if button is not None:
+                await self.phone._tap(button)
+                await self._settle(2.5)
+            elif filled:
+                # The tap itself was the action (an "Agree"): read the screen again.
+                pass
+            elif not scrolled:
+                # A long question sheet puts Submit below the fold: scroll the
+                # sheet once before giving up on it.
+                scrolled = True
+                try:
+                    await self.phone._swipe(_sheet_swipe(*await self.phone._geometry()))
+                except PhoneUnavailable:
+                    break
+                await self._settle(1.2)
+                nodes = await self._screen()
+                continue
+            else:
+                # Nothing to answer and nothing to press: this sheet needs a human.
+                break
+            nodes = await self._screen()
+            blocked = await self._guard()
+            if blocked:
+                await self._close_form()
+                return "blocked", blocked
+            after = read_form(nodes, group_name)
+            if after is None or after.done:
+                return "requested", (f"answered {answered} membership question(s)" if answered
+                                     else "the question sheet closed")
+            if any(FORM_ERROR.search(node.label) for node in visible(nodes)):
+                break
+        await self._close_form()
+        reason = f"membership questions need a human: {question[:160]}" if question \
+            else "the membership questions did not go through"
+        return "refused", reason
+
+    async def _charge_join(self, record: GroupRecord) -> None:
+        """Spend the join allowance for a request that really went out."""
+        ok, why = await self._commit("join")
+        if not ok:
+            log.info("A request went to %s but the join allowance was spent (%s)",
+                     record.name, why)
+
+    async def _settle_join(self, record: GroupRecord, nodes: list[Node],
+                           allow_confirm: bool = True) -> GroupRecord:
+        """Read the screen after Join was tapped and record what happened.
+
+        Four outcomes, and only one of them is a failure: the group's request
+        went out, a membership-questions sheet is open (answered here), a
+        confirmation dialog is open (answered once), or nothing changed.
+        """
+        sheet = read_form(nodes, record.name)
+        if sheet is not None and not sheet.done:
+            outcome, detail = await self._answer_application(record.name, nodes)
+            if outcome == "requested":
+                await self._charge_join(record)
+                record.state = "requested"
+                record.joined_at = time.time()
+                record.note = detail
+                log.info("Applied to %s (%s)", record.name, detail)
+            elif outcome == "blocked":
+                # A checkpoint or login wall arrived while answering: the group
+                # is still worth joining once the phone is usable again.
+                record.state = "candidate"
+                record.note = detail
+                record.retry_at = time.time() + 3600
+            else:
+                # Not the machine's call: hand it to the user and stop tapping.
+                record.state = "refused"
+                record.note = detail
+                record.retry_at = time.time() + 7 * 86400
+                self.store.review({"kind": "join-questions", "group": record.name,
+                                   "why": detail})
+            return record
+        _, state = join_control(nodes, record.name)
+        if state in JOINED_LABELS or form_done(nodes):
+            await self._charge_join(record)
+            record.state = "joined" if state == "joined" else "requested"
+            record.joined_at = time.time()
+            record.note = f"screen says {state}" if state else "the screen says the request was sent"
+            log.info("Joined %s (%s)", record.name, record.note)
+            return record
+        if allow_confirm:
+            confirm = join_dialog_confirm(nodes)
+            if confirm is not None:
+                await self.phone._tap(confirm)
+                await self._settle(2.5)
+                return await self._settle_join(record, await self._screen(), allow_confirm=False)
+        record.state = "failed"
+        record.note = "Join tapped but the state did not change"
+        self.store.review({"kind": "join-unverified", "group": record.name, "why": record.note})
+        return record
+
     async def join(self, candidate: GroupCandidate, country: str = "",
                    covers: int = 0) -> GroupRecord:
         """Open the group and press Join. Records what the screen says afterwards."""
@@ -924,25 +1325,17 @@ class FacebookGroups:
                     if pending:
                         record.note = "pending membership is not confirmed; Join was not tapped again"
                         return record
-                    allowed, why = await self._reserve("join")
+                    # Peek, not reserve: a Join that opens a question sheet or does
+                    # nothing has not spent a request, and charging it emptied the
+                    # day's allowance one dead tap at a time.
+                    allowed, why = await self._peek("join")
                     if not allowed:
                         record.note = why
                         return record
                     tapped = True
                     await self.phone._tap(button)
                     await self._settle(2.5)
-                    after = await self._screen()
-                    _, now_state = join_control(after, record.name)
-                    if now_state in JOINED_LABELS:
-                        record.state = "requested" if "request" in now_state else "joined"
-                        record.joined_at = time.time()
-                        record.note = f"screen says {now_state}"
-                        log.info("Joined %s (%s)", candidate.name, now_state)
-                    else:
-                        record.state = "failed"
-                        record.note = "Join tapped but the state did not change"
-                        self.store.review({"kind": "join-unverified", "group": record.name,
-                                           "why": record.note})
+                    return await self._settle_join(record, await self._screen())
                 elif state in JOINED_LABELS:
                     record.state = "requested" if "request" in state else "joined"
                     record.note = f"already {state}"

@@ -261,6 +261,7 @@ class FbGroupsRunner:
         joined = 0
         notes = []
         requested = 0
+        applied = 0
         for record in waiting[:count]:
             joined_record = await self.groups.join(
                 GroupCandidate(name=record.name, url=record.url, members=record.members,
@@ -271,12 +272,15 @@ class FbGroupsRunner:
                 joined += 1
             elif joined_record.state == "requested":
                 requested += 1
+                if joined_record.note.startswith("answered "):
+                    applied += 1
             if joined_record.note:
                 notes.append(f"{record.name}: {joined_record.note}")
         result.joined = joined
         # Pending candidates and a join cooldown must not starve existing groups.
         result.stage = "ENGAGE"
         return (f"{joined} confirmed join(s), {requested} pending request(s)"
+                + (f", {applied} application form(s) answered" if applied else "")
                 + ("; " + "; ".join(notes) if notes else ""))
 
     async def _engage(self, count: int, result: Batch) -> str:

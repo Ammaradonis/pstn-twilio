@@ -25,12 +25,18 @@ from email_finder.fb_groups import (
     comment_rows,
     composer,
     composer_closed,
+    form_done,
     group_card,
     group_rows,
     input_text_arg,
+    join_answer,
+    join_answer_text,
     join_control,
+    join_dialog_confirm,
     looks_published,
+    positive_choice,
     post_rows,
+    read_form,
     sanitize,
     submit_control,
     visible,
@@ -169,6 +175,93 @@ def test_an_already_actioned_group_is_recognised(label, expected):
 
 def test_no_join_control_at_all():
     assert join_control([node(text="About", bounds=(0, 0, 100, 40))]) == (None, "")
+
+
+# ── the membership-questions sheet ───────────────────────────────────────────
+# Tapping Join on a screened group opens a form instead of sending the request.
+# Reading it as "the state did not change" is what left the phone on a modal and
+# drained the day's joins one dead tap at a time.
+
+
+def form_nodes(title: str, *lines: str, button: str = "Submit") -> list[Node]:
+    nodes = [node(text=title, clickable=False, bounds=(40, 200, 660, 240))]
+    top = 260
+    for line in lines:
+        nodes.append(node(text=line, clickable=False, bounds=(40, top, 660, top + 40)))
+        top += 50
+    nodes.append(node(text=button, clickable=True, bounds=(40, 1200, 660, 1260)))
+    return nodes
+
+
+def test_a_group_page_is_not_an_application_form():
+    page = [
+        node(text="Join group", clickable=True, bounds=(500, 300, 680, 350)),
+        node(text="Group rules", clickable=False, bounds=(40, 400, 300, 440)),
+        node(text="Coach Dan", clickable=True, bounds=(40, 900, 300, 940)),
+        node(desc="Like", clickable=True, bounds=(40, 960, 120, 1000)),
+    ]
+    assert read_form(page) is None
+
+
+def test_a_questions_sheet_is_read_with_its_field_and_button():
+    form = form_nodes("Membership questions", "Why do you want to join the group?")
+    form.insert(2, node(text="", rid="com.facebook.katana:id/answer_edit_text",
+                        clickable=True, bounds=(40, 340, 660, 420)))
+    sheet = read_form(form)
+    assert sheet is not None and sheet.title == "Membership questions"
+    assert sheet.question == "Why do you want to join the group?"
+    assert len(sheet.fields) == 1 and sheet.submit is not None
+
+
+def test_a_rules_screen_is_read_as_one_agreement():
+    sheet = read_form(form_nodes("Group rules from the admins", "Be kind.", button="Agree"))
+    assert sheet is not None and sheet.agree is not None and sheet.submit is None
+
+
+def test_an_empty_answer_box_is_found_by_its_resource_id():
+    # `visible()` keeps only labelled nodes, and an empty box has no label.
+    form = form_nodes("Membership questions", "Tell us about your business")
+    form.insert(2, node(text="", rid="com.facebook.katana:id/answer_text",
+                        clickable=True, bounds=(40, 340, 660, 420)))
+    assert read_form(form).fields
+
+
+def test_a_sent_or_pending_request_reads_as_done():
+    for label in ("Request sent", "Your request to join was sent", "Pending admin approval"):
+        assert read_form([node(text=label, clickable=False, bounds=(40, 300, 660, 340))]).done
+        assert form_done([node(text=label)])
+
+
+@pytest.mark.parametrize("question,expected", [
+    ("Do you agree to the group rules?", "Yes"),
+    ("Have you read the rules?", "Yes"),
+    # "Do you live in the area?" is about the person, not the rules: not known.
+    ("Why do you want to join?", join_answer_text()),
+    ("What brings you to the group?", join_answer_text()),
+    ("How did you hear about us?", "I found the group while searching Facebook for local businesses."),
+    # Never invented: the worker does not know these, and a wrong one is worse.
+    ("What is your phone number?", None),
+    ("Which town do you live in?", None),
+    ("Where are you based?", None),
+    ("How old are you?", None),
+])
+def test_only_questions_we_can_answer_truthfully_are_answered(question, expected):
+    assert join_answer(question) == expected
+
+
+def test_the_positive_option_is_the_one_tapped():
+    nodes = [node(text="No", clickable=True, bounds=(40, 400, 660, 440)),
+             node(text="I agree", clickable=True, bounds=(40, 460, 660, 500))]
+    assert positive_choice(nodes).label == "I agree"
+    assert positive_choice([node(text="Maybe", clickable=True)]) is None
+
+
+def test_a_confirmation_dialog_is_only_confirmed_when_it_has_a_cancel():
+    dialog = [node(text="Join group", clickable=True, bounds=(40, 900, 300, 940)),
+              node(text="Cancel", clickable=True, bounds=(320, 900, 660, 940))]
+    assert join_dialog_confirm(dialog).label == "Join group"
+    # The group page's own Join has no Cancel beside it.
+    assert join_dialog_confirm([node(text="Join group", clickable=True)]) is None
 
 
 # ── the feed ─────────────────────────────────────────────────────────────────
