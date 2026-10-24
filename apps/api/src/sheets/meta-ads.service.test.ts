@@ -25,6 +25,7 @@ function evidence(
     startedAt: '2026-01-05',
     endedAt: null,
     observedAt: ago(1).toISOString(),
+    matchKind: 'page',
     ...overrides,
   };
 }
@@ -190,7 +191,7 @@ describe('row matching on added or missing URLs', () => {
     advertiserName: e.advertiserName,
     advertiserUrl: e.advertiserUrl,
     facebookUrl: e.facebookUrl,
-    matchKind: e.matchKind === 'name' ? 'name' : 'page',
+    matchKind: e.matchKind === 'name' ? 'name' : e.matchKind === 'page' ? 'page' : '',
   });
   const byIdentity = new Map<string, StoredEvidence[]>();
   const byTitle = new Map<string, StoredEvidence[]>();
@@ -249,7 +250,7 @@ describe('name-only evidence, the case most tabs are in', () => {
         advertiserName: e.advertiserName,
         advertiserUrl: e.advertiserUrl,
         facebookUrl: e.facebookUrl,
-        matchKind: e.matchKind === 'name' ? 'name' : 'page',
+        matchKind: e.matchKind === 'name' ? 'name' : e.matchKind === 'page' ? 'page' : '',
       };
       const key = schoolKey(e.schoolTitle, e.facebookUrl);
       byIdentity.set(key, [...(byIdentity.get(key) ?? []), stored]);
@@ -388,6 +389,19 @@ describe('the Meta ad filter', () => {
     expect(values[1]![5]).toBe('1234567890');
     // The tab never presents a name match as a page match.
     expect(values[1]![11]).toBe('name');
+  });
+
+  it('writes an empty metaMatch for evidence stored before match_kind existed', async () => {
+    const sheets = stubSheets();
+    const old = evidence({ schoolTitle: 'Austin Shotokan', rowIndex: 2 });
+    delete (old as { matchKind?: string }).matchKind;
+    const service = new MetaAdsService(stubPrisma([old]), sheets.service);
+    const result = await service.filter('user', 'sheet-1', 'Texas', 'ACTIVE');
+    expect(result.rows).toBe(1);
+    const written = sheets.calls.find((c) => c.method === 'PUT')!;
+    const values = (written.body as { values: string[][] }).values;
+    // Unknown, not a claim that the tab's own page is the ad's page.
+    expect(values[1]![11]).toBe('');
   });
 
   it('rewrites its own tab on a second press instead of stacking copies', async () => {

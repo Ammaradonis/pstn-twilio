@@ -60,7 +60,8 @@ export type StoredEvidence = {
   advertiserName: string;
   advertiserUrl: string;
   facebookUrl: string;
-  matchKind: 'page' | 'name';
+  // '' for rows stored before match_kind existed: unknown, not "page".
+  matchKind: 'page' | 'name' | '';
 };
 
 type RowMatch = { row: Row; evidence: StoredEvidence };
@@ -221,7 +222,7 @@ export class MetaAdsService {
         advertiserName: e.advertiserName,
         advertiserUrl: e.advertiserUrl,
         facebookUrl: e.facebookUrl,
-        matchKind: e.matchKind === 'name' ? 'name' : 'page',
+        matchKind: e.matchKind === 'name' || e.matchKind === 'page' ? e.matchKind : '',
       };
       push(byIdentity, schoolKey(e.schoolTitle, e.facebookUrl), stored);
       push(byTitle, nameKey(e.schoolTitle), stored);
