@@ -1,0 +1,524 @@
+## First, the thing most people miss in that transcript
+
+Read what he actually claims. It isn't "I'm the best media buyer alive." It's:
+
+> "you're not gonna find anyone better than me **for this price point**"
+
+He narrows the claim so it's almost impossible to disprove, then delivers the narrow claim with maximum-width energy. That's the whole trick. The confidence is loud, the claim is tight. That's how you get "don't be a bullshitter" and "just say it, who gives a shit" to coexist.
+
+For you, this is an enormous advantage, because your narrow claim is probably **literally true**.
+
+- "I'm the best at AI" → unprovable, and a school owner's nephew who uses ChatGPT will argue with you.
+- "I build the best AI phone agent in the world for martial arts schools" → how many people on earth do only this? Five? Ten? You might actually be top three by default.
+- "There is nobody in this country who has listened to more BJJ trial-class phone calls than I have" → nobody can check it, nobody will dispute it, and if you've done 40 installs it's probably true.
+- "No one else builds this for the martial arts market specifically. Everyone else sells a generic receptionist bot and lets you configure it yourself."
+
+Pick the claim that is both maximally bold and technically defensible, then never hedge it again.
+
+## The doctor analogy, applied to your buyer
+
+Your buyer is a school owner standing on the mat in a gi. He cannot evaluate your stack. He has no idea what a voice model is. So he evaluates the only thing available: **do you sound like someone who has done this before.**
+
+And here's the part specific to your niche: he's a martial artist. He's spent twenty years reading people for weakness. Hedging in front of a black belt is showing him your back.
+
+Nervous version → confident version:
+
+| Nervous | Confident |
+|---|---|
+| "So it's, uh, $497 a month, but we can probably work something out" | "It's $497 a month. That's less than one student. It'll pay for itself in the first week." |
+| "It should be able to handle most calls" | "It handles your calls. Trials, pricing, schedule, kids program. It books them." |
+| "Setup takes maybe a week or two depending" | "You'll be live Thursday." |
+| "I think it sounds pretty natural now, the tech has gotten a lot better" | "Call this number right now. Go ahead. Tell me if you can tell." |
+| "If it doesn't work out we can cancel obviously" | "You'll keep it. Everybody keeps it." |
+
+That last column isn't lying. It's the same facts with the shake taken out.
+
+## Reasons, not evidence
+
+Look at what he does when they ask "why?"
+
+> "because the way we do the planning and the price point we work out, I've been in this industry for a long time, I've seen lots of people and I've also taken lots of big clients from other competitors"
+
+That's not evidence. It's a **reason chain delivered without a pause**, and in conversation that lands identically. Nobody audits it. What kills you is the two-second gap before you answer, not the quality of the answer.
+
+So pre-load yours. Three versions, so it never sounds canned:
+
+1. "Because I only do martial arts schools. That's it. I've heard a thousand of these calls. I know the parent calls at 6:40 when you're on the mat with the little dragons class, I know she asks about the free trial and the price, and I know if nobody picks up she calls the school down the road. I built this around that one moment."
+
+2. "Because everyone else built a receptionist and pointed it at every industry. I built one thing for one industry. Mine knows what a gi is, it knows the difference between your kids program and your adult no-gi class, and it doesn't make your school sound like a dentist's office."
+
+3. "Because I've taken schools off generic answering services and watched their trial bookings go up in week one. I know exactly where those systems fail, because I've cleaned up after them."
+
+Say any of those in one breath. The smoothness is the proof.
+
+## Kill every hedge
+
+He's explicit about this: *"Did I go 'um, I think, ah, we're the best uh, umm'? No."*
+
+Your hedge list, which you should physically write down and read before calls:
+
+- "I think" → delete
+- "kind of" / "sort of" → delete
+- "hopefully" → "you will"
+- "we could probably" → "we will"
+- "does that make sense?" → "..." (silence)
+- "I just wanted to reach out" → "I'm calling because"
+- "sorry to bother you" → "you got two minutes?"
+- "maybe we could try" → "here's what we're doing"
+- "I was wondering if" → "let's"
+
+"Sorry to bother you, I was just wondering if maybe you'd be interested" is four hedges in one sentence. That's the "what do you mean maybe?" moment from the transcript.
+
+## Hold the frame under pushback
+
+His move: *"how do you know? it's my industry not yours."* Not defensive, not arguing. Reasserting position.
+
+Your versions:
+
+**"AI can't handle a call about my kids program."**
+"It handles it better than the sixteen-year-old white belt answering your phone right now. Yours hangs up on people at 9pm. Mine doesn't."
+
+**"I tried a chatbot once, it was terrible."**
+"Right, because it was built for pizza shops. You're comparing a generic tool to something built for one industry. Different thing entirely."
+
+**"That's expensive."**
+"Expensive compared to what? One missed trial call is a student. One student is two grand over their time with you. You're not spending money here, you're plugging a hole."
+
+**"How do I know it works?"**
+"Because it's my industry, not yours. I'm telling you it works. You'll see it working on Thursday."
+
+**"I need to think about it."**
+"Sure. What are you thinking about?" (Then silence. Do not fill it. Filling silence is the same instinct as saying "um.")
+
+## The James Bond part is mechanical, not mystical
+
+He can walk in outnumbered and not care because *the outcome of that one room doesn't determine his life.* That's not a personality trait you meditate into existence. It's a pipeline number.
+
+If this month's rent depends on this one school owner saying yes, you will hedge. Guaranteed. So:
+
+- Keep enough conversations open that no single one matters. Twenty calls booked means you can lose one without flinching, and he'll hear that you don't care.
+- Get comfortable ending calls first. "Sounds like this isn't for you. No problem." That single sentence, said calmly, closes more deals than any pitch.
+- Never chase. One follow-up, then move on. Chasing is the opposite of "I'm the best, congratulations you found me."
+
+## Where this transcript will get you in trouble, and it's a business reason not a moral one
+
+He was selling TV ad buying. One-off, opaque, the client can never really audit whether the media plan was optimal. You're selling **recurring software to a niche where everybody knows everybody.** Association seminars, tournament circuits, the owner Facebook groups, the same six podcasts.
+
+Which means:
+
+- **Unlimited confidence** on your judgment, your positioning, your commitment, your specialization, your "you'll keep it." None of that can be falsified and all of it should be delivered like a hammer.
+- **Zero embellishment** on specific numbers and named references. "This tripled bookings at 40 schools" gets checked. Not by him. By the guy he trains with, in thirty days, when the agent is live and the data is sitting in his CRM. And that guy tells eleven other owners.
+
+The good news is you don't need the embellishment, because you can manufacture real proof faster than he could. Do three free installs. Record the calls. Count the bookings. Now you have a number, and a real number said confidently beats an invented one every time, because you never have to flinch when somebody asks a follow-up question.
+
+## How to actually internalize it this week
+
+1. **Write your one sentence.** "I build the best AI phone agent in the world for martial arts schools." Say it out loud fifty times. It'll feel absurd on rep one and normal on rep thirty. That's the whole mechanism. His smoothness is 500 reps, not talent.
+2. **Record yourself pitching.** Count the hedges. Most people are shocked. Do it again until it's zero.
+3. **Practice the "why" answer until it's one breath.** No pause, no rise at the end of the sentence.
+4. **Practice saying the price and then shutting up.** "$497 a month." Full stop. The instinct to immediately justify it is the tell.
+5. **Take one low-stakes call this week and deliberately overclaim within the defensible zone.** "You're not going to find anyone better at this for this price. There isn't anyone else." Watch what happens. Nothing bad happens. That's the lesson the transcript is actually teaching.
+
+The core idea in that text is **not "lie to people."** It's:
+
+> **Project certainty about your ability to solve a problem, while staying truthful about the facts.**
+
+That's the difference between **confidence** and **bullshitting**.
+
+For an AI phone agent business serving martial arts schools, this distinction matters because owners are constantly pitched by marketers, software vendors, lead-gen agencies, CRM companies, and "AI experts." They are trying to figure out:
+
+**"Can this person actually help my school grow?"**
+
+Confidence reduces perceived risk.
+
+Bullshitting destroys trust once reality catches up.
+
+---
+
+# 1. Internalize: Confidence Comes From Your Process, Not Your Ego
+
+The speaker says:
+
+> "I'm the best."
+
+What you should actually internalize is:
+
+> "I know exactly how I solve this problem."
+
+A martial arts school owner doesn't care if you're the smartest AI person on Earth.
+
+They care whether:
+
+* missed calls get answered
+* trial bookings increase
+* leads stop slipping through the cracks
+* front desk workload decreases
+
+So your confidence should come from:
+
+### Weak confidence
+
+> "I think our AI might help."
+
+### Strong confidence
+
+> "If you're missing calls, we're going to capture opportunities that are currently being lost."
+
+### Weak confidence
+
+> "Maybe it could improve conversions."
+
+### Strong confidence
+
+> "When leads get immediate responses instead of voicemail, more conversations happen. More conversations create more trial bookings."
+
+Notice:
+
+* No lies.
+* No fake claims.
+* No hesitation.
+
+---
+
+# 2. Replace "Maybe Language" With "Decision Language"
+
+Most new founders accidentally sound uncertain.
+
+They say:
+
+* "I think..."
+* "Maybe..."
+* "Perhaps..."
+* "Hopefully..."
+* "It might..."
+
+These words leak confidence.
+
+### Example 1
+
+Instead of:
+
+> "I think AI phone agents could help your school."
+
+Say:
+
+> "An AI phone agent is one of the simplest ways to stop losing leads when nobody answers the phone."
+
+---
+
+### Example 2
+
+Instead of:
+
+> "Maybe this would be useful."
+
+Say:
+
+> "This is useful when staff are teaching classes and can't immediately answer incoming calls."
+
+---
+
+### Example 3
+
+Instead of:
+
+> "Hopefully we can improve bookings."
+
+Say:
+
+> "The goal is simple: answer every inquiry and book more trials."
+
+---
+
+# 3. Become Extremely Certain About Problems, Not Outcomes
+
+This is where many people become bullshitters.
+
+Bad salespeople become certain about things they cannot control.
+
+### Bullshitting
+
+> "You'll definitely get 50 new students."
+
+You don't know that.
+
+### Confident
+
+> "I can guarantee every incoming caller gets an immediate response."
+
+You control that.
+
+---
+
+### Bullshitting
+
+> "Your revenue will double."
+
+### Confident
+
+> "We'll remove a major source of lead leakage."
+
+---
+
+### Bullshitting
+
+> "This will transform your business."
+
+### Confident
+
+> "If you're missing calls today, solving that problem has obvious value."
+
+The more you speak about things you directly control, the more credible your confidence becomes.
+
+---
+
+# 4. Develop "Operator Confidence"
+
+The speaker references surgeons and James Bond.
+
+What they're describing is calm certainty under pressure.
+
+For your business:
+
+### School owner says:
+
+> "AI seems risky."
+
+Weak response:
+
+> "Yeah, I understand."
+
+Strong response:
+
+> "It's only risky if it performs poorly. That's why we design the agent around your exact call flow before it ever touches a live lead."
+
+---
+
+### School owner says:
+
+> "What if it says something wrong?"
+
+Weak response:
+
+> "Hopefully it won't."
+
+Strong response:
+
+> "That's a configuration problem, not an AI problem. We define exactly how it handles memberships, schedules, pricing, and trial bookings."
+
+---
+
+### School owner says:
+
+> "I've never used AI."
+
+Weak response:
+
+> "Okay."
+
+Strong response:
+
+> "Most owners haven't. They don't need to learn AI. They need more calls answered."
+
+Notice how the confident response redirects attention toward the actual business outcome.
+
+---
+
+# 5. Build Evidence So You Don't Need To Fake Confidence
+
+The speaker basically says:
+
+> "Just say you're the best."
+
+That can work temporarily.
+
+A stronger version is:
+
+> Collect evidence until confidence becomes unavoidable.
+
+For example:
+
+### Evidence source #1
+
+Recordings of successful calls.
+
+Then you can say:
+
+> "We've listened to hundreds of martial arts inquiries. We know the questions prospects ask before booking a trial."
+
+---
+
+### Evidence source #2
+
+Missed call analysis.
+
+You can say:
+
+> "Your school missed 37 calls last month. That's exactly the problem we solve."
+
+---
+
+### Evidence source #3
+
+Case studies.
+
+You can say:
+
+> "This school went from voicemail to instant response on every lead."
+
+Now confidence is backed by reality.
+
+---
+
+# 6. Use "Assumed Expertise" Language
+
+Experts don't sound like they're asking permission to have an opinion.
+
+### Beginner
+
+> "Do you think missed calls are a problem?"
+
+### Expert
+
+> "Missed calls are expensive in martial arts businesses."
+
+---
+
+### Beginner
+
+> "Maybe parents prefer quick responses?"
+
+### Expert
+
+> "Parents expect immediate responses."
+
+---
+
+### Beginner
+
+> "I think speed matters."
+
+### Expert
+
+> "Speed is one of the biggest factors in lead conversion."
+
+You aren't claiming omniscience.
+
+You're speaking as someone who has studied the problem.
+
+---
+
+# 7. Stop Needing Validation
+
+The text repeatedly says:
+
+> "What are they gonna say?"
+
+The deeper lesson is:
+
+**Don't let your confidence depend on agreement.**
+
+Example:
+
+Owner says:
+
+> "I don't think AI will work."
+
+Weak founder:
+
+> "Oh okay maybe you're right."
+
+Strong founder:
+
+> "That's completely fair. Most owners are skeptical initially. The question isn't whether it's AI. The question is whether every lead gets answered."
+
+Notice:
+
+* You don't get defensive.
+* You don't fold.
+* You stay on the problem.
+
+---
+
+# 8. Create Your Own Version of "I'm the Best"
+
+Don't literally say:
+
+> "I'm the best in the world."
+
+That sounds exaggerated unless you have extraordinary proof.
+
+Instead create believable versions.
+
+### Option 1
+
+> "I specialize specifically in AI phone agents for martial arts schools."
+
+---
+
+### Option 2
+
+> "We understand martial arts lead handling better than general AI vendors."
+
+---
+
+### Option 3
+
+> "This isn't a generic chatbot. It's built around how martial arts schools actually book trials."
+
+---
+
+### Option 4
+
+> "If your goal is answering every inquiry and booking more trials, you're talking to the right company."
+
+---
+
+### Option 5
+
+> "This is what we do all day, every day."
+
+These statements create the same feeling as "I'm the best" without crossing into unsupported claims.
+
+---
+
+# 9. The Practical Mental Model
+
+When entering a sales call, don't think:
+
+> "I hope they buy."
+
+Think:
+
+> "I understand this problem better than they do."
+
+Examples:
+
+* They run a martial arts school.
+* You study lead handling systems.
+* They teach students.
+* You study call conversion.
+* They run classes.
+* You study appointment booking.
+
+Therefore:
+
+> "I am the specialist in this specific problem."
+
+That's the healthy version of irrational self-confidence.
+
+---
+
+# For Your AI Phone Agent Business
+
+A useful operating belief would be:
+
+> "Nobody in my market thinks about missed-call recovery, lead response speed, call handling, and trial booking systems as much as I do. When I walk into a conversation, I know I can help this owner understand and solve those problems."
+
+That's confident.
+
+It's specific.
+
+It's believable.
+
+And unlike bullshitting, it gets stronger every time you gain more experience, data, recordings, case studies, and results.

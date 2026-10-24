@@ -1,0 +1,565 @@
+## First, separate what he's actually saying
+
+There are three claims bundled together, and they need different implementations.
+
+**Entropy.** Broken things stay broken. A flat tire doesn't re-inflate. Neither does a Stripe account under review, a client's expired calendar token, or a stalled pipeline.
+
+**Nobody's incentives match yours.** The support rep at your telephony provider goes home at 5pm whether your numbers got provisioned or not. Your outcome is not in anyone else's top ten priorities.
+
+**Delay compounds.** Two slow days cost you two days. Two slow months cost you two months *plus* the two months it now takes to dig out.
+
+The part worth internalizing hardest is the middle one, because that's where the emotional resistance lives. You don't chase the vendor six times because it feels rude. Notice that he never says the hounding is pleasant. He says it's the only thing that works.
+
+## Internalizing it: kill the explanation reflex
+
+The gap he's attacking is the gap between *noticing* and *acting*. Tristan noticed. Tristan just explained it instead of acting.
+
+Watch for the moment you generate an explanation for a bad number. That moment is the tell. In your business it sounds like:
+
+- "Nobody picked up because gym owners are on the mat at 6pm."
+- "Summer's dead, nobody's buying software, September will fix it."
+- "That demo no-showed because gym owners are flaky."
+- "That school is too small to convert, that's why the trial didn't land."
+- "Pipeline's thin but I've got three warm ones that'll close."
+
+Every one of those might be true. That's the trap. The truthfulness of the excuse has nothing to do with whether you should act. A true explanation for a bad number is still a bad number.
+
+The counter-reflex to build: **when you produce an explanation, immediately produce an action.** Not instead of. In addition. "Gym owners are on the mat at 6pm" is fine, and it means you're now calling at 1pm when the school is empty and the owner is bored. The explanation becomes the input to the fix rather than the substitute for it.
+
+## Implementing it: set tripwires before you need them
+
+His "two or three slow days" works for cam girls because revenue moves daily. Yours doesn't. If you wait for MRR to look wrong, you're panicking sixty days after the problem started. So pick the fastest-moving metric you own and put the tripwire there.
+
+Write these down in advance, with numbers, so you can't negotiate with yourself when it's happening:
+
+- **2 business days, no new demo booked** → outbound gets changed today, not reviewed on Friday.
+- **3 days, no reply to any outbound sequence** → the opener is dead, rewrite it this afternoon.
+- **5 demos held, 0 closes** → the offer is wrong, not the prospects.
+- **Any live client's agent books zero appointments in 48 hours** → something is broken and they haven't told you.
+- **A client goes 10 days without responding to a check-in** → that's churn in progress, not a busy client.
+- **Signed but not live in 72 hours** → your onboarding is the problem.
+
+The last three matter most because silent failures kill B2B businesses. A gym's calendar integration token expires, the agent books nothing for six days, the owner concludes your product doesn't work and cancels. You find out at the cancellation, which is three weeks too late to fix anything. Build the alert so it surfaces in hours. That's this principle written into software.
+
+## The hounding side, applied to your stack
+
+You have more third-party dependencies than a cam site does, which means more surfaces where "it'll sort itself out" costs you real money:
+
+- **A2P 10DLC / number registration rejected.** If you don't check daily, you find out three weeks later when a client asks why their number doesn't ring.
+- **Stripe holding funds or flagging the account.** They will not email you a resolution. You open the ticket, then you follow up every day.
+- **Voice latency creeping up on your provider.** Nobody tells you. Your clients just report the agent "sounds weird" and churn.
+- **Calendar API, CRM webhook, or gym software integration silently failing.** Same pattern.
+- **Your own prospects.** "Call me after the belt test" means call after the belt test, and then again, and again. Five to eight touches is normal, not harassment.
+- **Your own clients.** "We're not using it much yet" is a cancellation forming. Get on the phone that week.
+
+Adopt his rule literally: you have never once been rewarded for waiting patiently on a vendor. Neither has anyone.
+
+## Cheap drastic action: your version of the $20 wallpaper
+
+His whole point is that panic mode is productive *as long as the fixes are cheap*. He bought wallpaper and lipstick, not Google Ads. Your cheap levers:
+
+- **Record their own phone ringing out.** Call the gym at 6:15pm during the kids' class, let it go to voicemail, send the owner that 30-second clip. Costs nothing. It's the single most convincing thing you own.
+- **Change the call time.** 1–3pm, gyms are empty and owners are sitting there.
+- **Change the offer shape.** Swap "book a demo" for "I'll set it up free for two weeks, you keep whatever it books."
+- **Change the price anchor.** "One member you didn't lose pays for the year."
+- **Go in person.** Five schools in an afternoon. Gi on if you train.
+- **Ask every current client for one referral.** Gym owners all know each other, and they talk in regional circles.
+- **Post the missed-call math in owner Facebook groups and forums.**
+- **Rewrite the first line of the opener.** Free, takes ten minutes, changes everything downstream.
+
+Do six of these in a week rather than one of them properly.
+
+## The one adjustment I'd make to his version
+
+He and Tristan are arguing about attribution, and he's right about the decision but Tristan's right about the information. His answer is correct: waiting to find out costs more than never knowing. But "we don't know why it worked" is only a real cost if you never write anything down.
+
+So take the speed and keep the record. When you change six things on Tuesday, spend two minutes logging what you changed and the date. Costs nothing, slows nothing, and after three or four rounds of panic mode you'll notice that it's the same one or two levers doing the work every time. Then you reach for those first, faster, and you're better at this than he is.
+
+The failure mode to avoid is using measurement as a reason to wait. That's just Tristan with a spreadsheet.
+
+One real risk with changing everything at once: don't rip out something that's currently producing for existing clients during a dip in *new* sales. Panic on the broken thing, not on the working thing.
+
+## The part you're sitting on
+
+Your product *is* this principle, sold to gym owners.
+
+A missed call never calls itself back. The mum who called at 6:15pm asking about the kids' program while the owner was running class did not leave a voicemail and did not try again. She called the school down the road. That lead didn't get delayed, it got deleted.
+
+Use his exact framing when you sell:
+
+- "Your phone rang 14 times last week during class. Zero of those people called back."
+- "You've got a flat tire on your enrollment. It has been flat for a year."
+- When the owner says "we'll sort it when we hire a front desk person" — that's Tristan saying it'll be fine. It's been fine for eighteen months and it's cost them sixty members.
+
+You're not selling an AI receptionist. You're selling the gap between noticing and acting, closed automatically, for people who are physically on the mat and cannot close it themselves.
+
+The core principle in that passage is not “panic.” It's **bias toward rapid intervention**.
+
+A more useful way to translate it into a serious business operating principle is:
+
+> **When a leading indicator deteriorates, assume it requires action until proven otherwise.**
+
+The author's framing is aggressive and sometimes overstates causality ("I changed things, therefore the changes caused the result"). But there is a valuable lesson underneath:
+
+1. Problems rarely improve because you ignore them.
+2. Most businesses react too slowly.
+3. Small, reversible experiments beat waiting.
+4. Ownership beats hoping.
+
+For an AI phone agent business serving martial arts schools, here's how I would internalize and implement it.
+
+---
+
+# Principle 1: Treat Revenue Problems Like Emergencies
+
+Most businesses don't die because of one catastrophic event.
+
+They die because:
+
+* Leads decline
+* Appointments decline
+* Show rates decline
+* Close rates decline
+
+And nobody notices for 60 days.
+
+The lesson from "Nothing Ever Fixes Itself" is:
+
+> If a metric suddenly changes, investigate immediately.
+
+### Example 1: Demo Bookings Drop
+
+Normal:
+
+* 5 demos booked per week
+
+This week:
+
+* 2 demos booked
+
+Bad response:
+
+* "Summer is slow."
+* "People are on vacation."
+* "We'll see what next month looks like."
+
+Good response:
+
+* Review all ad campaigns today.
+* Listen to 20 sales calls today.
+* Check website forms today.
+* Contact recent prospects today.
+* Launch 3 outreach campaigns today.
+
+Even if none of those actions solve it, you've lost zero time.
+
+---
+
+### Example 2: Martial Arts Schools Stop Replying
+
+You usually get:
+
+* 15 positive responses/week
+
+Now:
+
+* 4 positive responses/week
+
+Don't assume:
+
+* "The market is saturated."
+
+Instead ask:
+
+* Has the offer become stale?
+* Has the messaging weakened?
+* Have competitors entered?
+* Has deliverability dropped?
+* Are emails landing in spam?
+
+Action within 24 hours.
+
+Not 30 days.
+
+---
+
+# Principle 2: Speed Beats Certainty
+
+A huge mistake founders make:
+
+> They wait for perfect information.
+
+The passage argues:
+
+> Do something before you know exactly why.
+
+There's wisdom in that.
+
+---
+
+### AI Phone Agent Example
+
+You notice:
+
+Schools love demos.
+
+But many don't buy.
+
+You don't know why.
+
+Most founders would spend weeks analyzing.
+
+Instead:
+
+Test immediately.
+
+Version A:
+
+* "Never miss another lead."
+
+Version B:
+
+* "Recover lost trial students automatically."
+
+Version C:
+
+* "Answer every call 24/7."
+
+Run all three.
+
+Find out what resonates.
+
+The market gives answers faster than spreadsheets.
+
+---
+
+### Another Example
+
+You think demo attendance is low.
+
+Instead of debating causes for two weeks:
+
+Implement immediately:
+
+* SMS reminder
+* Email reminder
+* Same-day reminder
+* Calendar invite
+* Founder video reminder
+
+Within a week you'll have data.
+
+---
+
+# Principle 3: Run Cheap Experiments Constantly
+
+One of the strongest parts of the passage is:
+
+> Make changes that are inexpensive and reversible.
+
+That's exactly how startups should operate.
+
+Not:
+
+* Hire 10 employees.
+* Spend $50,000 on ads.
+* Rebrand the company.
+
+Instead:
+
+* Test.
+* Measure.
+* Learn.
+
+---
+
+### Example: New Offer
+
+Current offer:
+
+"AI Receptionist for Martial Arts Schools"
+
+Test:
+
+* AI Lead Recovery System
+* AI Enrollment Assistant
+* AI Front Desk Replacement
+* AI Trial Class Booking Agent
+
+Cost:
+Almost zero.
+
+Potential upside:
+Massive.
+
+---
+
+### Example: Outbound Prospecting
+
+Current script:
+
+"Can I show you our AI phone agent?"
+
+Test:
+
+"How many missed calls does your school get each week?"
+
+Different conversation.
+
+Same market.
+
+Minimal cost.
+
+---
+
+# Principle 4: Never Assume Someone Else Is Solving Your Problem
+
+This is one of the most important lessons in the entire piece.
+
+The author is correct about this.
+
+Your vendors care less than you do.
+
+Your contractors care less than you do.
+
+Your employees care less than you do.
+
+That's normal.
+
+---
+
+### Example: Twilio Issues
+
+Your AI agent stops making outbound calls.
+
+Bad response:
+
+"Support ticket submitted."
+
+Wait.
+
+Wait.
+
+Wait.
+
+Wait.
+
+Good response:
+
+* Open support ticket.
+* Call support.
+* Follow up.
+* Escalate.
+* Investigate backup provider.
+* Create workaround.
+
+Same day.
+
+---
+
+### Example: CRM Integration Breaks
+
+A webhook stops sending leads.
+
+Bad response:
+
+"We reported it."
+
+Good response:
+
+* Investigate logs.
+* Contact support.
+* Build temporary workaround.
+* Manually process leads.
+
+Because every hour costs money.
+
+---
+
+# Principle 5: Attack Leading Indicators, Not Outcomes
+
+Revenue is a lagging indicator.
+
+The smartest implementation of Point 60 is:
+
+> Fix the thing before revenue drops.
+
+For your business:
+
+Revenue comes from:
+
+Traffic → Leads → Demos → Sales → Retention
+
+Watch each step.
+
+---
+
+### If Leads Drop
+
+Don't wait for revenue to drop.
+
+Immediately:
+
+* Increase outbound volume.
+* Create content.
+* Launch referral outreach.
+* Test new offers.
+
+---
+
+### If Demos Drop
+
+Immediately:
+
+* Improve booking process.
+* Improve follow-up.
+* Improve reminders.
+* Improve calendar flow.
+
+---
+
+### If Sales Drop
+
+Immediately:
+
+* Review calls.
+* Improve objections.
+* Adjust offer.
+* Improve guarantee.
+
+---
+
+# Principle 6: Create a 48-Hour Rule
+
+This is probably the most practical implementation.
+
+For every important metric:
+
+> If it deteriorates for 48 hours, intervention is mandatory.
+
+Example:
+
+### Demo Bookings
+
+Target:
+
+* 5/week
+
+If bookings slow unexpectedly:
+
+Within 48 hours:
+
+* Review traffic
+* Review funnels
+* Review outreach
+* Launch test
+
+No waiting.
+
+---
+
+### Client Churn
+
+Target:
+
+* Under 3%
+
+If churn rises:
+
+Within 48 hours:
+
+* Conduct interviews
+* Review onboarding
+* Review support tickets
+* Create retention initiative
+
+No waiting.
+
+---
+
+# Principle 7: Build an "Action First" Dashboard
+
+Every metric should trigger an action.
+
+Not just observation.
+
+Example:
+
+| Metric       | Warning Level   | Immediate Action             |
+| ------------ | --------------- | ---------------------------- |
+| Booked demos | -30%            | Launch new outbound campaign |
+| Show rate    | Under 70%       | Add reminder sequence        |
+| Close rate   | Under 20%       | Review last 10 sales calls   |
+| Client churn | Above 5%        | Schedule customer interviews |
+| Missed calls | Above threshold | Audit AI handling            |
+
+Now you don't wonder what to do.
+
+You already know.
+
+---
+
+# Where I Would Disagree With the Author
+
+This is important.
+
+The author assumes:
+
+> "I changed things and then results improved, therefore my changes caused the improvement."
+
+That isn't always true.
+
+Sometimes:
+
+* Seasonality is real.
+* Markets fluctuate.
+* Variance exists.
+
+The better principle is:
+
+> Act quickly, but measure honestly.
+
+You want:
+
+**Speed + evidence.**
+
+Not:
+
+**Speed + self-delusion.**
+
+The best operators do both.
+
+They intervene aggressively when problems appear, then rigorously analyze whether the intervention actually worked.
+
+---
+
+# What Point 60 Looks Like In Your AI Phone Agent Business
+
+A practical translation:
+
+### Every morning ask:
+
+1. Are leads down?
+2. Are demos down?
+3. Are close rates down?
+4. Is churn up?
+5. Are AI agents underperforming?
+6. Are integrations failing?
+7. Are prospects replying less?
+
+If yes:
+
+### Within 24–48 hours
+
+* Identify possible causes.
+* Launch 1–3 low-cost experiments.
+* Follow up relentlessly with anyone blocking progress.
+* Measure results.
+* Keep what works.
+* Kill what doesn't.
+
+The deepest lesson isn't "panic."
+
+It's:
+
+> **Don't confuse waiting with strategy. Once you've identified a problem, the clock starts.** The businesses that win are usually the ones that notice problems early and start testing solutions while everyone else is still explaining why the problem might not be real.

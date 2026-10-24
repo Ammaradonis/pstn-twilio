@@ -258,11 +258,16 @@ class FbGroupsRunner:
         if not waiting:
             result.stage = "ENGAGE"
             return "no group left to join; moving on to engaging"
+        # One pending recheck per batch, then fresh groups: an approved request
+        # must be picked up promptly without letting requests that are still
+        # waiting crowd out joining anything new.
+        recheck = [g for g in waiting if g.state == "requested"][:1]
+        ordered = recheck + [g for g in waiting if g not in recheck]
         joined = 0
         notes = []
         requested = 0
         applied = 0
-        for record in waiting[:count]:
+        for record in ordered[:count]:
             joined_record = await self.groups.join(
                 GroupCandidate(name=record.name, url=record.url, members=record.members,
                                score=record.score, kind=record.kind,
@@ -277,10 +282,14 @@ class FbGroupsRunner:
             if joined_record.note:
                 notes.append(f"{record.name}: {joined_record.note}")
         result.joined = joined
+        total = self.store.all()
+        members = sum(1 for g in total if g.state == "joined")
+        pending = sum(1 for g in total if g.state == "requested")
         # Pending candidates and a join cooldown must not starve existing groups.
         result.stage = "ENGAGE"
         return (f"{joined} confirmed join(s), {requested} pending request(s)"
                 + (f", {applied} application form(s) answered" if applied else "")
+                + f" (registry: {members} joined, {pending} pending, {len(waiting)} to try)"
                 + ("; " + "; ".join(notes) if notes else ""))
 
     async def _engage(self, count: int, result: Batch) -> str:

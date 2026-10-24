@@ -1,0 +1,691 @@
+The core idea of that transcript is that your price should come from the value you create and the strength of your reputation, not from what's cheapest or most "affordable." Here's each point from the text applied to selling AI phone agents to martial arts schools, with examples.
+
+---
+
+### 1. You can't win a price war in AI voice
+
+**From the text:** *"The people who compete on price are gonna beat you,"* and the $0.89 Amazon phone case.
+
+AI voice is your $0.89 phone case. The underlying technology gets cheaper every few months, and anyone can connect a voice platform to a booking calendar in an afternoon. If your pitch is "cheaper than the other AI guys," someone will always be cheaper.
+
+**Examples of who beats you on price:**
+- A marketing agency white-labels a generic AI receptionist and sells it to dentists, plumbers, and dojos at a low monthly fee. They don't care about margin per client because they have hundreds.
+- A freelancer builds a one-off bot on a voice AI platform for a flat few hundred dollars with no monthly fee. You can't undercut "pay once."
+- Venture-funded horizontal platforms can run at a loss for years to win market share.
+
+**The T2 lesson:** his agency survived on price for a while because of speed. You might currently win deals because you set up faster or know the tools better. That's a real advantage today, but it shrinks as the tools get easier, so treat it as a head start, not a strategy.
+
+---
+
+### 2. Your brand is "the phone agent built for martial arts schools"
+
+**From the text:** *"You need to sell on brand,"* meaning branding, quality, and reputation.
+
+For you, brand means specialization plus proof plus visibility in the martial arts community. A generic AI receptionist can't compete with that.
+
+**Examples of specialization a generic tool can't match:**
+- A parent calls asking if their shy 7-year-old can join mid-session. Your agent knows the school's kids' program age groups, explains how new kids get settled in, and books a trial. A generic bot says "someone will call you back," and the parent calls the next gym.
+- A caller asks the difference between the BJJ and Muay Thai classes, or whether they need a gi for their first class. Your agent answers the way the school would.
+- Your agent pushes the school's actual intro offer (say, a two-week trial with a free uniform) instead of just "booking an appointment."
+- It knows the belt testing dates, holiday schedule, summer camp, and birthday party packages.
+
+**Examples of reputation assets to build:**
+- Recordings of your agent booking a trial at 10pm, used with the school's permission.
+- Case studies with real school names and numbers, like trials booked per month or enrollments from after-hours calls.
+- A regular presence in martial arts owner Facebook groups, podcasts, and industry events.
+- A respected owner in a region who tells other owners, "I use these guys."
+
+---
+
+### 3. Price on what a student is worth, not on what feels affordable
+
+**From the text:** *"I could have done this cheaper, but why would I do it cheaper? … This is how much it should cost."*
+
+Your price should be a fair slice of the money you bring in, not a number that feels safe.
+
+**The core math (illustrative; use each school's real numbers):** Say tuition is $180/month and the average student stays 18 months. Each student is worth about $3,200. The owner teaches from 4 to 8pm, which is exactly when parents call after work. If your agent captures 5 extra enrollments a month, that's roughly $16,000 in lifetime revenue every month. Next to that, $400 and $1,000 a month are both small. The real question is what share of that value is fair to charge.
+
+**Examples of value-based framing in a sales conversation:**
+- **Missed calls:** "You had 38 missed calls last month during class hours. If even a handful were parents ready to book a trial, that's thousands in tuition."
+- **After-hours proof:** "Our agent booked 11 trials between 9pm and 7am last month for one of our schools."
+- **Payback:** instead of "It's only $X a month," say "At your tuition, one new student pays for this many times over."
+- **Staff comparison, used second:** comparing yourself to a front desk person's wages anchors on cost. Lead with revenue created, then mention that the agent covers hours no employee would.
+
+---
+
+### 4. If you keep dropping your price to close, fix your reputation
+
+**From the text:** *"if you put them up high and you're not selling and you find yourself really reducing the price… you need to do some Reputation Management,"* and the $17 ebooks.
+
+When a school owner says "too expensive," they often mean "I don't believe this will work for my school." A discount doesn't solve that. Proof does.
+
+**Examples of responding with proof instead of a discount:**
+- **Play real calls:** three short recordings of your agent handling real parent calls at a similar school.
+- **Offer a reference:** "Talk to Coach Mike. He's got a similar-size school two hours away."
+- **Reverse the risk without cutting price:** offer a 30-day pilot where, if the agent doesn't book a set number of trials, they don't pay for that month. Your price stays the same and their risk goes away.
+- **Track why you lose deals.** If you're losing "on price" to owners who never saw a case study, you have a proof problem, not a pricing problem.
+
+**Examples of reputation-building habits:**
+- Get a short testimonial video from every client after their first good month.
+- Share monthly results across all your schools, like total trials booked.
+- Post short clips of real calls (with permission) where owners hang out online.
+
+**A nuance the text itself hints at:** *"You don't wanna price people out of the market."* A 35-student garage gym may genuinely not have the cash for your main offer. That's a fit problem, not a reputation problem. The fix is to qualify prospects better, or offer a clearly stripped-down tier, rather than discounting your core offer.
+
+---
+
+### 5. The market is finite, so grow what each school pays
+
+**From the text:** *"there's only 100 of them… the easiest way to make more money is to charge this 100 people more money instead of trying to find new people."*
+
+This fits your business closely. There are only so many martial arts schools in any country, many won't adopt AI, and word of mouth in this niche moves at its own pace. So get more revenue from each school by delivering more value to it.
+
+**Examples of ways to expand revenue per school:**
+- **Trial no-show rebooking:** the agent calls people who booked but didn't show up.
+- **Lead reactivation:** it calls or texts old leads and former students from the past year.
+- **Seasonal campaigns:** back-to-school enrollment, New Year signups, summer camp registration.
+- **Birthday parties:** the agent handles party inquiries and bookings, which is extra revenue for the school.
+- **Multi-location owners:** one relationship covering several schools.
+- **A premium tier:** includes a monthly performance review call where you show trials booked and suggest script improvements.
+
+**The catch:** this only works if each add-on makes the school more money. In a small niche where owners talk to each other, charging more without better results will hurt your reputation quickly.
+
+---
+
+### 6. Cheap clients cost you more
+
+**From the text:** *"you'll have more problems and more complaints from people who buy cheap things than people who buy expensive things."*
+
+**Examples of what low-price clients tend to do:**
+- They ask for twenty script revisions, expect same-day changes, and message you on Sunday because the agent pronounced a style's name slightly wrong.
+- They signed up thinking "what's the worst that can happen," so they don't call back the trials the agent books. The trials don't convert, they blame the agent, and they cancel in month two.
+- They compare you to every cheaper tool they see and keep asking for more discounts.
+
+**Examples of what premium clients tend to do:**
+- They have someone ready to follow up on booked trials within the hour.
+- They send you schedule and offer changes before they go live, because they're treating this as a system.
+- They refer other owners, because their name is attached to the recommendation.
+
+**Why margin matters:** at a low price you can't afford a proper onboarding, where you learn the school's programs, offers, and common questions. Without that, the agent performs worse, which creates more complaints. A higher price pays for the setup work that gets results.
+
+---
+
+### 7. Always be raising prices, even if you start low
+
+**From the text:** *"your number one aim in every business you do is to be constantly increasing prices… Even if you have to start off at a lower price."*
+
+**Examples of a price ladder:**
+- **Founding clients:** your first handful of schools get a reduced rate in exchange for a case study, a testimonial video, and permission to use their call results. Call it a founding rate up front so nobody thinks it's permanent.
+- **Milestone increases:** after five documented case studies, new schools pay more. After fifteen, raise it again.
+- **Real deadlines:** "Founding pricing ends when we sign our 10th school." Only say this if it's true.
+- **Setup fee:** once demand picks up, add a one-time onboarding fee for the work of learning each school.
+- **Existing clients:** decide deliberately. Either raise prices at renewal along with new features, or keep founding clients at their rate as a loyalty move so they keep referring you.
+
+---
+
+### 8. People buy what they want, so make them want it
+
+**From the text:** *"people buy what they want… you gotta find a way to make them WANT IT."*
+
+School owners don't want an "AI phone agent." They want full kids' classes, to stop being tied to their phone, and to teach without worrying about missing new students.
+
+**Examples of creating that want:**
+- **Make the pain visible:** during your pitch, ask them to open their phone and count last week's missed calls during class hours.
+- **Show the outcome:** play a recording of your agent reassuring a worried mom at 9:30pm and booking her son's trial.
+- **Speak to their identity:** "You opened a school to teach, not to be a receptionist."
+- **Use a sharp message:** "Every call you miss while you're on the mat is a student signing up at the gym down the road."
+- **Show the result on screen:** a calendar full of trials the agent booked for a similar school last week.
+
+---
+
+### 9. Never position yourself as the cheapest
+
+**From the text:** *"Do not be one of those dorks who say 'well, I'm the cheapest in the market, guys.'"*
+
+| Instead of saying | Say |
+|---|---|
+| "We're cheaper than [competitor]." | "We're the only agent trained specifically on martial arts school calls." |
+| "It's only $X a month." | "It pays for itself with your first new student." |
+| "I can give you a discount if you sign today." | "We onboard a limited number of schools each month so each one gets set up properly." (only if true) |
+| "It's cheaper than hiring front desk staff." | "It answers the calls your front desk never could: during class, at night, on weekends." |
+
+---
+
+### How to internalize it day to day
+
+Build a few habits that make this automatic:
+- **When setting a price,** ask "what does this create for the school?" before "what will they pay?"
+- **When you hear a price objection,** ask yourself "what proof were they missing?" before reaching for a discount.
+- **Watch your close rate.** If almost every school you pitch says yes, your price is probably too low.
+- **Do one reputation action every week:** a new testimonial, a call clip, a post in an owner community, or a referral request.
+
+### Where I'd push back on the text
+
+"People do not buy on price" is overstated. Price does matter; it just shouldn't be your main reason to be chosen. Martial arts schools are small businesses, and some owners have real cash flow limits. Also, the "charge the same people more" idea only works when results grow alongside the price. In a close-knit niche where owners compare notes, raising prices without better results leads to churn and bad word of mouth. The version that holds up is to price on value, back it with proof, and raise prices as your results and reputation grow.
+
+If you share your current pricing and the results you've gotten so far, I can help you map out a specific price ladder and a script for handling price objections.
+
+The core idea in that passage is **not literally "price doesn't matter."** Price does matter.
+
+The deeper principle is:
+
+> **People rarely buy the cheapest option. They buy the option they believe gives them the best outcome, lowest risk, highest status, greatest convenience, or strongest trust.**
+
+For an AI phone agent business serving martial arts schools, internalizing this correctly can be worth far more than any sales script.
+
+---
+
+# 1. Stop Selling "AI Phone Agents"
+
+Most beginners sell the thing.
+
+Advanced businesses sell the outcome.
+
+### Weak offer
+
+> "We provide AI phone agents for martial arts schools."
+
+The owner immediately thinks:
+
+* How much?
+* Why not use another AI?
+* Why not hire a VA?
+* Why not use voicemail?
+
+Now you're in a price war.
+
+### Strong offer
+
+> "We help martial arts schools recover missed leads and book more trial classes without hiring additional front-desk staff."
+
+Now you're selling:
+
+* More students
+* More revenue
+* Less missed calls
+
+Not software.
+
+---
+
+## Example
+
+A school gets:
+
+* 80 inbound calls/month
+* Misses 30
+
+If those 30 missed calls produce:
+
+* 10 trial bookings
+* 4 memberships
+
+And each member is worth $2,000+ annually...
+
+The conversation becomes:
+
+**Not:**
+
+> "Is your AI worth $297/month?"
+
+Instead:
+
+> "Is recovering $8,000-$20,000 in student revenue worth $297/month?"
+
+Completely different discussion.
+
+---
+
+# 2. Price Is What They Pay. Risk Is What They Buy.
+
+Most school owners aren't afraid of paying.
+
+They're afraid of:
+
+* wasting money
+* looking stupid
+* implementing something that breaks
+* losing leads
+
+The passage talks about reputation.
+
+In B2B, reputation is really **risk reduction.**
+
+---
+
+### Example 1
+
+Agency A:
+
+> "AI receptionist for $99/month."
+
+Agency B:
+
+> "Used by 47 martial arts schools. Answers calls 24/7. Books trial classes directly into your calendar."
+
+Agency B can charge 5-10x more.
+
+Not because the AI is better.
+
+Because the risk feels lower.
+
+---
+
+### Example 2
+
+A school owner thinks:
+
+> "What if the AI says something stupid to a parent?"
+
+Address that fear directly.
+
+Show:
+
+* call recordings
+* transcripts
+* testimonials
+* case studies
+
+Now price becomes less important.
+
+---
+
+# 3. Become the Martial Arts Specialist
+
+This is the biggest lesson most people miss.
+
+The passage repeatedly mentions reputation.
+
+Reputation is easier when you're known for one thing.
+
+---
+
+## Bad positioning
+
+> "We build AI phone agents for any business."
+
+You compete with:
+
+* freelancers
+* agencies
+* overseas providers
+* software companies
+
+Thousands of competitors.
+
+---
+
+## Strong positioning
+
+> "We help martial arts schools convert missed calls into trial classes."
+
+Now you're the specialist.
+
+A specialist can always charge more.
+
+---
+
+### Analogy
+
+Who charges more?
+
+A general doctor or a brain surgeon?
+
+Both are doctors.
+
+One has stronger positioning.
+
+---
+
+### Martial arts examples
+
+Create content specifically about:
+
+* missed trial-class calls
+* parent inquiries
+* after-hours lead capture
+* birthday party bookings
+* summer camp inquiries
+* membership questions
+
+Owners start thinking:
+
+> "This person understands my business."
+
+Price sensitivity drops.
+
+---
+
+# 4. Build a Brand Around Revenue, Not AI
+
+Many AI agencies make this mistake.
+
+Their brand becomes:
+
+> AI
+>
+> automation
+>
+> GPT
+>
+> voice agent
+
+Nobody cares.
+
+Martial arts owners care about:
+
+* students
+* retention
+* revenue
+* staff headaches
+
+---
+
+### Weak message
+
+> "Our conversational AI uses advanced language models."
+
+Nobody buys that.
+
+---
+
+### Strong message
+
+> "Never lose another trial-class lead because nobody answered the phone."
+
+That's valuable.
+
+---
+
+### Another example
+
+Instead of:
+
+> "AI receptionist."
+
+Say:
+
+> "24/7 enrollment desk."
+
+Notice how the second phrase implies business growth.
+
+---
+
+# 5. Higher Prices Force Better Customers
+
+This point from the passage is surprisingly true.
+
+Not always, but often.
+
+---
+
+### Cheap customer
+
+Pays $99/month.
+
+Expects:
+
+* instant replies
+* endless customizations
+* constant support
+
+Asks:
+
+> "Can you also do SMS?"
+>
+> "Can you also do email?"
+>
+> "Can you also do websites?"
+
+---
+
+### Premium customer
+
+Pays $1,000+/month.
+
+Usually asks:
+
+> "How many trial classes did we book this month?"
+
+They're focused on results.
+
+---
+
+### Martial arts example
+
+Suppose your service creates:
+
+* 8 additional trial bookings/month
+
+For many schools that could be worth thousands.
+
+Why would you charge $99?
+
+You become viewed as a cheap tool instead of a revenue system.
+
+---
+
+# 6. Never Compete Against Offshore Pricing
+
+This is directly tied to the text.
+
+The speaker's point about China isn't really about China.
+
+It's about commoditization.
+
+Anything generic eventually becomes cheap.
+
+---
+
+### Generic offer
+
+> "AI voice agent setup."
+
+Someone will do it cheaper.
+
+Always.
+
+---
+
+### Specialized offer
+
+> "Done-for-you AI enrollment system for martial arts schools."
+
+Harder to copy.
+
+---
+
+### Even better
+
+> "We answer every missed call, follow up by SMS, and book trial classes automatically."
+
+Now you're selling a process.
+
+Not a technology.
+
+Processes are harder to commoditize.
+
+---
+
+# 7. Raise Prices Through Proof, Not Confidence
+
+A mistake people make after hearing advice like this is:
+
+> "I'll just charge more."
+
+That's not what the passage actually means.
+
+The real sequence is:
+
+### Wrong
+
+Raise price →
+hope reputation appears
+
+### Right
+
+Build reputation →
+raise price
+
+---
+
+## Reputation assets for your business
+
+Build:
+
+### Case studies
+
+Example:
+
+> School missed 43 calls/month.
+>
+> AI recovered 31.
+>
+> Booked 12 additional trial classes.
+
+---
+
+### Testimonials
+
+Video testimonials are especially powerful.
+
+---
+
+### Call recordings
+
+Show actual conversations.
+
+---
+
+### Metrics
+
+Show:
+
+* calls answered
+* leads recovered
+* trials booked
+* memberships generated
+
+Every proof asset increases pricing power.
+
+---
+
+# 8. Sell the Cost of Inaction
+
+People often compare your price to doing nothing.
+
+You need them comparing your price to the problem.
+
+---
+
+### Example
+
+Your service:
+
+$500/month
+
+Owner thinks:
+
+> "$500 sounds expensive."
+
+Change the frame.
+
+Ask:
+
+> "How many calls did you miss last month?"
+
+Suppose:
+
+* 40 missed calls
+* 5 would have become students
+
+If each student is worth $1,500-$3,000:
+
+The lost revenue is far larger than your fee.
+
+Now $500 feels small.
+
+---
+
+# 9. Create a Reputation Ladder
+
+This is how you operationalize the "raise prices over time" idea.
+
+### Stage 1
+
+First 3-5 schools.
+
+Maybe discounted.
+
+Goal:
+
+* testimonials
+* recordings
+* proof
+
+Not profit.
+
+---
+
+### Stage 2
+
+5-15 schools.
+
+Raise prices.
+
+Use results as evidence.
+
+---
+
+### Stage 3
+
+15-30 schools.
+
+Become known specifically in martial arts.
+
+Publish case studies.
+
+---
+
+### Stage 4
+
+Premium positioning.
+
+Now you're no longer selling software.
+
+You're selling:
+
+> Student acquisition infrastructure.
+
+Big difference.
+
+---
+
+# 10. The Most Important Mental Shift
+
+The biggest takeaway from the passage for your business is:
+
+### Amateur thinking
+
+> "How can I make my AI phone agent cheaper?"
+
+### Professional thinking
+
+> "How can I make my AI phone agent produce so much value that price becomes a secondary consideration?"
+
+For a martial arts school owner, nobody wakes up wanting an AI receptionist.
+
+They wake up wanting:
+
+* more students
+* more trial bookings
+* fewer missed opportunities
+* less administrative work
+
+When you become the business that reliably delivers those outcomes, your pricing discussion changes from:
+
+> "Why are you so expensive?"
+
+to:
+
+> "How quickly can we get started?"

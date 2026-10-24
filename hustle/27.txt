@@ -1,0 +1,535 @@
+## First, diagnose the story correctly
+
+The guy didn't lose his company because he stopped being needed. He lost it because 33% of a company with no shareholders' agreement is a seat, not a stake. In most jurisdictions, removing a director is an ordinary resolution passed at over 50%. His two partners could have done that on day one, week one, or year five. Being needed was never what protected him. Nothing was protecting him.
+
+That correction matters because it changes what you actually do. If the lesson is "be needed," you'll spend your energy making yourself indispensable. If the lesson is "be needed *and* papered," you'll spend two hours with a lawyer and be safe regardless.
+
+Hold both. Need keeps a partnership warm. Documents keep it survivable.
+
+## The decay clock
+
+The real insight buried in that passage is that need is a depreciating asset, and different kinds depreciate at wildly different rates.
+
+Fast decay:
+- **Building the thing.** Once your voice agent stack is live on Vapi or Retell with Twilio numbers and a working prompt architecture, the person who built it is needed for maintenance, not for existence. Six months in, a €4k/month contractor replaces them.
+- **Capital.** The most extreme case. Someone wires €50k for 40%. On day 61 the money is spent and their contribution is zero, permanently, while their ownership is 40%, permanently.
+- **A one-time introduction list.** A martial arts insider hands you 200 school-owner contacts and their credibility on a joint webinar. Enormous value in month one. In month nine they're a person who owns half your company and answers texts slowly.
+
+Slow decay:
+- **Ongoing distribution.** Someone who actually brings you eight new schools every month, forever, is needed forever. That's the rare one.
+- **Relationships that don't transfer.** If schools renew because of a specific person, that person stays needed.
+- **Legal control.** Doesn't decay at all. This is why it's the thing to focus on.
+
+Run this test on any proposed partner: *if they kept their equity but stopped working tomorrow, what specifically breaks in 90 days?* If the honest answer is "nothing," you're not looking at a partnership. You're looking at a payment you've agreed to make forever.
+
+## Applied to your business
+
+Your value chain has roughly six layers: getting the meeting with a school owner, closing, configuring the agent for that school's schedule and intro offer and pricing objections, integrating with their system (Zen Planner, Kicksite, Gymdesk, Spark, Mindbody, whatever they run), tuning from real call recordings, and support/retention.
+
+Now ask which layers are rentable.
+
+The build is rentable. Voice AI infrastructure has commoditized to the point where the build is close to configuration. Do not give equity for it. Hire a contractor with a signed IP assignment, or make them employee number two with profit share.
+
+Integration work is rentable. It's a known job with a known price.
+
+Ads are rentable. Every agency will take cash.
+
+What isn't rentable: trust with martial arts school owners, and your accumulated library of what actually works on those calls. After 150 schools, you know exactly how the agent should handle "how much is it?" without killing the booking, how to handle a parent asking about their 6-year-old versus an adult asking about BJJ competition, what happens when someone calls during a class and nobody picks up. That library is the asset. It lives in your prompts, your call-score data, and your head. Nobody can rent it.
+
+So the only partner who plausibly earns real equity is one who moves the needle on distribution *continuously*. Everyone else should be paid in cash, commission, or vested options.
+
+## Concrete partner offers you will get, and what to do
+
+**The dev who says "I'll build it, you sell it, 50/50."** Decline the structure, keep the person. Counter with market rate plus a 5% option grant on a four-year vest with a one-year cliff, plus IP assignment. If they say no to that and only want half the company, they're pricing themselves on the first three months of a ten-year business.
+
+**The well-known instructor with a seminar circuit and a big following.** This one can be real. But structure it so the equity tracks the contribution. Instead of a flat 30%, grant it in tranches that unlock on milestones: 5% at 20 schools introduced and closed, another 5% at 50, and so on. If the introductions stop, the grant stops. That single change converts a decaying asset into a renewing one.
+
+**The gym software company that wants to bundle your agent.** This is mutual need at its best, and it should never be equity. They need a voice product they don't want to build; you need their install base. That's a reseller or revenue-share contract with a term, an exclusivity carve-out, and a renewal date. Write it so either side can walk after 24 months, which keeps both of you performing.
+
+**The closer who says "I'll do all the sales, make me a partner."** Commission plus an override on their accounts' retained revenue plus a modest vesting option grant. A salesperson's need is real but entirely conditional on continuing to sell, and equity doesn't have that condition built in unless you build it in.
+
+**The friend who's "great to think with."** Real need, wrong instrument. Pay for a monthly advisor call, or grant 0.25% on a two-year vest. Don't hand over a vote for companionship.
+
+## The number two, done properly
+
+The passage says make them *feel* important. That's the part I'd throw out. Manufactured importance gets detected, usually around month eight, and a resentful number two with your customer list is a much bigger threat than a partner with 50%.
+
+Make them actually important, with real authority and real economics, just without control:
+
+- **Give them a domain they genuinely own.** Delivery and account health, say. They can restructure onboarding, change the QA process, and fire a bad contractor without asking you. Real decision rights inside a fenced area.
+- **Pay them like a partner where it counts.** Profit share on their domain, or phantom equity that pays out on a sale but carries no vote and no board seat. Tell them plainly that's what it is. Vagueness about future equity is how you manufacture a defection.
+- **Build the thinking-partner function into a ritual.** A standing Friday call where you both pull twenty agent recordings, score booking rate, and argue about what to change. They're expected to tell you you're wrong, on record. That gets you the actual benefit people want partners for.
+
+Give them a title that means something to customers. Head of Delivery. They should be the person a school owner in month three would call first, while you're the person the school owner signed with.
+
+## What to control, specifically
+
+For your business, write down who legally owns and who practically controls each of these:
+
+The company entity. The domain and Google Workspace. The Vapi/Retell/Bland account. The Twilio account and every phone number your schools forward to. Stripe. Your CRM. The prompt library and call-score dataset. The repo. Every contractor's signed IP assignment.
+
+That Twilio point is not a detail. Whoever holds those numbers holds the schools' inbound traffic. If a contractor or partner has those under their own account, they have a hostage, and you should move them this week.
+
+And if you ever do grant equity: four-year vesting with a one-year cliff, good-leaver/bad-leaver buyback at a formula price, reserved matters requiring your consent, drag-along, and a deadlock mechanism. Never 33/33/33. Never 50/50 without a tiebreaker. Whichever jurisdiction you incorporate in, this needs a local corporate lawyer for a couple of hours, because share transfer and vesting mechanics differ a lot country to country.
+
+## The one place the passage is straightforwardly wrong
+
+"Even if you're making loads of money and you have a partner you don't need, now you've halved the amount you're making."
+
+Halved compared to what? The right comparison isn't your current revenue split two ways. It's your current revenue split two ways versus the business you'd realistically have built alone. If a partner's relationships are why you're at 200 schools instead of 40, 50% of the big version beats 100% of the small one. The test isn't the percentage. It's whether the partner is the reason the number is what it is, and whether they'll keep being that reason.
+
+The failure mode the passage is really pointing at is giving away a permanent share for a temporary contribution. That's correct, and it's fixable with vesting and milestones rather than with courage.
+
+Is there a specific offer on the table right now, or are you building the mental model before one shows up?
+
+The passage is making two separate arguments:
+
+1. **A governance argument**: Don't put yourself in a position where partners can remove you or capture most of the value you create.
+2. **An incentive argument**: Partnerships are strongest when each person contributes something difficult to replace.
+
+The aggressive language isn't important. The underlying business principle is.
+
+For an AI phone agent company serving martial arts schools, here's how to internalize and apply it.
+
+---
+
+# Principle 1: "Need" means difficult to replace, not merely useful
+
+Most founders confuse:
+
+* Helpful = replaceable
+* Valuable = replaceable
+* Necessary = difficult to replace
+
+If your partner can be swapped out in 30 days with a hire, they aren't really a partner from a business perspective.
+
+## Example A: Sales + Technical Founder
+
+Imagine:
+
+You:
+
+* Build AI voice systems
+* Handle integrations
+* Manage infrastructure
+* Improve conversion rates
+
+Partner:
+
+* Owns sales
+* Has relationships with martial arts schools
+* Closes deals
+
+This can work because each side contributes something the other cannot immediately replace.
+
+If the technical founder disappears:
+
+* Product stops improving
+* Systems break
+
+If the sales founder disappears:
+
+* Pipeline dries up
+* Referrals disappear
+* Revenue stalls
+
+Both parties are needed.
+
+---
+
+## Example B: Two Sales Founders
+
+Founder A:
+
+* Sells
+
+Founder B:
+
+* Also sells
+
+Problem:
+
+* They're interchangeable.
+
+Sooner or later one asks:
+
+> "Why are we splitting profits 50/50?"
+
+This is where partnerships often become unstable.
+
+---
+
+## Example C: Technical Founder + Operations Founder
+
+You:
+
+* Build agents
+* Manage AI stack
+
+Partner:
+
+* Runs onboarding
+* Trains clients
+* Handles retention
+* Manages support team
+
+Now each person owns a critical function.
+
+Need exists.
+
+---
+
+# Principle 2: Create mutual dependency around outcomes
+
+The text says:
+
+> Make sure you need your partners and they need you.
+
+In practice this means:
+
+Both people should own major bottlenecks.
+
+---
+
+## For your AI phone agent business
+
+There are several bottlenecks:
+
+### Bottleneck 1: Lead generation
+
+Examples:
+
+* Facebook ads
+* Cold email
+* Cold calling
+* Referral partnerships
+
+---
+
+### Bottleneck 2: Sales
+
+Examples:
+
+* Discovery calls
+* Demos
+* Proposal creation
+* Closing
+
+---
+
+### Bottleneck 3: Delivery
+
+Examples:
+
+* AI agent creation
+* Voice flows
+* Integrations
+* CRM setup
+
+---
+
+### Bottleneck 4: Retention
+
+Examples:
+
+* Customer success
+* Reporting
+* Upsells
+* Renewals
+
+A strong partnership might split these.
+
+Example:
+
+You:
+
+* Delivery
+* Product
+
+Partner:
+
+* Lead generation
+* Sales
+
+Each side owns something mission-critical.
+
+---
+
+# Principle 3: If you can hire for it, consider hiring instead of partnering
+
+This is one of the most important ideas in the passage.
+
+Many founders give away equity because they want:
+
+* Accountability
+* Feedback
+* Someone to talk to
+* Emotional support
+
+Those aren't necessarily reasons to give away ownership.
+
+---
+
+## Example
+
+You think:
+
+> "I need a sales partner."
+
+Question:
+
+Do you actually need a partner?
+
+Or do you need:
+
+* A closer
+* A sales manager
+* A commission-only rep
+
+Those are different things.
+
+---
+
+### Partnership route
+
+You give:
+
+* 50% ownership
+
+Forever.
+
+---
+
+### Hiring route
+
+You give:
+
+* Salary
+* Commission
+* Profit share
+
+But keep ownership.
+
+For many AI agency businesses, hiring is often the better choice.
+
+---
+
+# Principle 4: Build irreplaceability through unique assets
+
+The strongest partnerships aren't based on effort.
+
+They're based on assets.
+
+---
+
+## Asset Example 1: Distribution
+
+Partner owns:
+
+* 500 martial arts school relationships
+* Industry reputation
+* Referral network
+
+You cannot easily recreate this.
+
+They are needed.
+
+---
+
+## Asset Example 2: Technical System
+
+You own:
+
+* Proprietary call flows
+* Prompt architecture
+* CRM integrations
+* Performance optimization
+
+Partner can't easily replace this.
+
+You are needed.
+
+---
+
+## Asset Example 3: Brand
+
+Suppose one founder becomes known as:
+
+> "The AI phone agent guy for martial arts schools."
+
+That reputation becomes an asset.
+
+Clients trust that person.
+
+Replacing them becomes difficult.
+
+---
+
+# Principle 5: Avoid becoming the "employee-founder"
+
+The story in the passage describes a common problem.
+
+A founder starts as essential.
+
+Then becomes replaceable.
+
+Then loses leverage.
+
+---
+
+## Martial arts AI example
+
+Year 1:
+
+You:
+
+* Build everything
+
+Partners:
+
+* Need you
+
+---
+
+Year 3:
+
+Everything documented.
+
+Systems mature.
+
+Developers hired.
+
+Partner controls:
+
+* Sales
+* Clients
+* Cash flow
+
+You only manage technical work.
+
+Now you're easier to replace.
+
+Danger.
+
+---
+
+The lesson isn't paranoia.
+
+The lesson is:
+
+Keep ownership of critical strategic assets.
+
+Examples:
+
+* Product vision
+* Key client relationships
+* Vendor relationships
+* Technical architecture
+* Industry partnerships
+
+---
+
+# Principle 6: Structure ownership differently from friendship
+
+A mistake many founders make:
+
+> "We're friends, so 50/50."
+
+Bad reason.
+
+Ownership should reflect:
+
+* Risk
+* Contribution
+* Replaceability
+* Long-term value creation
+
+---
+
+## Example
+
+You:
+
+* Built system
+* Developed niche expertise
+* Took first risk
+
+Other person:
+
+* Joins later to help sell
+
+A 50/50 split may not make sense.
+
+Alternatives:
+
+* Revenue share
+* Commission
+* Vesting equity
+* Minority ownership
+
+---
+
+# Principle 7: For your specific business
+
+If I were evaluating an AI phone-agent company focused on martial arts schools, I would ask:
+
+### Do you currently need a partner?
+
+Or do you need:
+
+* Appointment setter
+* Closer
+* Operations manager
+* Customer success manager
+* Technical contractor
+
+Many founders say "partner" when they really mean "first key employee."
+
+---
+
+### If you do take a partner
+
+Make sure they control something like:
+
+**Option A**
+
+* You: Product + delivery
+* Them: Sales + partnerships
+
+**Option B**
+
+* You: Product + technical
+* Them: Operations + retention
+
+**Option C**
+
+* You: Industry expertise + sales
+* Them: Technical platform + automation
+
+In every case:
+
+* Both sides own a critical bottleneck.
+* Neither side can be replaced cheaply.
+* Both benefit from cooperation.
+
+---
+
+# The deeper takeaway
+
+The most useful interpretation of the passage is not:
+
+> "Never trust partners."
+
+It's:
+
+> "Design business relationships so incentives remain aligned."
+
+For your AI phone agent business, that means:
+
+* Keep ownership of critical assets.
+* Don't give equity away for tasks that can be hired.
+* Make sure every partner contributes something difficult to replace.
+* Build systems where both sides continue creating value.
+* Regularly ask: "If this person left tomorrow, would I hire a replacement or would the business fundamentally change?"
+
+If the answer is "I'd just hire someone," that's often an employee role, not a true partner role.

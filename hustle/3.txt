@@ -1,0 +1,566 @@
+The core of that transcript is one idea: **get money coming in before you spend money building.** Everything else (the makeup diagram, the 40 companies, the BlackBerry, the record label) is that idea applied from different angles. Below I've broken it into six principles, tied each back to what Tate says, and shown what it looks like in an AI phone agent business for martial arts schools.
+
+One thing up front: I'd keep the strategy and drop the lying. The "PRETEND you've got stuff you ain't got" and "I'd LIE" parts don't transfer well to your business, and I explain why under principle 2. Everything he's really teaching still works when you do it honestly.
+
+---
+
+### First, redraw his whiteboard for your business
+
+Tate splits the makeup company into a MAKE column and a COST column. Here's yours.
+
+**The COST-first version (his $200k company):** You spend months building your own voice AI platform. You get a polished brand, logo, and website. You build integrations with every school management software your clients might use. You form a company with lawyers and accountants, set an ad budget, and hire a sales rep. You spend a fortune and a year, and you still don't know if a single dojo owner will pay.
+
+**The MAKE-first version (his $5k company):** You use an off-the-shelf voice AI platform (Vapi, Retell, and similar tools let you build an agent without writing the underlying tech). You get a phone number, a one-page site or just a demo video, and a calendar link. Then you start calling school owners. Your cost is a few hundred a month in tools, and you'll know within weeks whether this sells.
+
+Everything below is about living in that second column.
+
+---
+
+### Principle 1: Start for almost nothing. Spend only on what brings money in.
+
+**From the transcript:** *"I will not spend more than five grand to launch a company."* And the T2 Television story: *"I had a BlackBerry and a business card... they paid me, and I used that money to buy an office."*
+
+The lesson isn't really "be cheap." It's to buy only the tools that get the first deal signed, and buy everything else with the money from that deal.
+
+**Example: your BlackBerry is a demo number.** Tate walked into T2's office with a phone and a card. Your equivalent is a phone number a school owner can call right now that answers as their school: "Thanks for calling Iron Tiger Martial Arts, are you interested in kids' classes or adult classes?" That one demo will sell better than a $10,000 website, and it costs you an afternoon.
+
+**Example: don't build integrations until someone pays for one.** Maybe it seems like the agent needs to book straight into Zen Planner, Kicksite, Spark Membership, and so on. It doesn't, at first. Have it capture the caller's name, number, and interest, then text it to the owner or drop it into a Google Sheet. Build the integration once a paying client needs it.
+
+**Example: skip the brand work.** No logo designer, trademark, or custom domain email is required to close your first five schools. A two-minute screen recording of the agent handling a call, plus a booking link, does the job.
+
+**Example: the setup fee is your T2 commission.** Charge a one-time onboarding fee plus a monthly fee. That setup fee pays for your platform subscription and phone numbers, so the business funds its own tools from client one.
+
+**How to internalize it:** Before any purchase, ask one question. Will this bring money in within 30 days, or is it needed to deliver something a client has already paid for? If the answer is no to both, don't buy it yet.
+
+---
+
+### Principle 2: Prioritize money in over fulfillment, but sell what you can actually deliver
+
+**From the transcript:** *"PRETEND you've got a whole bunch of stuff you ain't got, and start getting money in... because you're a FAST worker... you'll find a way to fulfill the orders. Worst case, you refund them."*
+
+The valuable part is presell before you build, and let paying customers decide what gets built. The part to leave out is pretending, for three practical reasons specific to your business.
+
+First, martial arts school owners are a small, connected world. They're in the same Facebook groups, go to the same seminars, and share the same business coaches. One owner saying "that AI guy overpromised" can close doors across a whole region.
+
+Second, a refund doesn't fix the real damage. If your agent fumbles calls, the school loses the parent who wanted to book a trial class. A single new student is often worth well over a thousand in tuition over their membership. Refunding your fee doesn't bring that family back, and the owner will remember.
+
+Third, AI phone calls come with rules. Many places regulate call recording and require telling callers they're talking to an AI. Being upfront about what your agent is and does protects you legally, not just reputationally.
+
+The good news is that every version of Tate's move has an honest equivalent that works just as well.
+
+**Example: sell founding spots instead of pretending you're established.** "I'm onboarding five founding schools this month at a reduced rate. Your agent is live within 14 days." It's true, it creates urgency, and money comes in before you've built anything for them.
+
+**Example: back up the tech with hustle.** This is Tate's "you're a fast worker, you'll find a way," done honestly. Suppose a client wants the agent to book trial classes directly and you can't do that yet. The agent captures the lead, and you or a virtual assistant book it within the hour. The client gets the outcome they paid for while you automate behind the scenes.
+
+**Example: presell features before building them.** A client asks, "Can it call back parents who no-showed their trial class?" Don't say "we already do that." Say "I can add that for an extra monthly fee, ready in two weeks." If they pay, you build it. If nobody ever pays, you never wasted time on it.
+
+**Example: offer the refund upfront as a guarantee.** Tate treats refunds as a fallback when things go wrong. Flip it into a selling point: "If it doesn't book at least X trial classes in your first 30 days, you get your money back." Same safety net, but now it builds trust instead of burning it.
+
+---
+
+### Principle 3: Run lots of cheap experiments
+
+**From the transcript:** *"With five grand startups... you can now start 40 companies. One of them is gonna work."* And later: *"All I do is just scatter, just speed, scatter gun."*
+
+You don't need 40 companies. You need 40 cheap tests inside the one you have. Each test takes a week and almost no money, and you keep what brings money in.
+
+**Example: test offers.** Try a basic "missed call text-back" product at a low price, a full 24/7 AI receptionist at a mid price, and an after-hours-only agent. Pitch all three to different schools and see which one people buy. The market will tell you what your real product is.
+
+**Example: test sales channels.** Try direct outreach to school owners, posting in martial arts business groups, and walking into local schools with your demo on your phone. Also try partnering with the business coaches and consultants who already advise dojo owners. One powerful and honest opener: call the school after hours, let it go to voicemail, then follow up with "I called your school last night and nobody picked up. That could have been a parent. Here's what it would have sounded like instead."
+
+**Example: test niches.** The same agent works for BJJ gyms, kids' karate schools, MMA gyms, and boxing clubs, and probably for dance studios and yoga studios too. Run a small outreach batch to each and see who buys fastest and complains least.
+
+**Example: test pricing.** Quote different prices to different batches of prospects. You'll often find you were charging too little.
+
+**How to internalize it:** Keep a simple log with the test, the cost, the time spent, and the result (replies, demos, sales). Every Friday, kill what didn't work and put more into what did.
+
+---
+
+### Principle 4: Reinvest the business's money, not your own
+
+**From the transcript:** *"You might reinvest all the money. That's fine because that ain't your money."* And: *"I had the 12 grand from the commission, but I was saving that for myself in case it all went wrong."*
+
+There are two lessons here. Grow from revenue, and protect your personal safety net.
+
+**Example: first clients fund your tools.** The setup fees from your first couple of schools cover the upgraded plan on your voice AI platform and your phone numbers.
+
+**Example: the next clients fund your help.** Revenue from your next handful of schools pays for a part-time virtual assistant who handles onboarding and manual bookings. That frees you to keep selling.
+
+**Example: later clients fund the integrations, and they tell you which ones to build.** Once you have 20 paying schools, you'll know exactly which management software most of them use. Build that integration first. The COST-first founder guesses and builds five. You build one, with data from real customers.
+
+**Example: keep your 12 grand.** Whatever personal savings you have stay untouched. If the business needs money you don't have, the answer is more sales, not your savings account.
+
+---
+
+### Principle 5: Use small early wins to land bigger clients
+
+**From the transcript:** The "broke boys" to "less broke boys" ladder. Get small artists, put them everywhere, then show that footprint to better artists: *"Look at the broke boys. We've got them on Spotify, SoundCloud..."*
+
+This is a real and powerful strategy, since credibility builds on itself. Where I'd change Tate's version is "extracting" free work. For you, early clients should get a great deal and a great result, because they're the proof you'll show everyone else. If they feel used, they won't vouch for you.
+
+**Example: small schools first, in exchange for proof.** Single-location schools get founding pricing. In return, they give you a testimonial, permission to share their results ("booked 23 trial classes last month"), and a couple of sample calls with caller details removed.
+
+**Example: then multi-location schools.** Walk into a school with three or four locations and say, "Here are eight schools using this, here are their numbers, here's what a call sounds like." That's exactly Tate's pitch to the "less broke boys," except every claim is real.
+
+**Example: then franchises and industry partners.** With a solid client base, you can approach martial arts franchise organizations, which have dozens or hundreds of locations. You can also approach the software companies schools already use, about a partnership or referral deal. One of those deals can be worth more than all your early clients combined.
+
+**Example: flood the zone with real results.** Tate says to put the artists everywhere so anyone searching finds them. Your version is turning every client win into content. Post it in owner groups, send it to your email list, and put it on LinkedIn: "This kids' karate school was missing 40% of calls. Here's what happened when they stopped." When a school owner hears your name, they should find proof everywhere.
+
+---
+
+### Principle 6: Speed
+
+**From the transcript:** *"SPEED. Quickly. Get it out, get it out, get it out."* He also built the entire record label plan on the fly, in minutes, just by applying the principles.
+
+**Example: build a personalized demo before the sales call.** Pull the school's name, class types, and schedule from their website. Build a demo agent that answers as their school, which takes 20 or 30 minutes on most platforms. Then have the owner call it during your pitch. Hearing their own school's name answered by an AI closes deals.
+
+**Example: onboard in 48 hours, not three weeks.** Speed of delivery is a selling point in itself, and it gets money in the door faster.
+
+**Example: set daily outreach numbers.** Pick a number of school owners you contact every single day, and don't skip it. Speed in sales is mostly volume and consistency.
+
+**Example: improve weekly from real calls.** Read the call transcripts every week. Find where callers got confused or hung up, fix the script, and push the update. Ten fast imperfect improvements beat one perfect launch.
+
+---
+
+### How to make this automatic
+
+Tate's claim is that sticking to these rules means *"it's very hard to have a monumental fuck up."* To make them habits, write down three rules and look at them every day. First: no spending without a paying client attached to it. Second: sell it before you build it, and only promise what you can deliver or will deliver fast. Third: every week, run tests, kill losers, and double down on winners.
+
+Then do his whiteboard exercise every time you're about to start something new, whether that's a feature, a niche, or a hire. Draw MAKE on one side and COST on the other. If you can't fill in the MAKE side first with a real customer and a real payment, you're about to build the $200k version.
+
+The core idea in that transcript is not "fake it" or "lie to customers." The durable lesson is:
+
+> **Validate demand before building infrastructure.**
+>
+> Prioritize activities that create revenue and learning before activities that create overhead.
+
+For an AI phone agent business serving martial arts schools, this principle is extremely powerful because many founders do the exact opposite.
+
+---
+
+# The Three Principles Applied to Your AI Phone Agent Business
+
+The speaker's framework boils down to:
+
+1. Speed
+2. Money In Before Costs
+3. Start Cheap / Validate First
+
+Let's translate each one into your situation.
+
+---
+
+# 1. Speed: Talk To Schools Before Perfecting The Product
+
+The mistake:
+
+Many AI founders spend 3–12 months building.
+
+They create:
+
+* custom voice infrastructure
+* dashboards
+* CRM integrations
+* analytics
+* onboarding systems
+* branding
+* legal documents
+* agency websites
+
+Before a single school has agreed to pay.
+
+That's the equivalent of the "$200k makeup company."
+
+---
+
+## What speed looks like
+
+Instead of:
+
+> Build → Hope → Sell
+
+Do:
+
+> Sell → Build → Improve
+
+### Example A
+
+Day 1:
+
+Call 50 martial arts schools.
+
+Script:
+
+> "If I could answer every missed call, qualify leads, and book trial classes automatically, would that be valuable?"
+
+You learn immediately:
+
+* whether they care
+* what objections exist
+* what outcomes matter
+
+---
+
+### Example B
+
+Day 2:
+
+Create a basic demo.
+
+No dashboard.
+
+No app.
+
+No login.
+
+Just:
+
+* AI voice agent
+* calendar booking
+* SMS follow-up
+
+Enough to demonstrate value.
+
+---
+
+### Example C
+
+Day 3:
+
+Start outreach.
+
+Not next month.
+
+Not after rebuilding the website.
+
+Today.
+
+The transcript repeatedly emphasizes:
+
+> Speed creates learning.
+
+In your business:
+
+Every conversation with a school teaches more than another week of coding.
+
+---
+
+# 2. Money In Is More Important Than Fulfillment
+
+This is the biggest lesson from the transcript.
+
+The speaker says:
+
+> Figure out how money comes in first.
+
+For you:
+
+The question is NOT:
+
+> How do I build the world's greatest AI phone system?
+
+The question is:
+
+> How do I get martial arts schools to pay for solving missed-call problems?
+
+---
+
+## Example: Wrong Priority
+
+You spend 4 months building:
+
+* call analytics
+* white-label portal
+* reporting
+* CRM integrations
+* multilingual support
+
+Cost:
+
+* time
+* money
+* opportunity
+
+Still no customers.
+
+---
+
+## Example: Correct Priority
+
+You ask:
+
+> What is the smallest thing that gets a school owner to pay me?
+
+Maybe that's:
+
+* answering missed calls
+* booking intro lessons
+* SMS follow-up
+
+Nothing else.
+
+You sell that.
+
+---
+
+## Example: Concierge Version
+
+Suppose your AI isn't perfect.
+
+You sell:
+
+> "$299/month. We answer every missed call and book trial classes."
+
+Behind the scenes:
+
+* AI handles most calls
+* You manually review conversations
+* You manually fix booking mistakes
+
+Customer doesn't care.
+
+They care about:
+
+* more students
+* fewer missed leads
+
+This is exactly the spirit of the transcript:
+
+Focus on delivering the outcome before building elaborate systems.
+
+---
+
+# 3. Start Nearly For Free
+
+The transcript's biggest claim is:
+
+> Most businesses can be tested much more cheaply than people think.
+
+For your business:
+
+You do NOT need:
+
+* office
+* employees
+* custom software platform
+* expensive branding
+* full-time developers
+
+to test demand.
+
+---
+
+## Lean Version
+
+You need:
+
+* landing page
+* AI voice platform
+* booking calendar
+* Stripe account
+* outreach
+
+That's enough.
+
+---
+
+## Example
+
+Instead of spending:
+
+* $20k on development
+* $10k on branding
+* $5k on design
+
+Spend:
+
+* a few hundred dollars on tools
+* most of your energy on sales conversations
+
+If schools buy, then invest.
+
+---
+
+# How To Apply This This Week
+
+Let's make it concrete.
+
+---
+
+## Stage 1: Sell Before Building More
+
+Contact 100 martial arts schools.
+
+Offer:
+
+> "We answer missed calls and book trial lessons using AI."
+
+Goal:
+
+Not perfection.
+
+Goal:
+
+Find out if someone will pay.
+
+---
+
+## Stage 2: Manual Everything
+
+Suppose School #1 says yes.
+
+Great.
+
+You don't need:
+
+* admin portal
+* analytics suite
+* mobile app
+
+You need:
+
+* calls answered
+* leads booked
+
+That's it.
+
+Manually support the account if necessary.
+
+---
+
+## Stage 3: Build Only After Repetition
+
+After 10 schools:
+
+You'll see patterns.
+
+Maybe every school asks for:
+
+* lead notifications
+* call recordings
+* missed-call texts
+
+Now you know what to build.
+
+Not because you guessed.
+
+Because customers demanded it.
+
+---
+
+# The "Record Label" Example Applied To You
+
+The record-label example in the transcript is really about using existing resources rather than buying resources.
+
+For your business:
+
+Instead of building everything yourself:
+
+Use existing platforms.
+
+Examples:
+
+### Instead of building voice infrastructure
+
+Use:
+
+* Vapi
+* Retell
+* Bland
+* ElevenLabs
+
+### Instead of building scheduling
+
+Use:
+
+* Calendly
+* GoHighLevel
+* Google Calendar
+
+### Instead of building CRM
+
+Use:
+
+* HubSpot
+* GoHighLevel
+* Pipedrive
+
+### Instead of building analytics
+
+Use existing dashboards.
+
+Your value is not:
+
+> "I built a phone system."
+
+Your value is:
+
+> "I get martial arts schools more trial students."
+
+That's a huge difference.
+
+---
+
+# The Most Important Insight For Your Business
+
+The transcript repeatedly asks:
+
+> "How do we make money?"
+
+Most founders ask:
+
+> "How do we build?"
+
+For your AI phone agent business, a useful weekly question is:
+
+### Revenue Questions
+
+* How many schools did I contact?
+* How many demos did I book?
+* How many proposals did I send?
+* How many paid pilots did I close?
+
+### Not Revenue Questions
+
+* Should the button be blue or green?
+* Should I redesign the website?
+* Should I rebuild the dashboard?
+* Should I change the logo?
+
+Those things matter eventually.
+
+But they don't validate demand.
+
+---
+
+# A Practical 30-Day Version
+
+If I were following the strongest lesson from that transcript in your exact business:
+
+**Week 1**
+
+* Contact 100 martial arts schools.
+* Run demos.
+* Get objections.
+
+**Week 2**
+
+* Close 1 paid pilot.
+* Manually support it.
+
+**Week 3**
+
+* Close 2–3 more schools.
+* Document what breaks.
+
+**Week 4**
+
+* Automate only the parts causing repeated pain.
+
+This follows all three principles:
+
+* **Speed:** launch immediately.
+* **Money in first:** sell before expanding the product.
+* **Low cost:** use existing tools and customer revenue to fund improvements.
+
+The deepest takeaway is that your biggest risk is probably not that the AI agent fails technically. It's spending months improving the product before proving that enough martial arts schools will consistently pay for the outcome it delivers.

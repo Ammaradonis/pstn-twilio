@@ -89,7 +89,9 @@ def test_join_navigation_failure_does_not_spend_join_allowance(tmp_path):
     record = asyncio.run(groups.join(candidate()))
     assert record.state == "failed"
     assert phone.cache.count("join") == 0
-    assert record.join_attempts == 1
+    # A card the search could not find is not an attempt: charging it retired
+    # groups after three unlucky searches that never tapped Join.
+    assert record.join_attempts == 0
     assert store.join_queue(now=record.retry_at - 1) == []
     assert store.join_queue(now=record.retry_at + 1) == [record]
 
@@ -136,12 +138,45 @@ def test_pending_request_is_rechecked_without_another_join_tap(tmp_path):
     phone._tap.assert_not_awaited()
 
 
-def test_pending_request_never_reclicks_join_when_membership_is_unclear(tmp_path):
+def test_a_search_that_lands_on_the_group_page_is_not_a_failure(tmp_path):
+    # Facebook answers an exact group name by opening the group itself, and the
+    # "Groups search results" chip never appears; the old code read that as a
+    # failed search and gave up with the page it wanted already open.
+    groups, phone, store = join_driver(tmp_path)
+    groups._submit_search = AsyncMock(return_value=False)
+    button = node(f"Join {NAME} group")
+    phone._screen.side_effect = Screens([button], [button], [button],
+                                        [node("Request sent", top=300, clickable=False)])
+    record = asyncio.run(groups.join(candidate()))
+    # The point is that Join was reached at all: the page was already open, so
+    # "could not be opened" was a lie that cost the group a day.
+    assert record.note != "the group could not be opened from its card"
+    assert phone._tap.await_count >= 1
+    assert record.join_attempts == 1
+
+
+def test_a_pending_request_is_rechecked_before_fresh_candidates(tmp_path):
+    # Rechecking a request costs no join, and until it flips to "joined" the group
+    # can never be engaged with. Sorted by attempts alone it sat behind 1,500
+    # fresh candidates and was never looked at again.
+    _, _, store = driver(tmp_path)
+    store.put(GroupRecord("Waiting For Approval", score=60, members=900, state="requested",
+                          join_attempts=1))
+    store.put(GroupRecord("Fresh Candidate", score=99, members=9000))
+    assert [g.name for g in store.join_queue()] == ["Waiting For Approval", "Fresh Candidate"]
+
+
+def test_a_pending_request_that_lost_its_join_returns_to_the_queue(tmp_path):
     groups, phone, store = driver(tmp_path)
-    store.put(GroupRecord(NAME, state="requested", members=5800, score=87))
+    store.put(GroupRecord(NAME, state="requested", members=5800, score=87, join_attempts=1))
     phone._screen.return_value = [node(f"Join {NAME} group")]
     record = asyncio.run(groups.join(candidate()))
-    assert record.state == "requested"
+    # The Join control is back, so the request was declined or withdrawn: flip it
+    # to a candidate instead of reading it as pending forever and never tapping
+    # again (that is how a group could sit in "requested" for days).
+    assert record.state == "candidate"
+    assert record.join_attempts == 0
+    assert "gone" in record.note
     phone._tap.assert_not_awaited()
 
 
@@ -176,6 +211,36 @@ def test_a_group_refused_for_questions_is_not_retried_by_a_robot(tmp_path):
     store.put(GroupRecord(NAME, score=87, members=5800, state="refused",
                           note="membership questions need a human: What is your phone number?"))
     assert store.join_queue() == []
+
+
+def test_a_search_that_lands_on_the_group_page_is_not_a_failure(tmp_path):
+    # Facebook answers an exact group name by opening the group itself, and the
+    # "Groups search results" chip never appears; the old code read that as a
+    # failed search and gave up with the page it wanted already open.
+    groups, phone, store = join_driver(tmp_path)
+    groups._submit_search = AsyncMock(return_value=False)
+    button = node(f"Join {NAME} group")
+    phone._screen.side_effect = Screens([button], [button], [button],
+                                        [node("Request sent", top=300, clickable=False)])
+    record = asyncio.run(groups.join(candidate()))
+    # The point is that Join was reached at all: the page was already open, so
+    # "could not be opened" was a lie that cost the group a day.
+    assert record.note != "the group could not be opened from its card"
+    assert phone._tap.await_count >= 1
+    assert record.join_attempts == 1
+
+
+def test_a_pending_request_is_rechecked_before_fresh_candidates(tmp_path):
+    # A request waiting for approval costs no join to recheck, and until it flips
+    # to "joined" the group can never be engaged with. Sorted by attempts alone it
+    # sat behind 1,500 fresh candidates and was never looked at again.
+    _, _, store = driver(tmp_path)
+    store.put(GroupRecord("Waiting For Approval", score=60, members=900, state="requested",
+                          join_attempts=1))
+    store.put(GroupRecord("Fresh Candidate", score=99, members=9000))
+    assert [g.name for g in store.join_queue()] == ["Waiting For Approval", "Fresh Candidate"]
+
+
 
 
 def test_cooldown_survives_a_new_driver(tmp_path):

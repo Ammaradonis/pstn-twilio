@@ -1,0 +1,532 @@
+There's a real, useful idea at the core of this lesson, and it fits a niche B2B business like yours especially well. Some parts, though, would actively hurt a company that sells AI phone agents to martial arts schools. Below I've split it into what to take, what to adapt, and what to drop, with examples for each point.
+
+It's also worth noticing that this lesson doubles as a sales pitch. The "network" he prescribes is one you pay him for. Paid communities can be worth it, but judge any network by whether it contains the people *your* business needs, not by how hard it's being sold.
+
+---
+
+## Keep: Analyze everything like an operator (the coffee shop point)
+
+He says your crew should be asking of every business whether money can be made there, whether there are gaps, and what mistakes are being made. For you, the "coffee shop" is every martial arts school you come into contact with. Train yourself to see them the way a consultant would:
+
+- **The evening mystery call.** Call 20 schools between 5 and 8pm, when instructors are on the mat. Count how many go to voicemail, how many call back, and how long it takes. That's your market gap, measured, and it becomes a stat for your pitch: "14 of 20 schools in this city missed my call."
+- **Read their Google reviews for pain.** Look for phrases like "never called me back" or "couldn't get anyone on the phone." Each one is a mistake the school is making and a warm opening line for you.
+- **Look at the website like a parent would.** Is the only call to action a phone number? Are office hours listed as "during class times"? Is the trial class form buried? Each of these is a lead leaking out.
+- **Spot adjacent gaps.** He asks whether you could make more money opening next door. Your version: the boxing gym, the yoga studio, and the dance school down the street have the exact same problem, a busy instructor who can't answer the phone mid-session. That's your expansion path once martial arts is proven.
+
+## Keep: You're a node, so find the hubs
+
+His nodes-and-links idea is the most valuable part of the whole lesson, but "people who talk about money" is too vague a target. The most valuable nodes for you are people who already touch *many* martial arts schools, because one link to them reaches dozens of potential clients:
+
+- **Affiliations and federations.** A BJJ affiliation with 40 schools, a regional karate or taekwondo federation, or a franchise system. One owner at the top recommending you is worth 40 cold calls.
+- **Martial arts marketing agencies.** They generate leads through ads for schools, and those leads often get lost when nobody answers the phone. Your product makes their results look better, so they have a reason to refer you or bundle you.
+- **The software schools already run on.** Member management and billing platforms (Kicksite, Zen Planner, and Spark Membership are common in this space) have partner programs and integration marketplaces. Being listed there is a network link that works while you sleep.
+- **Traveling seminar instructors and tournament organizers.** They know every school owner in a region personally. Showing up at a tournament, sponsoring a small division, or helping the organizer handle registration calls with your agent puts you in the room with dozens of owners at once.
+- **Gear suppliers.** Their sales reps visit schools constantly and are always looking for something useful to talk about besides uniforms.
+
+The "you help them and they help you" part matters here. Lead with value before asking for anything. Give a federation a free missed-call audit of their member schools, or share your anonymized data on what time of day parents call, or introduce two school owners who could run a joint seminar.
+
+## Keep: Have peers on the same mission
+
+He's right that you need people around you who think about building. But the most useful peers for you aren't generic hustlers. They're people solving problems close to yours:
+
+- **Founders selling AI voice agents to other niches,** like dental offices, HVAC companies, salons, or law firms. They aren't competitors, so they'll openly trade notes on pricing, onboarding, churn, and which call scripts convert.
+- **A small founder group of 4 to 5 people** meeting every two weeks to review each other's numbers and hold each other to commitments. This is often more useful than a big online community, because everyone knows your business in detail.
+- **One or two school owners who become advisors.** Offer them a discount or free service in exchange for honest feedback on your scripts and pricing. They'll tell you things no business community ever could, like how parents actually phrase questions about kids' classes.
+- **Technical people in voice AI communities.** When latency, call handoffs, or calendar integrations break, a builder who's solved it before saves you weeks.
+
+---
+
+## Adapt: "Dump friends who don't talk about money"
+
+This is where I'd push back. The research on peer influence is real, but it's about the habits and expectations of the people you spend the most time with. It isn't a case for cutting off anyone who doesn't talk business. Founders who strip their lives down to purely transactional relationships tend to burn out, and friendships are often where unexpected opportunities come from.
+
+The adapted version is to audit your *time*, not your people:
+
+- **Keep the gaming friend, cut the hours.** If gaming is eating five nights a week, make it one night. The problem he's pointing at is lost time, and you can fix that without losing the person.
+- **Your training partners are part of your network.** If you train, the person rolling with you might own a school, teach at one, or know ten owners. Those relationships started out as "just hanging out."
+- **Non-business friends can make you better.** A friend can roleplay as a nervous parent calling about a kids' program to stress-test your agent. A friend who runs a busy Discord server might understand community-building better than any business coach.
+- **Distance yourself only from people who actively undermine you,** such as those who mock the business or constantly pull you into things that drain you. That's a much narrower group than "people who don't talk about money."
+
+## Adapt: "Employ your friends or cut them off"
+
+The "free staff" idea usually produces mediocre work and damaged friendships. Depending on how it's structured, unpaid work can also create legal problems. A friend saying "I don't have time" isn't a waster. They're an adult with their own life.
+
+The adapted version is to make specific, fair, bounded asks, and to accept a no gracefully:
+
+- **Paid micro-projects.** A friend who edits video makes a 60-second demo of your agent handling a trial class booking, and you pay them a fixed fee.
+- **Referral commissions.** A friend who knows school owners gets, for example, a percentage of the first few months for every school they bring in. They're rewarded, and there's no pressure.
+- **Introductions, not labor.** "Would you introduce me to your coach? I think I can help his school" is a small, easy ask that can be worth more than hours of unpaid work.
+- **If they say no, nothing changes.** The friendship stays intact, and they may send you a lead a year from now because you didn't burn the bridge.
+
+---
+
+## Drop: "I don't answer the phone to broke boys"
+
+This one directly contradicts your own business. Your entire product rests on the idea that **every unanswered call is lost money**, because you can't tell who's calling until you pick up. You'd be preaching one thing to clients and practicing the opposite.
+
+It's also wrong on the specifics of your market:
+
+- **Your core customer isn't rich.** A single-location school with 80 students and an owner who teaches every class is exactly who needs you most. By his standard, that owner is a "broke boy." By yours, he's the ideal client.
+- **Today's small school is tomorrow's three-location owner.** The instructor renting a community hall on weeknights might open a full academy in two years, and he'll remember who took him seriously.
+- **Small players know everyone.** A struggling instructor is often deeply connected in their style's community, through their federation, their seminars, and their old training partners.
+- **Martial arts culture runs on respect.** Your buyers live in a world of bowing in, loyalty to instructors, and tight-knit communities where reputation travels fast. Being known as dismissive would spread through an affiliation in a week.
+
+The replacement is to screen for *fit*, not status. Ask quickly and politely whether they get meaningful call volume, whether they miss calls during classes, and whether they can afford the plan. If they aren't a fit, give them a respectful "not right now" and maybe a free tip. That keeps the door open without wasting your time.
+
+---
+
+## How to internalize it
+
+Replace his filter ("do they talk about money?") with three questions you ask about any person or place:
+
+1. Does this connect me to school owners, directly or through a hub?
+2. Does this sharpen how I build and sell?
+3. Does this recharge me so I can keep going?
+
+Anyone who answers yes to one of those is part of a healthy network. Nobody has to answer yes to all three.
+
+To make it a habit, a simple weekly rhythm covers every "keep" point above. Do 10 mystery calls or website teardowns a week to keep your operator eyes sharp. Hold two conversations a week with hub-type people, like an agency, a federation contact, or a seminar organizer, and lead with something useful. Have one peer founder call every two weeks. Go to one in-person martial arts event a month, whether a tournament, a seminar, or an open mat. After three months, you'll have a network built specifically around your market, which is worth far more than a generic room full of people who like talking about getting rich.
+
+The passage is making one core claim:
+
+> Your results are heavily influenced by the people you spend time with.
+
+However, there are two parts you should separate:
+
+1. **The useful principle** (environment, standards, peer group, opportunities, accountability matter).
+2. **The exaggerated rhetoric** ("cut everyone off who isn't obsessed with money").
+
+The first is extremely valuable for business. The second often creates blind spots.
+
+For an AI phone agent business serving martial arts schools, here's how to extract the value and apply it practically.
+
+# 1. Redefine "Network Is Everything"
+
+Don't interpret it as:
+
+> "Only talk to rich people."
+
+Interpret it as:
+
+> "Build a network that creates deals, referrals, knowledge, partnerships, and accountability."
+
+For your business, every person in your network should fit into at least one of these categories:
+
+| Category            | Value               |
+| ------------------- | ------------------- |
+| Martial arts owners | Customers           |
+| Agency owners       | Referral partners   |
+| AI builders         | Technical knowledge |
+| Salespeople         | Pipeline growth     |
+| Operators           | Systems and scaling |
+| Investors           | Capital             |
+| Connectors          | Introductions       |
+
+If someone consistently creates none of those things, they are not helping your business network.
+
+That doesn't mean they can't be your friend.
+
+It means they aren't part of your business ecosystem.
+
+---
+
+# 2. Stop Having "Consumer Conversations"
+
+The coffee shop example is actually about developing a business lens.
+
+Most people walk into a martial arts school and think:
+
+> Nice place.
+
+You should think:
+
+> How many students?
+>
+> What's the monthly recurring revenue?
+>
+> How many calls are missed?
+>
+> What happens after hours?
+>
+> How many leads come from Facebook?
+>
+> How much revenue is lost from unanswered inquiries?
+
+That's exactly how you should train your mind.
+
+## Example 1
+
+Normal person:
+
+> That gym looks busy.
+
+You:
+
+> If they get 80 calls a month and miss 30%, my AI agent might recover 24 conversations.
+
+---
+
+## Example 2
+
+Normal person:
+
+> They have great instructors.
+
+You:
+
+> Are instructors answering phones instead of teaching classes?
+
+---
+
+## Example 3
+
+Normal person:
+
+> Nice website.
+
+You:
+
+> Where does the lead go after form submission?
+>
+> Is anyone calling them back within 5 minutes?
+
+Every business becomes a case study.
+
+---
+
+# 3. Build a "Revenue Network"
+
+Most founders network randomly.
+
+Instead, create a network map.
+
+For your AI phone agent business:
+
+### Tier 1: Buyers
+
+Martial arts school owners.
+
+Examples:
+
+* BJJ academy owners
+* MMA gym owners
+* Taekwondo schools
+* Karate schools
+* Boxing gyms
+
+Goal:
+
+50-100 owner relationships.
+
+---
+
+### Tier 2: Referral Sources
+
+People who already serve martial arts schools.
+
+Examples:
+
+* Martial arts marketing agencies
+* Website designers
+* CRM consultants
+* Lead generation agencies
+* Gym software consultants
+
+These people can send customers every month.
+
+One good partner may outperform 100 cold calls.
+
+---
+
+### Tier 3: Strategic Peers
+
+People building adjacent businesses.
+
+Examples:
+
+* AI chatbot agencies
+* Automation agencies
+* GoHighLevel specialists
+* Appointment-setting agencies
+* Voice AI operators
+
+These people share tactics.
+
+You learn faster.
+
+---
+
+### Tier 4: Mentors
+
+People ahead of you.
+
+Examples:
+
+* SaaS founders
+* Agency founders
+* Operators doing $1M+
+* AI automation business owners
+
+These people help you avoid mistakes.
+
+---
+
+# 4. Turn Every Conversation Into Intelligence Gathering
+
+This is one of the most useful parts of the passage.
+
+Not manipulation.
+
+Learning.
+
+When talking to a martial arts owner:
+
+Don't ask:
+
+> How's business?
+
+Ask:
+
+> How many leads do you get monthly?
+
+---
+
+Instead of:
+
+> Are things busy?
+
+Ask:
+
+> How many calls go unanswered when coaches are teaching?
+
+---
+
+Instead of:
+
+> Do you use AI?
+
+Ask:
+
+> What's your current lead follow-up process?
+
+Every conversation becomes market research.
+
+### Example
+
+Owner says:
+
+> We miss calls during evening classes.
+
+That's not small talk.
+
+That's a pain point.
+
+Pain points become offers.
+
+Offers become revenue.
+
+---
+
+# 5. Become the Hub of the Network
+
+The passage talks about being a node.
+
+That's actually correct.
+
+Most people try to know important people.
+
+Better strategy:
+
+Become useful to important people.
+
+---
+
+Example:
+
+You know:
+
+* 10 gym owners
+* 3 marketing agencies
+* 2 website developers
+
+You introduce people.
+
+Now everyone sees you as valuable.
+
+---
+
+Example:
+
+Marketing agency says:
+
+> My client misses calls.
+
+You say:
+
+> I know exactly who can help.
+
+That's you.
+
+The network starts generating deals.
+
+---
+
+Example:
+
+Gym owner says:
+
+> I need a website.
+
+You connect them.
+
+Now you become the center of relationships.
+
+---
+
+# 6. Build a Weekly Environment That Forces Growth
+
+The real lesson isn't:
+
+> Find rich friends.
+
+It's:
+
+> Put yourself in rooms where growth is normal.
+
+For your business:
+
+Every week you should be talking with people who:
+
+* sell services
+* run businesses
+* build AI systems
+* own gyms
+* generate leads
+
+If all your conversations are entertainment-focused, your business development slows.
+
+---
+
+Bad week:
+
+* 20 hours YouTube
+* video games
+* random social media debates
+
+Business output:
+
+0
+
+---
+
+Good week:
+
+* 5 gym owner calls
+* 3 partnership calls
+* 2 AI builder discussions
+* 1 founder mastermind
+
+Business output:
+
+New ideas, referrals, customers.
+
+---
+
+# 7. Replace "Get Rich" With "Solve Bigger Problems"
+
+This is where I'd modify the original message.
+
+The highest-performing business owners aren't obsessed with money every second.
+
+They're obsessed with:
+
+* customer problems
+* systems
+* growth
+* opportunities
+* execution
+
+Money is usually the result.
+
+For your AI phone agent business:
+
+Don't wake up asking:
+
+> How do I make money today?
+
+Wake up asking:
+
+> How do I help martial arts schools capture more leads?
+
+Examples:
+
+* Reduce missed calls.
+* Book more trials.
+* Follow up faster.
+* Increase student enrollment.
+* Improve retention communication.
+
+Solve those problems repeatedly and money follows.
+
+---
+
+# 8. The Practical Version of "Network Is Everything" For You
+
+Create this rule:
+
+### Every week
+
+Talk to:
+
+* 5 martial arts owners
+* 2 referral partners
+* 2 AI operators
+* 1 successful founder
+
+---
+
+### Every month
+
+Attend:
+
+* martial arts industry events
+* AI automation communities
+* business networking groups
+* founder meetups
+
+---
+
+### Every quarter
+
+Add:
+
+* 10 new gym owners
+* 5 referral partners
+* 3 high-level operators
+
+to your network.
+
+---
+
+# The mindset to internalize
+
+The deepest lesson from the passage is not:
+
+> "Ignore broke people."
+
+It's:
+
+> "Your environment determines what opportunities, standards, information, and ambitions feel normal."
+
+For your AI phone agent business, that means surrounding yourself with people who regularly discuss:
+
+* lead generation
+* conversion rates
+* appointment booking
+* AI automation
+* retention
+* scaling
+* partnerships
+* revenue
+
+If every week you're speaking with martial arts school owners, AI builders, agency operators, and successful founders, you'll start seeing opportunities that are invisible to people outside that network. That's the version of "Network Is Everything" that compounds into customers, partnerships, and long-term business growth.

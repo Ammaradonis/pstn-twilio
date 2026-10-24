@@ -1,0 +1,475 @@
+## The part worth keeping, and the part that will cost you money
+
+Strip the transcript down and there are three actual mechanics underneath:
+
+1. **Claims are free. Proof is cheap to ask for.** Anyone can say "top salesman." The car is just a proxy — a physical artifact that should exist if the claim is true.
+2. **Let them talk.** He got the whole Amazon scheme laid out before he objected once. Silence extracts more than interrogation.
+3. **Reverse the risk.** "Give me your store for a week." The bullshitter can't say yes, because the thing doesn't exist.
+
+Those three transfer to your business cleanly. The car heuristic itself does not, and in your specific niche it's close to inverted.
+
+## The car is a proxy, and yours is different
+
+Tate's logic: if the claim is "I make money," the artifact should be a car. Fine for a London ad agency. Apply it to martial arts school owners and you'll disqualify your best accounts and chase your worst.
+
+Think about who actually owns dojos. A BJJ black belt who owns his building outright and runs 280 students drives a 2011 Tacoma with mat cleaner in the back. A traditional Shotokan or Kyokushin sensei considers visible flash a character failure — it's not modesty theater, it's the actual value system he teaches. Meanwhile the guy with the leased G-Wagon in the strip mall lot has 55 students, is four months behind on rent, and will churn off your product in 60 days.
+
+So keep the mechanic, swap the artifact. In your market, the things that should exist if "we're doing well" is true:
+
+- **Active member count.** This is the only number that matters. 150+ actives is a real business. Under 80 and they can't afford you and won't stay.
+- **Front desk staff.** If a human answers at 2pm on a Tuesday, they have payroll. If it rings to the owner's cell mid-class, they have your problem but maybe not your budget — qualify harder.
+- **Their software stack.** Zen Planner, Kicksite, PushPress, Gymdesk, Spark — paying $150–$400/mo for gym management software proves they buy software. A school running on a paper binder and a personal Google Calendar has never bought software in their life and you'll spend six weeks teaching them what a dashboard is.
+- **Auto-draft billing on contracts** vs. cash collected at the door monthly. Predictable revenue means they can sign a recurring contract with you.
+- **Do they run paid ads?** If they're running Facebook lead ads, they have an acquisition budget and — critically — they already have the problem you solve, because lead ads generate calls nobody answers.
+- **Square footage and location.** 4,000 sq ft with its own street entrance beats a shared rec-center room.
+- **Multiple locations.** The single strongest buying signal in the entire market.
+
+Notice every one of those is verifiable before you ever get on a call. Their site, their Google listing, the photos, the class schedule, whether their phone goes to voicemail when you call it yourself.
+
+## Let them talk
+
+This is the most underrated line in the whole thing and the easiest to implement Monday morning.
+
+On a discovery call, the reflex is to pitch. Don't. Ask an open question and then shut up for as long as it takes.
+
+- "Walk me through what happens right now when someone calls during a kids' class." Then nothing. Count to five after they stop. They'll keep going, and the second half is where the truth lives.
+- "How many trial signups did you book last month?" If they say "a lot," don't accept it. Silence. Then: "roughly how many?" A real operator says "eleven, twelve." A bullshitter says "we're really happy with where it's at."
+- "Who follows up with a lead that doesn't answer?" Real answer: "my wife, usually that night." Bullshit answer: "we have a system for that."
+- "What have you tried before this?" Someone who's tried and failed at a call service, a VA, an answering service — that's a buyer. Someone who's never tried anything has never felt the pain.
+
+## Put them on the spot — politely, specifically
+
+The transcript's version is a confrontation. Yours should be a specific, calm question that only has a good answer if they're telling the truth. Same function, better manners, works on people who'd hang up on the aggressive version.
+
+They say: *"We're doing about 300 students."*
+You say: *"That's great — how many are on auto-draft versus paying monthly?"* Nobody with 300 actives has to think about that number.
+
+They say: *"We miss a lot of calls, it's costing us a fortune."*
+You say: *"Do you know roughly how many a week? Does your phone system show missed calls?"* If they've never looked, the pain isn't real yet and the deal will stall on price.
+
+They say: *"I'd need to run it by my partner."*
+You say: *"Sure — what's their main concern likely to be?"* A real partner has a known objection. An invented one doesn't.
+
+They say: *"Send me a proposal and I'll get back to you."*
+You say: *"Happy to. What would need to be in it for you to say yes on Thursday?"* This is the whole ballgame. Watch what happens.
+
+And the bigger one, because it protects your time: **stop doing unpaid custom work for unqualified prospects.** "Can you build me a demo with our class schedule and pricing so I can see it?" from a 60-student school is you getting famoused — you spend eight hours and they ghost. Build one generic martial-arts demo, show everyone the same one, and only customize after money or a signed pilot.
+
+## Reverse the risk — in both directions
+
+"Give me your store for a week" is the single best move in the transcript. Applied to you:
+
+**On them:** offer a two-week paid pilot at a real number. Not free — free attracts tire-kickers and the bar for ghosting is zero. $500 for two weeks, credited toward the first month. Anyone who won't put up $500 was never going to pay $400/mo. This filters faster than any question you can ask.
+
+**On yourself — and this is the part you need to sit with:** in this transaction, *you are the guy from Taiwan.* You are a stranger, contacting a school owner cold, describing an AI system he doesn't understand, asking for money upfront, promising it works while he does nothing. Read that Amazon-store paragraph again and notice how closely your pitch structurally resembles it.
+
+So build in the answers before he asks:
+
+- Be findable and local-adjacent. A real address, a real name, a real face. "We can't do a personal meeting" killed that deal instantly — so offer the call on video, camera on.
+- Have him call the demo number himself, live, during the sales call. Let him try to break it. That's your "give me the store for a week."
+- Named references he can actually phone. One school owner who'll take his call is worth more than every testimonial graphic you'll ever make.
+- Month to month, cancel anytime, no setup fee — or a pilot. Every lock-in clause you add reads as evidence you expect to disappoint him.
+- Show a recording of a real missed call your agent recovered into a booked trial. Artifact, not claim.
+
+## The implementation
+
+Make a five-line pre-call checklist and fill it in before any call. Actives (est.), staff on desk (y/n), gym software (which), paid ads (y/n), locations. Three or more green, take the call. Two or fewer, send a link and move on.
+
+Then a three-question script for the call itself: how many calls do you miss, what happens to a lead that doesn't answer, what have you tried before. Then be quiet.
+
+Then the close: two-week paid pilot, $500, credited. No exceptions, no free custom builds.
+
+The car thing is the weakest link in that transcript and the most quotable part of it, which is usually how it goes. What'll actually make you money is the boring middle: ask one specific question that a liar can't answer, then don't fill the silence.
+
+The core idea underneath that rant is not really "judge people by their car." The useful business lesson is:
+
+> Verify claims using evidence instead of accepting self-reported success.
+
+The "car test" is a crude proxy. Sometimes it works, often it doesn't. Plenty of wealthy people drive ordinary cars, and plenty of broke people lease expensive ones.
+
+If you're running an AI phone-agent business for martial arts schools, you'll make better decisions by replacing the "car test" with "evidence tests."
+
+## Principle 1: Look for proof, not stories
+
+In the transcript, the speaker keeps asking questions that force the other person to provide evidence.
+
+For your business, every person falls into one of these categories:
+
+* Potential client
+* Potential partner
+* Potential employee
+* Potential vendor
+* Potential investor
+
+For each category, ask:
+
+**"What objective evidence would prove their claim?"**
+
+### Example: Martial Arts School Owner
+
+Owner says:
+
+> "We're getting 300 leads a month."
+
+Instead of believing it:
+
+* How many leads last month exactly?
+* What software tracks them?
+* How many were missed?
+* What's your show-up rate?
+* What's your close rate?
+
+A real owner usually knows these numbers or can pull them quickly.
+
+A bullshitter says:
+
+> "A lot."
+>
+> "Roughly."
+>
+> "I don't have the numbers."
+
+### Example: Marketing Agency Partner
+
+Agency says:
+
+> "We generate tons of martial arts leads."
+
+Ask:
+
+* How many schools?
+* How many active clients?
+* Can I speak to two clients?
+* What was the CPL?
+* What was the conversion rate?
+
+Notice the pattern:
+
+You are moving from claims to evidence.
+
+---
+
+## Principle 2: Put people on the spot respectfully
+
+One thing the speaker does correctly is create pressure.
+
+Pressure reveals truth.
+
+Not aggression.
+
+Pressure.
+
+### Example: School Owner
+
+Owner says:
+
+> "We never miss calls."
+
+You say:
+
+> "How many inbound calls did you receive yesterday?"
+
+If they know:
+
+Good sign.
+
+If they start scrambling:
+
+Interesting.
+
+### Example: Agency Partner
+
+Agency says:
+
+> "Our clients love us."
+
+You say:
+
+> "Great. Which three clients would be comfortable speaking with me this week?"
+
+A real operator usually says:
+
+> "Sure."
+
+A bullshitter often says:
+
+> "Well, they're busy."
+
+> "We have privacy issues."
+
+> "We can't share names."
+
+---
+
+## Principle 3: Ask questions that create consistency checks
+
+The "Toyota" example is really a consistency test.
+
+The speaker is saying:
+
+> If you're the top salesman, I expect evidence that matches that claim.
+
+You should use consistency tests, not car tests.
+
+### Example: Martial Arts School
+
+Owner says:
+
+> "We're overflowing with leads."
+
+Later:
+
+> "We only get 20 inquiries a month."
+
+Inconsistency.
+
+Dig deeper.
+
+### Example: Agency
+
+Agency says:
+
+> "We're scaling fast."
+
+Then says:
+
+> "We only have one client."
+
+Inconsistency.
+
+### Example: AI Vendor
+
+Vendor says:
+
+> "Our AI books appointments automatically."
+
+Ask:
+
+> "How many appointments did it book last month?"
+
+If they can't answer:
+
+Potential inconsistency.
+
+---
+
+## Principle 4: Let people talk
+
+This is one of the strongest lessons in the transcript.
+
+The Amazon-store example happened because the speaker kept asking questions.
+
+Most salespeople talk too much.
+
+Investigators ask questions.
+
+### In discovery calls
+
+Instead of:
+
+> "Our AI answers calls, follows up, books appointments..."
+
+Try:
+
+> "Walk me through what happens when someone calls at 7:30 PM."
+
+Then listen.
+
+You may discover:
+
+* Calls go to voicemail.
+* Nobody follows up.
+* Leads die overnight.
+* Front desk staff are overwhelmed.
+
+Now you have the real problem.
+
+### In partnership conversations
+
+Ask:
+
+> "How exactly would this partnership work?"
+
+Then shut up.
+
+The more they talk, the more information you get.
+
+---
+
+## Principle 5: Trust willingness to verify
+
+The Amazon example wasn't suspicious because the idea sounded crazy.
+
+It was suspicious because verification was resisted.
+
+This is a powerful rule.
+
+### Green Flag
+
+You ask:
+
+> "Can I see data?"
+
+Response:
+
+> "Absolutely."
+
+### Green Flag
+
+You ask:
+
+> "Can I talk to clients?"
+
+Response:
+
+> "Sure."
+
+### Green Flag
+
+You ask:
+
+> "Can we start with a pilot?"
+
+Response:
+
+> "Makes sense."
+
+### Red Flag
+
+Everything becomes difficult:
+
+* Can't show numbers.
+* Can't show references.
+* Can't do a trial.
+* Can't demonstrate results.
+* Can't explain process.
+
+That's when you should slow down.
+
+---
+
+## Principle 6: Time-wasters are often more dangerous than scammers
+
+The transcript focuses on losing money.
+
+In your business, losing time is often worse.
+
+### Example
+
+Someone says:
+
+> "I can get you 500 martial arts schools."
+
+Instead of spending 20 hours discussing it:
+
+Ask:
+
+> "Which 10 schools can you introduce me to this week?"
+
+A real connector can usually produce something concrete.
+
+A bullshitter keeps talking about future possibilities.
+
+---
+
+## Principle 7: Build a verification framework
+
+Create a checklist for every opportunity.
+
+### For Martial Arts School Clients
+
+Ask:
+
+1. Monthly leads?
+2. Monthly memberships sold?
+3. Missed calls per week?
+4. Current software?
+5. Average membership value?
+6. Who answers phones now?
+
+### For Referral Partners
+
+Ask:
+
+1. Number of active clients?
+2. Number of martial arts clients?
+3. Two references?
+4. How introductions happen?
+5. Revenue-sharing expectations?
+
+### For Employees
+
+Ask:
+
+1. What did you accomplish?
+2. How was it measured?
+3. Can someone verify it?
+4. What specific numbers improved?
+5. What would your previous manager say?
+
+---
+
+## Principle 8: Judge incentives, not appearances
+
+This is where I'd disagree with the speaker.
+
+A better question than:
+
+> "What car do they drive?"
+
+is:
+
+> "Do their incentives align with mine?"
+
+### Example
+
+An agency wants a $10,000 upfront fee.
+
+Risk is entirely yours.
+
+Bad alignment.
+
+### Better
+
+Agency gets paid when appointments are booked.
+
+Now incentives align.
+
+### Example
+
+A referral partner wants money before introductions.
+
+Bad sign.
+
+### Better
+
+Pay per successful referral.
+
+Now claims become measurable.
+
+---
+
+## How this applies directly to your AI phone-agent business
+
+The practical version of the transcript is:
+
+### Don't ask:
+
+* "Are they successful?"
+* "Are they good?"
+* "Can they help?"
+
+### Ask:
+
+* "Show me."
+* "Walk me through it."
+* "Who can verify it?"
+* "What numbers support that?"
+* "Can we test it?"
+* "What happens if you're wrong?"
+
+The highest-performing operators in B2B sales aren't usually the most skeptical people.
+
+They're the people who systematically convert stories into evidence.
+
+That's the real lesson hidden underneath the "spot bullshitters" speech. The car is just a proxy. Evidence is the actual signal.

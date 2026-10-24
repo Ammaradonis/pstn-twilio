@@ -1,0 +1,538 @@
+## 1. The mechanism underneath it
+
+The principle sounds like a vibe but it's actually a supply-chain argument. Hiring has two inputs: a role and a person. One of those is abundant and one is scarce. Roles you can manufacture in an afternoon. Good people arrive on their own schedule, unpredictably, and if you don't take them when they appear, they're gone permanently to someone else.
+
+So you trigger on the scarce input. That's the whole idea in "hire first, then find them a job."
+
+The other half, "work is a black hole," is a claim that your business is labor-constrained, not idea-constrained. For AI phone agents sold to martial arts schools, that's plainly true right now. You almost certainly have a backlog of things that directly make money that nobody is doing because you're the only one who can do them. The line about how if you can't think of work for someone you shouldn't be running a business is harsh but it's a fair diagnostic: a full task list is evidence you understand your own growth path.
+
+## 2. Internalizing it: change the trigger
+
+Internalizing is not a mindset thing, it's changing which event fires the hiring process.
+
+Right now your trigger is probably: *I'm drowning in onboarding calls → post a job → sift resumes.* That trigger guarantees you hire under time pressure from a pool of strangers who are actively looking, which is the worst pool.
+
+Replace it with a question you ask after every meaningful interaction with any person, in any context: **would I want this person working for me?** Not "do I have a job for them." Just yes or no.
+
+Three habits make this stick:
+
+- **Keep a bench file.** A note on your phone with names. Every yes goes in it, with one line on why and where you met. No job attached. Ten names is a real asset.
+- **Touch the bench monthly.** One message. "Still at the gym? Still doing the same job?" Costs you five minutes, keeps you first in line when their situation changes.
+- **Never say "I don't have anything right now."** Say "what does your next six months look like?" You're buying an option.
+
+The three people you'll kick yourself over in two years are all people you met this year and didn't write down.
+
+## 3. Define "loyal" so you can actually spot it
+
+The text defines loyalty as doing what you say, fast. That bundles two different things: low-friction execution and durability. You want the second one more than the first, because your business will have long boring stretches where nobody is watching.
+
+You can't detect loyalty in an interview. You detect it in history. Observable proxies:
+
+- **Time under tension.** Someone who's trained at the same school for five years through injuries, price increases and instructor changes has demonstrated something a resume can't. Six jobs in three years has also demonstrated something.
+- **Unpaid consistency.** They open the mats. They coach the kids class for free. They run the school's Instagram because nobody else would. This is the single strongest signal in your world and it's sitting in plain sight.
+- **Cost-bearing behavior.** They covered a class when the instructor's kid was sick. They drove three teammates to a tournament four hours away. Loyalty that costs nothing is just agreeableness.
+- **Follow-through on small unowed things.** They said they'd send you the schedule, and it arrived without a reminder. Someone who's flaky while courting you is at their ceiling.
+- **Response speed before they're on payroll.** How fast they reply when they want something from you is the fastest they will ever move.
+
+One correction to make now: people who agree with everything are usually conflict-avoidant, not loyal, and conflict-avoidant people fold the first time a client is angry. More on this in section 7.
+
+## 4. Your pool is better than almost anyone's
+
+This is the part where your specific business has an unfair advantage, and I'd build the whole strategy around it.
+
+Martial arts schools are factories for exactly the person this principle describes. The culture literally produces people who show up relentlessly, take direction without relitigating it, and stay for years. Every school you sell to contains three to eight of them.
+
+Who specifically:
+
+- **The brown belt who runs the kids program.** Handles forty sets of parents, knows every scheduling objection, is probably paid in free training and a small stipend.
+- **The front desk person who is also a student.** Has personally answered the exact phone calls your product replaces. Knows what a prospect says after "how much is it" better than any engineer you could hire.
+- **The senior student who does the school's social media for free.** Already demonstrated unpaid consistency, already produces content.
+- **The competitor who travels the tournament circuit.** Self-directed, handles losing, geographically connected across dozens of schools.
+- **Your own training partners.** You've watched these people under pressure for years. That's a better dataset than any hiring process produces.
+
+Three reasons this matters more than it looks:
+
+1. **Domain fluency is your moat.** Generic AI receptionist companies sell to dentists and hair salons. When your call reviewer knows that a school's "intro to BJJ" and "fundamentals" are the same class under two names, and that parents always ask about the belt system in the first ninety seconds, your agent gets better in ways a competitor's can't.
+2. **Sales credibility.** A school owner takes a call from a purple belt who coached kids for six years differently than from a SaaS rep. Same pitch, different reception.
+3. **Distribution.** Each hire brings a network of schools that already trust them.
+
+Practical move: for every school you onboard, ask the owner directly, "who's your most reliable person here?" You'll learn something about the account either way, and you're building the bench file while you work.
+
+## 5. Stock the black hole before you need it
+
+"There's always something to do" only helps if you've written it down in advance. Do this now, so that when a good person appears you're not improvising.
+
+Here is your list. Everything below is real work in your business, needs no technical skill, and can start in week one.
+
+**Revenue-adjacent, start here:**
+
+1. **Call transcript QA.** Read or listen to every AI call from the past week. Tag every failure: misheard name, wrong price quoted, booking dropped, caller hung up confused. This is the highest-leverage job in a voice AI company and nobody wants to do it. It's also a direct product feedback loop that most of your competitors don't run.
+2. **Missed-booking recovery.** Anyone the agent couldn't close gets a human callback within an hour. Every membership this converts is a number you put in front of the client at renewal.
+3. **Pre-demo prospect research.** Call a target school's number at 6pm on a Tuesday, when the owner is on the mat. Record it ringing out. Open your demo with that recording. Pure labor, brutally effective, and it scales with headcount.
+4. **Trial-show follow-up.** Booked trials that don't show are the school's biggest leak. Owning that number makes you indispensable.
+
+**Product and ops:**
+
+5. **Per-school knowledge base build.** Schedule, pricing tiers, trial offer, instructor bios, age brackets, parking, holiday closures. This is probably eating your week right now.
+6. **FAQ mining.** Build each school's real FAQ from actual inbound call data, not from what the owner thinks people ask.
+7. **Objection library.** Every objection from every sales call, logged, with the response that worked.
+8. **Monthly client report.** Calls answered, trials booked, estimated revenue. Churn insurance in a one-page document.
+
+**Growth:**
+
+9. **Case studies.** One school, before and after, with real call audio and real numbers.
+10. **Community presence in school-owner groups.** Answering questions, not posting links. See section 7.
+11. **Competitor monitoring.** What the generic receptionist companies are charging and claiming.
+12. **Recruiting the next person.** Your best hire's job includes finding the one after them.
+
+Keep this list live in a shared doc, ranked by distance to revenue. Rule for yourself: if you ever can't add an item, that's a signal about your planning, not about the market.
+
+## 6. How to hire before a role exists without going broke
+
+This is what the source text skips, and it's where people who try this principle blow themselves up. They hire a loyal person into a full-time salary with no revenue attached, run out of cash in five months, and have to let them go. That doesn't just cost money. It destroys the exact loyalty asset you were buying, and that person tells everyone in their gym.
+
+Use tiers instead:
+
+- **Tier 0: paid trial project.** Fixed scope, fixed fee, two hundred to five hundred dollars. Not an interview. Real work. "Here are forty call transcripts. Tag every failure and tell me the three patterns you see." You learn more in one of these than in five interviews, and the output is useful even if you don't hire them.
+- **Tier 1: capped part-time.** Ten hours a week, one owned metric. "You own trial-shows booked."
+- **Tier 2: commission or revenue share.** This is how you genuinely hire before you have work. If they close schools, they earn. If they don't, it costs you nothing. You can extend this to unlimited people, which is the closest thing to the principle's ideal.
+- **Tier 3: full-time.** Only after the person has provably made or saved more than they cost.
+
+Two rules on top:
+
+**Hire into a cash structure you can sustain for twelve months.** Vague role is fine. Vague runway is not.
+
+**Give every person one number from day one,** even when the job is undefined. Hiring ahead of roles creates a specific failure where five people are all doing everything and no outcome has an owner. One person owns transcript failure rate. One owns trials booked. The job description can stay fuzzy; the number can't.
+
+## 7. Two things in that text that will hurt this specific business
+
+I'd take the core principle and drop these.
+
+**"Do whatever I say and do it quickly" as the definition of fit.** In a voice AI business your error signal comes from the ground, from whoever is closest to the transcripts and the angry client. If you select for people who never push back, you will find out that the agent has been quoting a school's 2024 pricing for six weeks when the owner cancels, not when it starts. The version that keeps the speed without the blind spot: argue before the decision, execute after it, and never sit on bad news. Make it explicit that telling you something is broken is the job, not insubordination.
+
+**"Post bullshit on Reddit with links to your products."** This niche is small and everyone knows everyone. School owners are in the same three Facebook groups, they go to the same seminars, they refer students to each other across towns. Spam gets you banned, and worse, screenshotted and passed around. The same hours spent genuinely answering "how do I stop losing leads to voicemail" questions, with a soft signature, builds the exact reputation that makes outbound easy. Identical labor cost, opposite outcome.
+
+**One more risk specific to you:** if you hire a school's senior student or front desk person out from under them, you may torch that client relationship. Ask the owner first. Frame it as a partnership, and in a lot of cases they'll say yes because they can't pay the person full-time anyway.
+
+## 8. Your next thirty days
+
+**Week 1.** Write the black hole list. Twenty jobs, ranked by distance to revenue. Write your loyalty scorecard: five observable signals you'll actually check.
+
+**Week 2.** Build the bench file. Ten named people already in your orbit, from your own gym, your client schools, your training partners. No roles attached, just names and why.
+
+**Weeks 3–4.** Run two Tier 0 paid trial projects off the top of that list. Transcript QA is the ideal first one: it's cheap, it's revealing, and the output improves your product whatever you decide about the person.
+
+**Ongoing.** One bench touch per month. One question after every new interaction: would I want this person working for me? Everything else follows from keeping that list alive.
+
+The core idea in the passage is not really "hire random people before you need them."
+
+The deeper principle is:
+
+> **Exceptional people are often more valuable than predefined roles.**
+>
+> Most businesses optimize around tasks. Strong businesses eventually optimize around talent.
+
+However, if you implement this literally, it can become expensive and chaotic. The practical version for your AI phone agent business is:
+
+> **Continuously identify people who are reliable, capable, aligned with your standards, and trustworthy. Then create value-producing work around them before assigning them larger responsibilities.**
+
+For an AI phone agent company serving martial arts schools, this can be extremely powerful because there are hundreds of small but important activities that drive growth.
+
+---
+
+# Principle 1: Recruit for the person, not just the position
+
+Most founders think:
+
+> "I need a salesperson. Let me find a salesperson."
+
+The passage suggests:
+
+> "I found a great person. Let me figure out how they can help the company."
+
+This works because skills can be taught faster than loyalty, ownership, and reliability.
+
+## Example A: The Martial Arts School Owner's Son
+
+You meet a 22-year-old whose father owns a BJJ academy.
+
+He's:
+
+* Responsive
+* Organized
+* Curious
+* Learns quickly
+* Actually follows through
+
+You don't currently need a full-time employee.
+
+Traditional thinking:
+
+> "Sorry, we don't have an opening."
+
+Talent-first thinking:
+
+Start him part-time.
+
+Possible work:
+
+* Listen to AI call recordings
+* Tag failed conversations
+* Identify appointment-booking failures
+* Build case studies
+* Create onboarding videos
+
+After 3 months:
+
+He understands:
+
+* Martial arts schools
+* Your software
+* Customer problems
+
+Now when a Customer Success position opens, you already have someone trained.
+
+---
+
+## Example B: The Reliable Gym Front Desk Worker
+
+You notice a front-desk employee at a Taekwondo school.
+
+Every time you visit:
+
+* They answer professionally
+* They remember details
+* They solve problems
+
+You think:
+
+> "This person would be great under my leadership."
+
+You hire them 10 hours/week.
+
+Initial work:
+
+* Check AI call transcripts
+* Verify appointment bookings
+* Review missed calls
+
+Six months later:
+
+They become:
+
+* Customer onboarding specialist
+* Account manager
+* Operations coordinator
+
+You hired the person before the perfect role existed.
+
+---
+
+# Principle 2: Work is a black hole
+
+The passage says:
+
+> "You can always find more work."
+
+In a healthy growth company, this is usually true.
+
+For your business, there's an almost unlimited amount of work.
+
+Most founders only think about obvious work:
+
+* Sales calls
+* Customer support
+* Development
+
+But hidden work creates huge leverage.
+
+---
+
+## Example A: Call Quality Review
+
+Suppose you have:
+
+* 50 martial arts schools
+* 200 calls per day
+
+Nobody reviews them.
+
+A loyal employee could:
+
+* Grade conversations
+* Find AI failures
+* Spot patterns
+* Suggest prompt improvements
+
+This directly improves retention.
+
+---
+
+## Example B: Competitor Intelligence
+
+Someone could spend every day:
+
+* Calling competitor systems
+* Testing their AI
+* Recording weaknesses
+* Building comparison reports
+
+That information helps:
+
+* Sales
+* Marketing
+* Product development
+
+---
+
+## Example C: Lead Research
+
+Someone could build lists of:
+
+* BJJ gyms
+* MMA gyms
+* Karate schools
+* Taekwondo schools
+* Muay Thai gyms
+
+And collect:
+
+* Owner names
+* Contact info
+* Website quality
+* Booking systems
+
+Now your sales team has ammunition.
+
+---
+
+# Principle 3: Create proving grounds
+
+A smarter implementation of the passage is:
+
+> Don't give people major responsibility immediately.
+>
+> Give them small responsibility and see how they perform.
+
+Think of it as an apprenticeship.
+
+---
+
+## Example A: Future Salesperson
+
+Before letting someone close deals:
+
+Start them with:
+
+* Prospect research
+* CRM cleanup
+* Lead qualification
+
+Watch:
+
+* Are they consistent?
+* Do they need reminders?
+* Do they take initiative?
+
+If yes:
+
+Promote them.
+
+---
+
+## Example B: Future Operations Manager
+
+Before giving operational control:
+
+Have them:
+
+* Track onboarding progress
+* Follow up with clients
+* Document processes
+
+If they excel:
+
+Increase responsibility.
+
+---
+
+# Principle 4: Build a bench before you need it
+
+Sports teams don't wait until a player gets injured to find a replacement.
+
+Businesses shouldn't either.
+
+The passage emphasizes having people ready before growth arrives.
+
+---
+
+## Example A: New Client Surge
+
+Imagine you land:
+
+* 30 new martial arts schools in one month
+
+Most founders panic.
+
+You already have:
+
+* A transcript reviewer
+* A part-time onboarding assistant
+* A customer success trainee
+
+You simply elevate them.
+
+Growth becomes manageable.
+
+---
+
+## Example B: Key Employee Leaves
+
+Without a bench:
+
+One departure causes chaos.
+
+With a bench:
+
+Someone already understands:
+
+* Your systems
+* Your standards
+* Your customers
+
+Transition becomes much easier.
+
+---
+
+# Principle 5: Loyalty must be earned, not assumed
+
+This is where many founders misread the advice.
+
+The passage repeatedly talks about loyal people.
+
+Many founders hear:
+
+> "Hire loyal people."
+
+But loyalty isn't visible on day one.
+
+You discover loyalty through behavior.
+
+For your business, look for people who:
+
+* Do what they say they'll do
+* Meet deadlines repeatedly
+* Take ownership
+* Care about customer outcomes
+* Stay calm when things break
+
+---
+
+## Example A: The Transcript Reviewer
+
+You ask them to review 50 calls.
+
+A mediocre person:
+
+* Does 38
+* Makes excuses
+
+A potentially loyal person:
+
+* Does all 50
+* Finds extra insights
+* Suggests improvements
+
+---
+
+## Example B: The Customer Success Assistant
+
+A gym owner emails at 9 PM.
+
+You didn't ask them to respond.
+
+They:
+
+* Notice the issue
+* Document it
+* Prepare a solution for morning
+
+That's ownership.
+
+---
+
+# Principle 6: Build a "talent pipeline" system
+
+This is probably the most useful implementation for your company.
+
+Create a list called:
+
+### Future Hires
+
+Whenever you meet someone impressive:
+
+Add:
+
+* Name
+* Strengths
+* Contact info
+* Potential role
+
+Examples:
+
+| Person                | Why They're Valuable | Possible Future Role |
+| --------------------- | -------------------- | -------------------- |
+| Gym front desk worker | Great communication  | Customer success     |
+| BJJ competitor        | Industry credibility | Sales                |
+| Marketing freelancer  | Strong copywriting   | Marketing            |
+| Operations-minded VA  | Organized            | Operations           |
+
+Then stay in touch.
+
+When growth comes, you already know who to call.
+
+---
+
+# The version I'd actually use
+
+For your AI phone agent business, I would modify the original advice into this:
+
+### 1. Always be recruiting
+
+Constantly look for exceptional people in martial arts, software, sales, customer support, and operations.
+
+### 2. Never hire purely because someone is loyal
+
+They must also be competent or have strong learning potential.
+
+### 3. Start small
+
+Give them 5–10 hours/week of clearly measurable work.
+
+Examples:
+
+* Call reviews
+* Lead research
+* Customer onboarding
+* CRM management
+* Competitor analysis
+* Content creation
+
+### 4. Promote from proven performance
+
+Use small tasks to identify future:
+
+* Sales reps
+* Customer success managers
+* Operations managers
+* Team leads
+
+### 5. Keep a bench
+
+Always have 3–10 people who already know your business and could take on bigger responsibilities if growth accelerates.
+
+The most valuable takeaway from the passage for your business is:
+
+> **Don't wait until you're desperate to find people. Build relationships with high-quality people continuously, give them small ways to contribute, and let responsibility grow as trust and competence are proven.**
+
+That's the practical, scalable version of "hire the person first, find the job later."

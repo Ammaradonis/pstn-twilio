@@ -1,0 +1,551 @@
+The idea underneath that transcript is sound: **cut the time it takes to do things without lowering the standard.** Beneath the bravado he makes about eight distinct points. One of his stories actually argues against his own conclusion. Below, each point is tied back to the text and translated into your business, followed by the parts that would hurt an AI phone agent company if you copied them literally.
+
+## 1. Fast means the same punch, thrown quicker
+
+**The text:** When the coach says "faster," the fighter keeps the technique and cuts the time. He doesn't start throwing garbage.
+
+In your business, the punch is the call. A parent phones at 6:15pm asking if their 5-year-old can start, and the agent has to answer correctly, sound natural, and book a trial class. That quality bar never moves. What you shorten is everything around it.
+
+**Onboarding.** If going live takes two weeks of back-and-forth, build one intake form covering schedule, programs by age, how to handle pricing questions, the trial offer, and the top 15 parent questions. The school fills it in during or right after the sales call, and you go live in 48 hours.
+
+**A prebuilt martial arts template.** Most schools get the same questions: minimum age for kids, what to wear to the first class, whether adults can start with zero experience, gi vs. no-gi, belt testing fees, contracts vs. month-to-month. If 80% of the agent already exists, each new school is a customization job rather than a build.
+
+**Testing.** Don't say "let's watch live calls for a week." Write 20 scenarios and run them all the same day before launch. Cover a nervous adult beginner, a parent asking whether classes help with focus, a member who wants to cancel, a birthday party inquiry, and a spam call. That's drilling before the fight, and it's how speed and quality coexist.
+
+## 2. Momentum keeps the plane flying
+
+**The text:** A plane with failed engines keeps flying because forward motion creates lift, and a business stays alive the same way.
+
+**A daily outreach floor.** Contact a fixed number of school owners every weekday regardless of what else is happening, so your pipeline never goes quiet.
+
+**Ship one product improvement per week,** even a small one. Examples are a missed-call text-back, a Spanish-language option, or a weekly email showing the owner how many trials the agent booked. Owners who see steady improvement are less likely to cancel.
+
+**Content on a schedule.** Short clips of real calls where the agent books a trial class, posted consistently. Get school permission and handle caller consent properly. Each clip doubles as a sales asset.
+
+One honest note on his analogy: a plane with dead engines is gliding, which means descending. Momentum buys time to fix problems; it doesn't fix them. That matters in the T2 story below.
+
+## 3. Every day not live is money lost, for you and the school
+
+**The text:** The two universes. Launch today or launch next week, and that week of revenue never comes back.
+
+For you this doubles, because your product's value is catching calls that are currently being missed. Every day a signed school isn't live, it keeps losing calls during the exact hours instructors are on the mat, which is when parents tend to call.
+
+**Seasonality.** It's mid-September, in the back-to-school enrollment window, which alongside January is typically one of the biggest sign-up periods for martial arts schools. A school that goes live in late October has missed much of it. Say that in your pitch, and make sure your onboarding backs it up.
+
+**Launch the simple version first.** Full integration with their management software (Kicksite, Spark Membership, Zen Planner, etc.) might take weeks. If so, launch with the agent booking into a shared calendar or texting details to the front desk, and add the integration later.
+
+**Billing starts at go-live, and go-live happens fast.** A long free trial with slow setup is the "next week" universe.
+
+## 4. More attempts in the same amount of time
+
+**The text:** Make two adverts in the time a competitor makes one, and you have double the advertising.
+
+**Outreach scripts.** Test two openers per week instead of one per month. After a quarter you've learned several times more than someone moving at a normal pace.
+
+**The agent's pitch.** Try two versions of how it offers the trial. One asks "Would you like to come try a class?" The other offers two specific times: "I have Tuesday at 5 or Thursday at 6, which works better?" Compare booking rates across similar schools.
+
+**Niches within your niche.** Test messaging for kids-focused taekwondo and karate schools against adult BJJ and MMA gyms. Their pain points and callers differ, and cycling quickly shows you where you convert best.
+
+## 5. An idea with no action after a week isn't an idea
+
+**The text:** "You have an idea, it's been a week, where's your business?"
+
+**Sell before building.** An owner says they'd pay for the agent to call back web form leads. Within a week, sell a rough version to that one owner, even if it's partly manual behind the scenes. Then build it properly.
+
+**Test new markets with calls, not research.** Wondering whether the product works for yoga studios or boutique gyms? Don't research for a month. Make 30 calls this week.
+
+**Launch referrals by Friday.** Think a referral program would work? Email your current schools today offering a free month for every owner they refer who signs.
+
+## 6. Close tomorrow, not next Wednesday
+
+**The text:** "They can only meet next Wednesday? We're going to them tomorrow."
+
+**Demo on the first call.** Keep a demo line set up as a generic martial arts school and have the owner call it while you're still on the phone. Hearing it work beats scheduling a demo for next week.
+
+**Build a custom demo overnight.** After a promising first call, set up a quick version using their real schedule and programs from their website, and send them the number the next morning. Hearing their own school's name answered by the agent is powerful.
+
+**Send the agreement and payment link during or right after the call,** not in a follow-up email three days later.
+
+## 7. Call everyone, and look for the budget signal
+
+**The text:** Calling McDonald's while the office laughed, and scanning the newspaper for companies running ads because that meant they had a budget.
+
+**Ad libraries are your newspaper.** Meta's Ad Library shows which schools are running Facebook and Instagram ads. They're already paying for leads, so every unanswered call wastes their ad spend. That's your warmest list.
+
+**The call-during-class test.** Phone a school at 6:30pm on a weekday. If it goes to voicemail, you have your opener: "I called your school yesterday at 6:30 and nobody picked up. How often do you think that happens with parents?"
+
+**Your McDonald's is multi-location operators and franchise or affiliate networks.** Most won't respond, but one yes could mean dozens of locations.
+
+## 8. Handling people who say "two weeks"
+
+**The text:** The website that "takes two weeks," and creative people not understanding speed.
+
+**Challenge estimates by asking what's on the critical path.** When a contractor quotes two weeks, ask what could be cut to launch a working version in three days. Estimates often include waiting time rather than working time.
+
+**Timebox tuning work.** Adjusting voice and prompts expands to fill whatever time you give it. Set a limit, such as two hours, then run your 20 test scenarios and ship.
+
+**A caution:** "Three days or I'll find someone else" works on genuinely padded tasks. Use it on everything and you attract contractors who say yes and cut corners. Push on the timeline, never on the quality bar, which is his own punch analogy.
+
+## Where copying the text literally would hurt you
+
+Reread the T2 Television story, because it isn't the success story it's framed as. They sold at or below cost to build an impressive client list. They used new customers' money to deliver old customers' orders. He says outright that you don't even need profit. One month away and it collapsed into court cases and bailiffs. Speed didn't make that business work; it hid the fact that it wasn't working.
+
+**Know your unit economics before pricing.** Your costs scale with call minutes (telephony, voice, model usage). A busy school with a large kids program can generate far more minutes than a small one. If you underprice to sign schools quickly, your most successful clients become your least profitable. Calculate your real cost per school per month, and consider usage tiers.
+
+**Don't let delivery lag behind collected fees.** Taking setup fees from new schools while earlier schools still wait to go live is the same pattern as T2, just smaller.
+
+**Build a business that flies without you.** Monthly recurring revenue is the healthy version of momentum, because money arrives whether or not you closed a deal this week. Protect it with good onboarding and low churn, and document your processes so a month away doesn't sink anything. The Dan lesson applies to partners too: shared visibility and controls on finances come before anyone gets equity.
+
+## How to actually internalize it
+
+Measure it. Track four speed numbers:
+1. How fast you respond to inbound leads
+2. Days from first conversation to signed
+3. Days from signed to live
+4. How many experiments you shipped this week
+
+Each week, try to shorten one of them. Then check your quality numbers: trial booking rate, call accuracy, and churn. If speed improves and quality holds, you're throwing the same punch faster. If quality drops, you've started swinging wild, and that's the cue to slow down on that one thing.
+
+The useful part of that lesson is not the rhetoric, insults, or claims about education. The business principle underneath it is:
+
+> **Speed creates more learning cycles, more sales opportunities, and more chances to compound results.**
+
+For an AI phone agent business serving martial arts schools, that's a powerful idea—provided you combine speed with quality, ethics, and financial discipline.
+
+A critical correction first:
+
+The story about "staying alive by using new customer money to pay for old customer obligations" is **not** a good business model. That's a cash-flow trap. Many businesses collapse because they mistake incoming cash for profitability.
+
+The lesson to keep is:
+
+> Move fast in execution, but measure profitability, retention, and customer outcomes.
+
+---
+
+# How to Internalize "Speed" for an AI Phone Agent Agency
+
+Instead of thinking:
+
+> "How do I build the perfect business?"
+
+Think:
+
+> "How do I shorten the time between idea → test → result?"
+
+---
+
+# 1. Speed in Lead Response
+
+Most AI agency owners lose deals before the sales call.
+
+### Slow operator
+
+* Lead comes in Monday
+* Replies Wednesday
+* Books call next week
+* Proposal takes another week
+
+Total: 2+ weeks
+
+### Fast operator
+
+* Lead comes in
+* Response within 5 minutes
+* Call booked same day
+* Demo shown same day
+* Proposal sent same day
+
+Total: 24 hours
+
+---
+
+## Martial arts school example
+
+A BJJ gym owner fills out a form.
+
+Slow:
+
+> "Thanks, we'll get back to you."
+
+Two days later.
+
+Fast:
+
+> "I recorded a custom video showing exactly how your missed calls are costing trial memberships. Can you jump on Zoom at 4 PM?"
+
+Now you're discussing money while competitors haven't replied.
+
+---
+
+## Internalization exercise
+
+Ask yourself daily:
+
+> "What am I waiting for that could happen today?"
+
+Examples:
+
+* Demo tomorrow → demo today
+* Proposal Friday → proposal today
+* Outreach next week → outreach today
+
+---
+
+# 2. Speed in Building Offers
+
+Many agency owners spend months planning.
+
+The lesson suggests:
+
+> Launch before you feel ready.
+
+Not recklessly—but quickly.
+
+---
+
+### Bad
+
+Month 1:
+
+* Logo
+* Website redesign
+* Business cards
+* Brand colors
+
+No customers.
+
+---
+
+### Better
+
+Week 1:
+
+* Simple landing page
+* Demo AI receptionist
+* Stripe link
+* Calendly
+
+Start selling.
+
+---
+
+## Example
+
+You don't need:
+
+* 50 martial arts clients
+* perfect branding
+* huge CRM setup
+
+You need:
+
+* one gym
+* one working AI receptionist
+* one result
+
+That result teaches more than 100 hours of planning.
+
+---
+
+# 3. Speed in Outreach
+
+This is where the lesson applies heavily.
+
+---
+
+### Slow agency
+
+20 gyms contacted per week.
+
+After 6 months:
+
+* 520 contacts
+
+---
+
+### Fast agency
+
+50 gyms per day.
+
+5 days per week.
+
+After 6 months:
+
+* 6,000+ contacts
+
+---
+
+The second operator gets dramatically more:
+
+* conversations
+* objections
+* demos
+* referrals
+* sales
+
+because they're running more experiments.
+
+---
+
+## Martial arts examples
+
+Contact:
+
+* BJJ academies
+* MMA gyms
+* Muay Thai gyms
+* Boxing gyms
+* Karate schools
+* Taekwondo schools
+* Judo clubs
+
+Don't spend three days researching one prospect.
+
+Get the message out.
+
+---
+
+# 4. Speed in Product Iteration
+
+Your AI agent will never be perfect.
+
+The fastest-growing companies improve through feedback.
+
+---
+
+### Version 1
+
+Agent answers:
+
+> "Thanks for calling."
+
+Good.
+
+Launch.
+
+---
+
+### Version 2
+
+Adds:
+
+* trial class booking
+* FAQ handling
+* missed call recovery
+
+Launch.
+
+---
+
+### Version 3
+
+Adds:
+
+* membership pricing logic
+* lead qualification
+* SMS follow-up
+
+Launch.
+
+---
+
+Many founders never reach Version 3 because they spend months perfecting Version 1.
+
+---
+
+# 5. Speed in Learning
+
+The speaker's deeper point is:
+
+> Real-world feedback beats endless theory.
+
+For your business:
+
+---
+
+### Don't spend 3 months learning:
+
+* AI
+* sales
+* marketing
+* automation
+
+before selling.
+
+---
+
+### Instead
+
+Week 1:
+
+Sell.
+
+Week 2:
+
+Discover objections.
+
+Week 3:
+
+Improve.
+
+Week 4:
+
+Sell again.
+
+---
+
+Examples of things you'll learn faster from one sales call than from ten hours of YouTube:
+
+* Why gym owners don't buy
+* Budget constraints
+* Staff frustrations
+* Missed-call volume
+* Current software stack
+
+---
+
+# 6. Speed in Decision Making
+
+Many entrepreneurs delay tiny decisions.
+
+---
+
+### Example
+
+You notice:
+
+* 40% of prospects ask about texting
+
+Slow:
+
+* Think about it for 3 weeks
+
+Fast:
+
+* Add SMS follow-up today
+
+---
+
+### Example
+
+Three clients ask for appointment confirmations.
+
+Slow:
+
+* Build a roadmap
+
+Fast:
+
+* Add it this week
+
+---
+
+The market is giving you instructions.
+
+Move quickly when patterns appear.
+
+---
+
+# 7. Speed Creates Momentum
+
+This is the airplane analogy in practical form.
+
+Businesses die when momentum stops.
+
+For your AI agency:
+
+Momentum means:
+
+* outreach happening
+* demos happening
+* proposals going out
+* clients onboarding
+* testimonials being collected
+
+---
+
+Bad week:
+
+* no outreach
+* no demos
+* no content
+* no follow-ups
+
+Momentum drops.
+
+---
+
+Good week:
+
+* 250 contacts
+* 10 demos
+* 3 proposals
+* 1 new client
+
+Even if some things fail, you're moving.
+
+---
+
+# 8. Where NOT to Apply This Lesson
+
+This is where many people misunderstand "speed."
+
+Never sacrifice:
+
+### Client trust
+
+Don't promise:
+
+> "We'll increase memberships 300%."
+
+if you can't prove it.
+
+---
+
+### Product reliability
+
+Don't deploy broken AI agents that:
+
+* hang up
+* misbook classes
+* lose leads
+
+---
+
+### Cash flow discipline
+
+The TV company story demonstrates a danger:
+
+Revenue ≠ profit.
+
+For your business:
+
+Track:
+
+* Monthly recurring revenue
+* Client acquisition cost
+* Churn
+* Gross margin
+* Cash reserves
+
+Every month.
+
+---
+
+# A Martial Arts AI Agency Version of Lesson 1
+
+If I translated the lesson into a practical operating rule for your company, it would be:
+
+> Contact prospects faster than competitors. Respond to leads faster than competitors. Launch improvements faster than competitors. Learn from the market faster than competitors. But never sacrifice service quality, honesty, or financial stability to move quickly.
+
+### Concrete weekly targets
+
+* Respond to inbound leads: under 5 minutes
+* Send proposals: within 24 hours
+* Launch client accounts: within 48 hours
+* Test one new script improvement: weekly
+* Contact 250+ prospects: weekly
+* Collect at least one customer feedback session: weekly
+* Review metrics: weekly
+
+That's how to internalize the useful core of the "speed" lesson and apply it directly to an AI phone agent business for martial arts schools.

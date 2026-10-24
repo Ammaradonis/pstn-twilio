@@ -1,0 +1,535 @@
+Stripped of the packaging, the lesson is one idea: **before you build, find a person who has no reason to flatter you and no ability to hide behind jargon, and let them react to your business cold.** The rest — his mum, the Lamborghini — is illustration. Here's how it actually applies to you, plus one place the lesson is wrong that will cost you if you copy it literally.
+
+## 1. Fix the flaw in the method first
+
+He says your mum won't bullshit you. Half true. Mums won't bullshit you about *whether they'd buy*. They absolutely will bullshit you about *whether your idea is good*, because they love you.
+
+The reliable version: **never ask about your idea, ask about their life.** Opinions and compliments are noise. Facts about the past and commitments in the present are signal.
+
+- Noise: "Would you use an AI receptionist?" → "Yeah, sounds useful." Means nothing.
+- Signal: "How many calls came in last Tuesday while you were on the mat? What happened to them?"
+- Noise: "Do you think $297/month is fair?"
+- Signal: "What are you paying for right now to get new students, and what did you cancel last year?"
+- Noise: "Would you recommend this to other school owners?"
+- Signal: "Which three owners would you text about it today? Can you send one now while I'm here?"
+
+Notice his own best example follows this rule by accident. He didn't ask his mum "is a course on picking up women a good idea?" — her reaction was to *his observed behaviour*. That's a fact, not an opinion.
+
+## 2. You have two mums, not one
+
+This is the biggest adaptation. You sell B2B, so the person paying and the person experiencing the product are different humans, and both need the cold test.
+
+**Mum A — the buyer.** A 55-year-old 5th-dan who runs a 130-student school, teaches five nights a week, keeps attendance in a spreadsheet his wife maintains, got burned by a marketing agency in 2023, and thinks "AI" means the thing that's stealing artists' jobs.
+
+**Mum B — the caller.** A 38-year-old mother, 8:40pm, her seven-year-old just asked about karate after school. She wants: price, class times, is he too young, is it safe, do you do birthday parties. She has three schools open in browser tabs and will book with whoever answers first.
+
+Test both separately. A product that delights Mum A and annoys Mum B kills the schools that pay you. A product Mum B loves that Mum A can't set up never gets installed.
+
+## 3. Find your massage oil and delete it
+
+His mum's real finding wasn't "too expensive." It was: *the thing the founder is proud of is the thing the customer doesn't care about.* The oil was the founder's ego dressed as a feature.
+
+Your massage oil candidates:
+
+- "Sub-800ms latency, it sounds indistinguishable from a human." Owner hears: technobabble.
+- "It's built on a fine-tuned model with a custom voice." Owner hears: nothing.
+- "Full CRM integration via API." Owner hears: *something is going to break and I'll be on the phone with support.*
+- "24/7 availability." Closer, but still feature-shaped.
+- "Natural conversation flow." Nobody has ever bought anything for this reason.
+
+What survives the mum test is arithmetic in her language: *last month 41 calls went unanswered; a kids' trial that signs up is worth roughly £1,400 a year to you; you need to save one call a month for this to be free.* That sentence sells. The latency number doesn't — it's the reason the sentence is true, which is a different job.
+
+Same trap in your pricing conversation. If the first words out of a school owner's mouth are "how much?" followed by a wince, you've been filed in the wrong mental category. If they think you're an answering machine, you're priced against £20/month. If they think you're a part-time front desk hire, you're priced against £1,200/month. The category is the whole game, and you find out which one you've landed in by watching the wince.
+
+## 4. Harvest the "no" reasons and engineer around them
+
+The massage section of the transcript is a loop: *why wouldn't you buy → because X → here's how we kill X → okay, hmm.* Run that loop deliberately. Predictable X's from martial arts school owners:
+
+- **"My students like that I pick up."** → Kill: it only answers on the third ring, or only when you're mid-class; you keep every call you want.
+- **"It'll sound like a robot and embarrass my school."** → Kill: here's a recording of it handling a real call from your own number, judge for yourself.
+- **"What if it quotes the wrong price or promises a free month?"** → Kill: it only reads from a sheet you fill in, and it texts you a transcript of every call.
+- **"I already have my wife/front desk on it."** → Kill: it covers evenings and weekends, which is when 70% of parent calls happen.
+- **"Another subscription."** → Kill: pay per booked trial for the first 60 days.
+- **"I'm not technical, I can't set it up."** → Kill: you send me your timetable and prices, I set it up, you get a number to forward.
+- **"What happens when it can't answer something?"** → Kill: it takes a message and texts you immediately; here's what that looks like.
+
+Write every one of these down verbatim from real conversations. Anything said by three or more owners becomes either a line on your landing page or a change to the product. That's the whole discipline.
+
+## 5. Mine the "stupid that circles back to smart"
+
+The two-seat Lamborghini comment is a naive person accidentally exposing a real framing problem. Yours will sound like this:
+
+- **"So it's a robot pretending to be a person?"** Sounds dumb. It's actually a disclosure and trust question, and in some places a legal one. Deal with it before a parent posts about it.
+- **"Why doesn't it just ring them back?"** Sounds dumb. Might be your actual product — automated callback plus text on every missed call could outperform answering live and be a far easier sell.
+- **"Can't the mum just text?"** Sounds dumb. Most parents under 40 *prefer* text. Your phone agent may be a wedge for a text-first booking product.
+- **"What if a kid calls it?"** Sounds dumb. You serve a business full of minors. An owner who imagines that conversation going wrong will never sign, and you need an answer ready.
+- **"Isn't this just an answering machine?"** Sounds dumb. It's the category problem from point 3, said out loud by someone with no filter.
+
+## 6. The ritual, weekly
+
+1. **Five calls a week** to school owners who don't know you. They answer their own phones — that's the point of your product, and it makes them easy to reach.
+2. **Ask about last week, not about your idea.** "Walk me through the last new student who called you."
+3. **Two columns:** reasons they'd buy, reasons they wouldn't. Verbatim, their words, not your summary.
+4. **Push to commitment.** "Can I set it up on your line Monday?" A yes to your idea plus a no to Monday means the idea failed.
+5. **Run the Mum B test monthly.** Hand your demo number to someone genuinely non-technical — no explanation — and say "you want to sign your kid up for karate." Record it. Watch where they hesitate, interrupt, or say "can I talk to a person." That recording will teach you more than any analytics dashboard.
+
+One thing worth saying plainly: the parts of that transcript where he calls his mother stupid aren't the insight, they're the packaging. The insight is that *distance from your product is what makes feedback valuable*, and you can get that from any non-expert who'll be blunt with you. You don't have to insult anyone to run it.
+
+The core idea in that lesson is **not literally “ask your mother.”** The deeper principle is:
+
+> Find someone who represents a normal buyer, has no emotional investment in your industry jargon, and is comfortable telling you the truth.
+
+For your business—**AI phone agents for martial arts schools**—this lesson is extremely relevant because you're selling a technically sophisticated solution to people who generally do **not** buy technology for technology's sake.
+
+Most martial arts school owners don't wake up thinking:
+
+> "I need conversational AI with natural-language intent classification and automated lead qualification."
+
+They wake up thinking:
+
+> "I missed 12 calls this week and probably lost students."
+
+That's the gap this lesson is trying to expose.
+
+---
+
+# Principle 1: The customer doesn't care about your technology
+
+In the massage example, the mother didn't care about massage oil.
+
+For you:
+
+### What you think matters
+
+* AI voice models
+* Human-like conversations
+* Call routing
+* Integrations
+* LLM architecture
+* Voice cloning
+* Automation workflows
+
+### What the school owner cares about
+
+* Did I miss fewer leads?
+* Did more people book trials?
+* Did revenue increase?
+* Did my staff spend less time answering phones?
+
+---
+
+### Mother Test Example #1
+
+You say:
+
+> "We provide AI phone agents that answer inquiries using advanced conversational AI."
+
+A typical consumer says:
+
+> "What's that?"
+
+Problem identified.
+
+---
+
+### Mother Test Example #2
+
+You say:
+
+> "The AI can handle inbound lead qualification."
+
+A typical consumer says:
+
+> "What does that mean?"
+
+Problem identified.
+
+---
+
+### Mother Test Example #3
+
+You say:
+
+> "The AI books trial classes automatically."
+
+A typical consumer says:
+
+> "Oh, so I don't miss leads when I'm teaching class?"
+
+Now you're speaking their language.
+
+---
+
+# Principle 2: Every confused question is market research
+
+Most founders get defensive.
+
+The lesson says:
+
+**Write down every stupid question.**
+
+Those are usually your future objections.
+
+---
+
+## Example
+
+You tell a school owner:
+
+> "The AI answers all your calls."
+
+They ask:
+
+> "What if it sounds robotic?"
+
+Don't explain why they're wrong.
+
+Write it down.
+
+This is an objection.
+
+Now your website needs:
+
+> "Sounds natural and conversational."
+
+---
+
+Another example:
+
+> "What if parents realize it's AI?"
+
+Write it down.
+
+Future objection.
+
+---
+
+Another:
+
+> "What if it books people incorrectly?"
+
+Write it down.
+
+Future objection.
+
+---
+
+Another:
+
+> "Can it answer questions about uniforms?"
+
+Write it down.
+
+Future objection.
+
+---
+
+Your prospects are literally writing your sales copy for you.
+
+---
+
+# Principle 3: Listen for where they think you're expensive
+
+This was a major point in the massage example.
+
+The mother immediately attacked price.
+
+The same thing will happen to you.
+
+---
+
+### Example
+
+You say:
+
+> "It's $497 per month."
+
+School owner says:
+
+> "That's expensive."
+
+Don't argue.
+
+Ask:
+
+> "Compared to what?"
+
+Maybe they'll say:
+
+> "My receptionist already answers phones."
+
+Interesting.
+
+Now you know they're comparing you to labor.
+
+---
+
+Maybe they say:
+
+> "I only get 15 calls a month."
+
+Now you know volume is the issue.
+
+---
+
+Maybe they say:
+
+> "I don't know if it'll actually get me students."
+
+Now you know trust is the issue.
+
+---
+
+Each answer reveals the real obstacle.
+
+---
+
+# Principle 4: Find out what category they put you in
+
+This is huge.
+
+Many businesses fail because customers misunderstand what they are.
+
+---
+
+### You think:
+
+> "We're an AI automation company."
+
+### School owner thinks:
+
+> "You're some software thing."
+
+Bad.
+
+---
+
+### Better:
+
+> "We're a 24/7 front desk that never misses a call."
+
+Now they instantly understand.
+
+---
+
+### Even better:
+
+> "We're the employee who answers every lead while you're teaching."
+
+Now they understand the value.
+
+---
+
+Notice:
+
+The more technical your description becomes, the weaker it gets.
+
+The more concrete it becomes, the stronger it gets.
+
+---
+
+# Principle 5: Ask why they wouldn't buy
+
+This is probably the most valuable part of the lesson.
+
+Most entrepreneurs ask:
+
+> "Would you buy this?"
+
+Wrong question.
+
+People lie.
+
+Instead ask:
+
+> "Why wouldn't you buy this?"
+
+---
+
+For martial arts schools, answers might be:
+
+### "I don't trust AI."
+
+Solution:
+
+* Show recordings.
+* Offer trial periods.
+* Demonstrate real conversations.
+
+---
+
+### "I'm afraid it will mess up."
+
+Solution:
+
+* Human handoff.
+* Call review.
+* Approval workflows.
+
+---
+
+### "My wife already answers calls."
+
+Solution:
+
+* Position it as backup coverage.
+* Nights, weekends, missed calls.
+
+---
+
+### "I don't get enough leads."
+
+Solution:
+
+* Focus on lead capture.
+* Missed-call text-back.
+* Re-engagement campaigns.
+
+---
+
+### "I don't have time to learn software."
+
+Solution:
+
+* Done-for-you setup.
+* No dashboards required.
+
+---
+
+Every objection contains a roadmap.
+
+---
+
+# Principle 6: The dumb comments are often gold
+
+This is the Lamborghini story.
+
+Sometimes people make comments that sound uninformed but reveal something important.
+
+---
+
+### Example
+
+A school owner says:
+
+> "Why would I need AI? My phone already has voicemail."
+
+At first glance:
+
+> "That's a stupid comment."
+
+But underneath is:
+
+> "I don't understand the difference."
+
+That's your fault, not theirs.
+
+Your marketing hasn't communicated value.
+
+---
+
+Another:
+
+> "Can't my teenager answer the phone?"
+
+What they're really saying:
+
+> "I don't perceive enough ROI."
+
+Valuable feedback.
+
+---
+
+Another:
+
+> "I don't want robots talking to parents."
+
+What they're really saying:
+
+> "Trust matters more than efficiency."
+
+Extremely valuable insight.
+
+---
+
+# Principle 7: Build messaging from their words, not yours
+
+This is where most AI businesses fail.
+
+They write:
+
+> AI-Powered Conversational Lead Qualification Platform
+
+Nobody cares.
+
+---
+
+If ten martial arts school owners say:
+
+> "I miss calls while I'm teaching."
+
+Your headline becomes:
+
+> Never Miss a New Student Call While You're On the Mats
+
+---
+
+If they say:
+
+> "Parents call after hours."
+
+Headline:
+
+> Answer Every Parent Call Even At 10 PM
+
+---
+
+If they say:
+
+> "I can't afford another employee."
+
+Headline:
+
+> Handle Every Inquiry Without Hiring Front Desk Staff
+
+---
+
+The market writes the messaging.
+
+You just listen.
+
+---
+
+# How to implement this immediately
+
+Talk to 10 people who are as close as possible to your target market.
+
+Ask:
+
+1. "What do you think this business does?"
+2. "What confuses you?"
+3. "What concerns you?"
+4. "What sounds expensive?"
+5. "Why wouldn't you buy?"
+6. "What would have to be true for you to buy?"
+7. "How would you explain this business to a friend?"
+
+Write down their exact words.
+
+Do not defend.
+Do not explain.
+Do not educate.
+
+Just collect data.
+
+For your AI phone agent business, you'll likely discover that owners care far less about AI than you think. What they'll care about is:
+
+* missed calls
+* missed leads
+* after-hours coverage
+* administrative workload
+* trial bookings
+* student retention
+* revenue
+
+If your messaging solves those problems in plain language, you're applying the lesson correctly. If you're explaining AI, you're probably still talking about the massage oil.

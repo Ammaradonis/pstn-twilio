@@ -27,7 +27,7 @@ from email_finder.fb_groups import (
     composer_closed,
     form_done,
     group_card,
-    group_rows,
+    group_page_open,
     input_text_arg,
     join_answer,
     join_answer_text,
@@ -40,6 +40,7 @@ from email_finder.fb_groups import (
     sanitize,
     submit_control,
     visible,
+    group_rows,
 )
 
 FB = "com.facebook.katana"
@@ -191,6 +192,18 @@ def form_nodes(title: str, *lines: str, button: str = "Submit") -> list[Node]:
         top += 50
     nodes.append(node(text=button, clickable=True, bounds=(40, 1200, 660, 1260)))
     return nodes
+
+
+def test_a_named_join_button_means_the_group_page_is_open():
+    # A search for an exact group name can land on the group itself; the page's
+    # own button says "Join <name> group", while a result card only says "Join".
+    name = "Nottingham Business Promotions"
+    page = [node(f"Join {name} group"), node("Member tools more options")]
+    assert group_page_open(page, name)
+    assert group_page_open([node("Cancel request")], name)
+    results = [node(f"{name},Public · 5.8K members"), node("Join")]
+    assert not group_page_open(results, name)
+    assert not group_page_open(page, "Another Group")
 
 
 def test_a_group_page_is_not_an_application_form():

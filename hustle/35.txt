@@ -1,0 +1,541 @@
+## The mechanic that actually makes this work
+
+The reason "aim too high" works isn't motivation. It's that **goal size disqualifies mechanisms**. A 3x goal doesn't get hit by working 3x harder. It gets hit by being forced to abandon the method that could only ever produce 1x.
+
+Run it on your own business:
+
+- **Goal: 10 schools.** The mechanism is you, cold calling gyms off Google Maps, doing demos on Zoom. That works. It also caps out around 10-25 and eats your whole week.
+- **Goal: 100 schools.** Cold calling can't get there. Now you're forced into things like a proper outbound system, a self-serve demo line prospects can call themselves, referral incentives from your existing schools.
+- **Goal: 1,000 schools.** Now even that breaks, and the only things left standing are channel plays. Franchise and affiliate groups (Gracie Barra, ATA, Premier Martial Arts, Tiger Schulmann's) where one conversation puts you in front of hundreds of locations. Integration partnerships with the software they already run on (Zen Planner, Kicksite, PushPress, Spark, Gymdesk). A booth at the Martial Arts SuperShow instead of 200 cold calls. Consulting groups like Kovar or NAPMA that already have the trust and the mailing list.
+
+That's the whole payload of "aim for the moon." You don't get the moon. You get forced to stop doing the thing that was never going to scale. **Set the number, then ask: what would have to be true? The answer is always a different mechanism, and that's the actual output of the exercise.**
+
+## "Don't be one of those deluded dickheads" is the other half, and it's the important half
+
+The text contradicts itself on purpose and most people only absorb the loud half. The resolution:
+
+**Aim absurdly high on the destination. Be brutally literal about this week.**
+
+- Destination: "Every martial arts school in the English-speaking world answers its phone with my agent." Fine. Say it out loud.
+- This week: "Twelve booked demos, three closes, $2,400 new MRR." Nothing aspirational in that sentence.
+
+The deluded guy has a $500k number and no calendar. You want a moon-sized number *and* a fanatically small weekly number, with a visible chain between them. If you can't write the chain (1,000 schools → 3 franchise groups → 40 conversations → 200 outbound touches this month), you don't have a goal, you have a mood.
+
+## "Selling it to the whole world" means recompute your market, literally
+
+Go actually count. Not vibes, a spreadsheet.
+
+- **Vertical depth:** US martial arts schools number in the tens of thousands. Add UK, Australia, Canada, Ireland, then Brazil for BJJ. At $500/mo, 2% of a 30,000-school market is $3M/year. That number is not delusional, it's arithmetic.
+- **Vertical width:** the pain you solve is "the owner is physically unable to answer the phone while working." That's identical at dance studios, gymnastics gyms, swim schools, CrossFit boxes, youth soccer academies, driving schools. Same call script, different noun. If you build so the vertical is a config file and not a rebuild, your TAM multiplies without new product.
+- **Product width per account:** you're probably selling missed-call answering. The same agent can do dormant-lead reactivation (call 400 old leads from their CRM), trial no-show follow-up, failed-payment recovery, and belt-testing reminders. That's 4x revenue per school you already own.
+
+## Price like you aimed high
+
+Aiming low shows up in your pricing before it shows up anywhere else.
+
+Do the LTV math a school owner won't do themselves. Kids program at ~$180/month, average tenure 18 months, plus testing fees and uniform. One recovered student is roughly $3,000+. If your agent recovers four students a month, you created ~$12,000 of enrolled value.
+
+- **Aimed low:** $297/mo, "AI receptionist," competing with every generic answering service on price.
+- **Aimed high:** $897/mo positioned as a student-acquisition system, with the ROI stated in students not minutes.
+- **Aimed higher:** $150 per booked-and-showed trial, so you capture upside and the school feels zero risk.
+- **Highest:** enterprise contract with a 200-location franchise group at a per-location rate, one signature, one onboarding process.
+
+Same product. 3-10x the revenue. That gap is entirely a function of what you thought you were allowed to ask for.
+
+## "New money, forget the old money"
+
+This is the most operationally useful line in the whole thing. Convert it into a metric.
+
+Stop looking at total MRR. Total MRR is a number that congratulates you for things you did in April. Track **net new MRR added this month** as your primary scoreboard, and put it somewhere you see it daily.
+
+- If you're at $8k MRR and added $400 this month, the real number is $400. A good month looks bad, a bad month can't hide behind an accumulated total.
+- Watch your calendar with the same lens. When servicing 20 existing schools eats the hours that used to be prospecting, growth stops and the bank balance disguises it for about four months. Ring-fence outbound time before support time.
+- Same discipline on the product: a feature that makes existing customers happy is old money. A feature that unlocks a segment you can't currently sell to is new money.
+
+## "Never be content" works as a ratchet, not as a feeling
+
+The usable version is: **every time you hit a number, that number becomes the new floor and the new zero.**
+
+- Hit $2k/day, that's now the baseline. Not a win, a starting line. The question is what mechanism gets to $6k, and it's probably not the one that got you to $2k.
+- Ratchet the standards too, not just revenue. Agent answer rate under 3 seconds. Booking conversion from 30% to 45%. Churn under 3%. Onboarding time from 10 days to 2.
+- Kill your own best product. When your missed-call agent is working perfectly, that's the moment to build the reactivation agent, not the moment to admire it.
+
+## One amendment, because it will cost you money otherwise
+
+Keep all of the above. Drop the line "it's never enough to make you happy."
+
+Not for soft reasons. For performance ones. Founders who need the number to feel okay about themselves consistently make worse decisions: they take the fast deal over the right deal, they underprice to close today, they can't sit through the 90 days a channel partnership takes to pay off, and they burn out at exactly the point where the compounding starts. Greed is fine as an engine. Self-worth strapped to this month's MRR is a governor on how high you can actually aim, because it makes you flinch at big slow bets.
+
+The version that holds: **be relentlessly discontent with the numbers, and separately, be fine with yourself.** You need to be able to look at $2k/day, feel nothing, and ask what's next. That's a colder and more durable state than the one the text is describing, and it's the one that survives year three.
+
+## What to do in the next 48 hours
+
+1. Write your current 12-month revenue goal. Multiply by four. That's the new one.
+2. Write the mechanism that gets you to the old number. Cross it out. It won't reach the new one.
+3. List three mechanisms that could: name the specific franchise group, the specific software integration, the specific trade show.
+4. Raise your price on the next prospect, not the current ones. Watch what happens.
+5. Put "net new MRR this month" on a whiteboard where you work, starting at zero on the 1st.
+
+The useful part of that passage is **raising your ceiling**. The dangerous part is **turning ambition into delusion or endless dissatisfaction**.
+
+For your business—AI phone agents for martial arts schools—the strongest interpretation is:
+
+> Think in terms of categories, markets, and systems that are 10x larger than your current situation, while executing based on today's actual numbers.
+
+The speaker is basically saying:
+
+* Don't build for where you are.
+* Build for where you could realistically grow.
+* Don't mentally cap yourself at a small outcome.
+* Don't become satisfied too early.
+* But don't pretend you've achieved things you haven't achieved.
+
+Let's translate each principle into something operational.
+
+# 1. "Aim Way Too High" = Design for a much bigger market than your current reality
+
+Most founders accidentally build a business sized to their current confidence.
+
+Example:
+
+### Small Aim
+
+You think:
+
+> "If I can get 10 martial arts schools paying €300/month, that's amazing."
+
+10 schools × €300 = €3,000/month.
+
+Your decisions become optimized for a tiny company.
+
+You:
+
+* manually onboard
+* manually customize
+* manually support
+* don't create systems
+
+---
+
+### Higher Aim
+
+You think:
+
+> "What would this business need to look like to serve 1,000 martial arts schools?"
+
+Now different questions appear:
+
+* How do I onboard schools without me?
+* How do I train the AI automatically?
+* How do I monitor calls at scale?
+* How do I handle hundreds of leads daily?
+* How do I standardize integrations?
+
+The larger target changes your behavior today.
+
+That's the real lesson.
+
+---
+
+## Application Example
+
+Current:
+
+* 3 schools
+* 50 calls/day
+
+Think:
+
+> What if I had 500 schools and 10,000 calls/day?
+
+Now you'll build:
+
+* templates
+* SOPs
+* dashboards
+* automated reporting
+
+instead of custom work.
+
+That is "aiming too high" in a productive way.
+
+---
+
+# 2. "Why Can't You Be A Billionaire?" = Stop inventing limitations
+
+The speaker asks:
+
+> Why couldn't you?
+
+That's actually a strategic question.
+
+Most people unconsciously assume:
+
+* "My niche is too small."
+* "I'm not experienced enough."
+* "I'm not connected enough."
+
+But let's test your business.
+
+---
+
+### Limiting View
+
+"I sell AI receptionists for martial arts schools."
+
+Sounds small.
+
+---
+
+### Expanded View
+
+"I automate inbound customer acquisition for local service businesses."
+
+Suddenly:
+
+* martial arts schools
+* boxing gyms
+* BJJ academies
+* MMA gyms
+* fitness studios
+* dance studios
+* yoga studios
+* swim schools
+* tutoring centers
+
+all become potential customers.
+
+---
+
+### Even Bigger View
+
+"I build AI-powered front-desk infrastructure."
+
+Now:
+
+* healthcare clinics
+* law firms
+* real estate agencies
+* contractors
+* restaurants
+* automotive shops
+
+become possible.
+
+Notice what changed?
+
+Not the product.
+
+The frame.
+
+That's what "aim higher" means.
+
+---
+
+# 3. "Triple or Quadruple Expectations"
+
+This is one of the most useful ideas in the passage.
+
+Not because the number matters.
+
+Because most entrepreneurs dramatically underestimate outcomes.
+
+Example:
+
+You tell yourself:
+
+> "I'd be thrilled with 20 schools."
+
+Ask:
+
+> Why not 80?
+
+Then ask:
+
+> What would have to be true for 80?
+
+Now your thinking changes.
+
+You start asking:
+
+### Sales
+
+* Can I cold email at scale?
+* Can I use partnerships?
+* Can I get referrals?
+
+### Product
+
+* Can onboarding take 15 minutes?
+* Can schools self-serve?
+
+### Marketing
+
+* Can I become known in the martial arts industry?
+
+The bigger target forces better thinking.
+
+---
+
+# 4. "Don't Talk Like You're Worth Millions When You've Sold Zero"
+
+This is arguably the most important part.
+
+The speaker mocks people who say:
+
+> "I'm building a billion-dollar company."
+
+when they've made no sales.
+
+For you:
+
+Bad mindset:
+
+> "This will be the biggest AI company in combat sports."
+
+when you have zero paying customers.
+
+Good mindset:
+
+> "The market opportunity is huge. My current objective is getting the next five schools."
+
+Big vision.
+
+Small execution.
+
+Both at once.
+
+---
+
+### Example
+
+Vision:
+
+> 5,000 schools using my system.
+
+Today's task:
+
+> Send 50 outreach messages.
+
+Vision:
+
+> Category leader.
+
+Today's task:
+
+> Improve appointment-booking rate by 5%.
+
+Vision:
+
+> Millions in ARR.
+
+Today's task:
+
+> Close one demo.
+
+The vision stays huge.
+
+The actions stay concrete.
+
+---
+
+# 5. "Never Be Content" (Useful Version)
+
+This needs modification.
+
+If interpreted literally, it creates miserable founders.
+
+A better version is:
+
+> Be grateful for progress but never stop improving.
+
+---
+
+### Bad Interpretation
+
+You hit:
+
+* €5k MRR
+
+You think:
+
+> "Worthless."
+
+That's unhealthy.
+
+---
+
+### Better Interpretation
+
+You hit:
+
+* €5k MRR
+
+You think:
+
+> "Good. Now what's the next bottleneck?"
+
+You acknowledge progress.
+
+Then continue.
+
+---
+
+### Business Example
+
+At 10 schools:
+
+Ask:
+
+* Why not 30?
+
+At 30 schools:
+
+Ask:
+
+* Why not 100?
+
+At 100 schools:
+
+Ask:
+
+* Why not 300?
+
+At 300 schools:
+
+Ask:
+
+* Why not dominate the category?
+
+Constant expansion.
+
+Not constant self-hatred.
+
+---
+
+# 6. "Be Greedy" = Increase Your Standards
+
+The healthiest translation of "be greedy" is:
+
+> Raise standards, not just income targets.
+
+Most founders only chase revenue.
+
+Elite founders chase capability.
+
+Example:
+
+Instead of:
+
+> "I want €20k/month."
+
+Think:
+
+> "I want the best AI phone agent product in martial arts."
+
+Then:
+
+> "I want the highest retention."
+
+Then:
+
+> "I want the highest answer rate."
+
+Then:
+
+> "I want the best onboarding experience."
+
+Revenue follows.
+
+---
+
+### Example
+
+Average founder:
+
+"I want 50 clients."
+
+High-standard founder:
+
+"I want 50 clients with 95% retention."
+
+Even higher:
+
+"I want 50 clients who actively refer me."
+
+The target evolves.
+
+---
+
+# 7. "Forget the Old Money. Look for New Money."
+
+This part is especially relevant.
+
+Most beginners compete for existing budgets.
+
+New money is created when you generate value that wasn't previously captured.
+
+---
+
+### Old Money
+
+You tell schools:
+
+> "Replace your receptionist with my AI."
+
+Now you're fighting for existing payroll budget.
+
+---
+
+### New Money
+
+You tell schools:
+
+> "My AI follows up with missed callers and books 15 extra trials per month."
+
+Now you're attached to revenue creation.
+
+Completely different conversation.
+
+---
+
+### Another Example
+
+Old Money:
+
+> "Pay me €300/month."
+
+New Money:
+
+> "I help you convert leads that currently disappear."
+
+The owner thinks:
+
+> "This isn't a cost. It's growth."
+
+That's where businesses get big.
+
+---
+
+# A Practical Operating Philosophy for Your Business
+
+A version of the passage I would actually use:
+
+1. Hold a vision that's 10–100x bigger than your current position.
+2. Never let today's size determine tomorrow's ambition.
+3. Don't brag about future success before current success exists.
+4. Celebrate wins briefly, then find the next bottleneck.
+5. Build systems for the company you want, not just the company you have.
+6. Focus on creating new revenue for clients, not just replacing costs.
+7. Think in terms of hundreds or thousands of schools, even if you currently have one.
+8. Execute based on today's facts, not tomorrow's fantasies.
+
+For your specific niche, the "aim too high" version is not:
+
+> "I'm going to be a billionaire."
+
+It's:
+
+> "Instead of asking how to get 10 martial arts schools, I'm going to ask what would be required to become the default AI front desk for 1,000+ schools worldwide—and then work backwards to the next sale."
+
+That captures the ambition in the passage without falling into the delusion that the speaker warns against.

@@ -229,6 +229,18 @@ def test_join_takes_the_best_candidates_then_advances(tmp_path, monkeypatch):
     assert result.stage == "ENGAGE"
 
 
+def test_a_pending_request_is_rechecked_before_fresh_candidates(tmp_path, monkeypatch):
+    runner, _, groups = make(tmp_path, monkeypatch, None)
+    runner.store.put(GroupRecord(name="Waiting For Approval", score=60, state="requested",
+                                 join_attempts=1, members=900))
+    runner.store.put(GroupRecord(name="Fresh Candidate", score=99, state="candidate", members=9000))
+    result = asyncio.run(runner.step(run("JOIN")["run"], {"joins": 1}))
+    assert groups.joined == ["Waiting For Approval"]
+    # The note says what the registry holds, so "0 confirmed in this batch" is not
+    # mistaken for "nothing was ever joined".
+    assert "registry: 1 joined, 0 pending, 2 to try" in result.note
+
+
 def test_join_leaves_low_scoring_candidates_alone(tmp_path, monkeypatch):
     runner, _, groups = make(tmp_path, monkeypatch, None)
     runner.store.put(GroupRecord(name="Testville Buy Sell", score=12, state="candidate"))

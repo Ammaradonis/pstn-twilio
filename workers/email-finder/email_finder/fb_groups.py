@@ -358,6 +358,25 @@ def join_control(nodes: list[Node], group_name: str = "") -> tuple[Node | None, 
     return None, ""
 
 
+def group_page_open(nodes: list[Node], name: str) -> bool:
+    """Is the phone already on this group's own page?
+
+    A search for an exact group name often lands straight on the group instead of
+    a result list: Facebook's "Join <name> group" button is the page's own, while
+    a result card only ever says "Join". Reading that as a failed search is why
+    the join stage kept giving up while the page it wanted was already open.
+    """
+    target = (name or "").casefold().strip()
+    if not target:
+        return False
+    scoped = f"join {target} group"
+    for node in visible(nodes):
+        label = node.label.casefold().strip()
+        if label == scoped or label in {"cancel request", "leave group"}:
+            return True
+    return False
+
+
 @dataclass
 class FormSheet:
     """What Facebook's membership-questions sheet is asking for."""
@@ -794,7 +813,12 @@ class GroupStore:
                        and (g.join_attempts < 3 or g.state == "requested") and g.retry_at <= now
                        and (g.state in ("candidate", "requested") or
                             (g.state in ("failed", "refused") and g.note in retryable))),
-                      key=lambda g: (g.join_attempts, -g.score))
+                      # A request waiting for approval goes first. Rechecking it
+                      # costs no join, and until it flips to "joined" the group
+                      # can never be visited - but sorted by attempts alone it sat
+                      # behind 1,500 fresh candidates and was never looked at again.
+                      key=lambda g: (0 if g.state == "requested" else 1,
+                                     g.join_attempts, -g.score))
 
     def needs_visit(self, now: float | None = None, every_s: float = 6 * 3600) -> list[GroupRecord]:
         now = now if now is not None else time.time()
@@ -911,6 +935,22 @@ class FacebookGroups:
         """Wait in a way that yields to a lookup that wants the phone."""
         await self.phone._wait(seconds)
 
+    async def _wait_for(self, check, waits=(2.0, 3.0, 4.0, 5.0)) -> list[Node]:
+        """Read the screen until `check` holds, and return the last read.
+
+        The A20e takes five to fifteen seconds to paint a Facebook page on this
+        PC, so one read right after a tap sees the app's chrome and nothing else
+        ("Back", "Search", "Show profile"): the join stage then reported "the
+        card opened no Join control" for pages that were simply still loading.
+        """
+        nodes: list[Node] = []
+        for wait in waits:
+            await self._settle(wait)
+            nodes = await self._screen()
+            if check(nodes):
+                return nodes
+        return nodes
+
     async def _guard(self) -> str:
         """'' when it is safe to act, else why not (and pause what must pause)."""
         nodes = await self._screen()
@@ -997,7 +1037,7 @@ class FacebookGroups:
         nodes: list[Node] = []
         # The A20e takes a few seconds to swap a busy Reels screen for the search
         # box, and declaring it "never loaded" costs the town its only search.
-        for wait in (2.5, 2.5, 3.0):
+        for wait in (2.5, 2.5, 3.0, 4.0, 5.0):
             await self._settle(wait)
             nodes = await self._screen()
             query_shown = any(n.package.startswith(FACEBOOK) and n.clickable
@@ -1006,6 +1046,12 @@ class FacebookGroups:
             if query_shown and any(n.label.casefold() == "clear text" for n in nodes):
                 break
         else:
+            # Say what was on screen. A missing query field, the feed and a modal
+            # all looked identical from here, and the join stage reported them as
+            # "the group could not be opened" without a word about which it was.
+            seen = [n.label[:40] for n in visible(nodes)[:5]] or ["nothing"]
+            log.info("Facebook search %r: the search screen did not appear (%s)",
+                     term, seen)
             return False
         if groups_chip(nodes) is None:
             await self.phone._key("KEYCODE_ENTER")
@@ -1296,7 +1342,15 @@ class FacebookGroups:
                 record.note = why
                 return record
         async with self.phone._lock:
-            if not await self.phone._hold_phone(wait_s=10):
+            # A join is capped at twelve a day and needs the phone for a minute;
+            # ten seconds was never enough to wait out an Instagram slice, so the
+            # stage spent the day reporting "busy" instead of joining.
+            if not await self.phone._hold_phone(wait_s=90):
+                # Say what happened. Returning the record untouched left its old
+                # note in place, so a batch that lost the phone to the Instagram
+                # lookups reported "daily join cap reached" for a join cap that
+                # was not reached at all.
+                record.note = "busy (another process is using the phone)"
                 return record
             tapped = False
             try:
@@ -1304,8 +1358,6 @@ class FacebookGroups:
                 if why:
                     record.note = why
                     return record
-                if not pending:
-                    record.join_attempts += 1
                 record.retry_at = time.time() + 3600
                 if candidate.url:
                     record.url = candidate.url
@@ -1314,16 +1366,30 @@ class FacebookGroups:
                     record.state = "requested" if pending else "failed"
                     record.note = "the group could not be opened from its card"
                     return record
+                # The page is open: that is an attempt, and it is charged here
+                # rather than before the navigation. A card the search could not
+                # find is not an attempt against the group - charging it retired
+                # groups after three unlucky searches that never tapped Join.
+                if not pending:
+                    record.join_attempts += 1
                 await self._settle(PAGE_SETTLE_S)
                 blocked = await self._guard()
                 if blocked:
                     record.note = blocked
                     return record
-                nodes = await self._screen()
+                nodes = await self._wait_for(
+                    lambda screen: bool(join_control(screen, record.name)[1])
+                    or read_form(screen, record.name) is not None)
                 button, state = join_control(nodes, record.name)
                 if state == "joinable" and button is not None:
                     if pending:
-                        record.note = "pending membership is not confirmed; Join was not tapped again"
+                        # The Join control is back, so the request is gone
+                        # (declined or withdrawn). Flip it to a candidate: left as
+                        # "requested" it was re-read as pending forever, never
+                        # tapped again, and never became a membership.
+                        record.state = "candidate"
+                        record.join_attempts = 0
+                        record.note = "the pending request is gone; Join will be tapped again"
                         return record
                     # Peek, not reserve: a Join that opens a question sheet or does
                     # nothing has not spent a request, and charging it emptied the
@@ -1334,8 +1400,15 @@ class FacebookGroups:
                         return record
                     tapped = True
                     await self.phone._tap(button)
-                    await self._settle(2.5)
-                    return await self._settle_join(record, await self._screen())
+                    # Wait for the tap to show itself: a question sheet, the
+                    # "request sent" page, or a changed button. One read 2.5 s
+                    # later saw the unchanged page and recorded a real request as
+                    # "the state did not change".
+                    nodes = await self._wait_for(
+                        lambda screen: read_form(screen, record.name) is not None
+                        or form_done(screen)
+                        or join_control(screen, record.name)[1] not in ("joinable", ""))
+                    return await self._settle_join(record, nodes)
                 elif state in JOINED_LABELS:
                     record.state = "requested" if "request" in state else "joined"
                     record.note = f"already {state}"
@@ -1361,14 +1434,39 @@ class FacebookGroups:
         not its link, so the card itself is the only handle. False means the card
         was not found, which is reported rather than guessed at.
         """
-        if not await self._submit_search(name):
-            return False
-        for _ in range(3):
-            card = group_card(await self._screen(), name)
+        loaded = await self._submit_search(name)
+        for attempt in range(3):
+            nodes = await self._screen()
+            if group_page_open(nodes, name):
+                # The exact name went straight to the group's page, which is what
+                # this method is for.
+                return True
+            card = group_card(nodes, name)
             if card is not None:
                 await self.phone._tap(card)
-                await self._settle(PAGE_SETTLE_S)
-                return True
+                # Wait for the page itself: reading once right after the tap saw
+                # only the app's chrome and was reported as "opened no Join
+                # control" for a group that was loading normally.
+                nodes = await self._wait_for(
+                    lambda screen: group_page_open(screen, name)
+                    or join_control(screen, name)[0] is not None)
+                if group_page_open(nodes, name) or join_control(nodes, name)[0] is not None:
+                    return True
+                log.info("Facebook group %r: the card opened no Join control (%s)",
+                         name, [n.label[:30] for n in visible(nodes)[:4]])
+                return False
+            if attempt == 0:
+                # Name what was actually on the results screen. "Could not be
+                # opened" alone sent the next reader to the wrong end of the
+                # pipeline instead of to the search that found other groups.
+                seen = [row.name for row in group_rows(nodes)[:3]]
+                log.info("Facebook group %r is not on the results screen (saw %s)",
+                         name, seen or "no group cards")
+            if not loaded:
+                # The search never verified and there is no card: pressing on
+                # costs the phone a minute for nothing.
+                log.info("Facebook group %r: the search did not verify, so it was not opened", name)
+                return False
             await self.phone._swipe(_feed_swipe(*await self.phone._geometry()))
             await self._settle(2.0)
         return False

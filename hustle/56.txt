@@ -1,0 +1,544 @@
+## The mechanic underneath it
+
+Strip the examples away and the principle is this: **curiosity is the gap between something you know exists and something you don't know yet.** No gap, no pull. Which means most of the work isn't withholding information — it's *installing the question first.*
+
+Tate skips past this, but it's the part that matters for you. "I have 100 business secrets" only works because the listener already wants money. The question was pre-installed. Your prospect — a martial arts school owner — does not wake up wondering how his phone line performs. He thinks it's fine. So for you the sequence is two steps, not one:
+
+1. Make him aware there's something about his own business he doesn't know.
+2. Don't tell him.
+
+Almost every bad curiosity attempt fails at step 1. "Discover the secret to more students" creates nothing, because there's no specific gap — just a vague gesture at one.
+
+## One place this advice will cost you money
+
+The bouncy ball bit — "even if it is no different, you go 'it bounces better,' client says no it doesn't, you say yeah it does, who gives a shit" — works for one-shot sales to strangers. You're selling recurring software into a niche where every owner is in the same three Facebook groups, the same association, the same regional seminars. Martial arts school owners talk constantly. A curiosity gap you can't pay off becomes "that AI phone guy overpromises" inside a month, and that reputation is unrecoverable in a market this small.
+
+So: use every mechanic below, but make every loop you open one you can actually close. The good news is you're sitting on real mystery — the owner genuinely doesn't know what his phone is doing. You never have to invent any.
+
+---
+
+## The six moves, translated to your business
+
+### 1. Sell the end result, never the contents list
+
+Tate's ebook point: "my ebook contains X, Y, Z" versus "I'll tell you the secrets to making money." The contents list closes the loop. The result opens one, because the buyer has to wonder *how*.
+
+**What you're probably doing:**
+> "AI phone agent with 24/7 answering, automated trial booking, calendar sync, SMS follow-up, and CRM integration."
+
+Every one of those closes a loop. He reads it, understands it, feels nothing.
+
+**Versions that leave the loop open:**
+- "Your phone gets answered on the third ring at 8:40pm on a Saturday, and the person on the other end books a trial. You won't be there."
+- "You find out how many students your phone line has been costing you every month. Then you stop paying it."
+- "Every call gets answered. The part owners don't expect is what happens to the ones who *don't* book."
+- "Your front desk stops being whichever brown belt is closest to the phone."
+
+The mechanic in each: he can picture the outcome but not the method. That gap is the click.
+
+### 2. Word choice does enormous work
+
+"Secrets, not lessons." The idea has the same content; the word changes whether there's a gap in it. Audit your vocabulary:
+
+| You're saying | Say instead |
+|---|---|
+| Free phone audit | The leak report |
+| Book a demo | Hear your own phone line |
+| Features | What it does at 8:47 on a Saturday |
+| Case study | What the 400-student schools do differently |
+| Onboarding call | The setup nobody sees |
+| Pricing | What it costs vs. what the missed calls cost |
+
+Also: **name your mechanism.** An unnamed process has no mystery; a named one implies there's a thing to learn. "The Third Ring Rule." "The 6PM Problem." "The Mat-Side Test." When a school owner hears "most schools fail the Mat-Side Test," he has to ask what it is. He cannot help it. If you'd said "most schools don't answer the phone well," he'd nod and scroll.
+
+### 3. Install the question, then withhold the answer
+
+This is your highest-leverage move and it's nearly free, because the truth is mysterious enough.
+
+**Ways to install the question:**
+- "Call your own school right now, during the 5:30 kids class. Use your cell. I'll wait."
+- "There's one number every school owner should know and maybe three percent do: how many people called you last month and didn't leave a message."
+- "Ask whoever's at your desk tonight how many calls came in yesterday. Watch what happens."
+- "You know your show-up rate for trials. Do you know your *pick-up* rate?"
+- "Between 5 and 8pm you have twelve people on the mat and nobody on the phone. Those are the same hours everybody calls."
+
+Each one drops a question into his head about *his own business* that he can't answer. He now has an itch you created and only you can scratch. That's the position Tate's describing — you just got there through a true observation instead of a made-up one.
+
+**Then withhold:**
+- "I ran that check on 40 schools in Austria. The average was worse than owners guessed by a factor of about four. I'll show you yours."
+- "I know what your phone did last Tuesday between six and eight. Want me to send it over?"
+
+### 4. The open loop with a wait attached
+
+The cam girl example — "you'll have to wait and see" — is about refusing to itemize when asked. Refusal, held pleasantly, is more interesting than the answer.
+
+When a prospect asks the itemizing question, don't itemize:
+
+- **"What does it actually say to people?"** → "That's the part I like. It doesn't sound like the AI on your chiropractor's line, and most callers never work it out. I'd rather play you a real recording than describe it."
+- **"How's it different from [competitor]?"** → "One specific thing, and it's the reason schools switch. Take the call and I'll show you inside two minutes."
+- **"What's the price?"** → "Less than one student. The interesting question is the one I'll ask you on the call." *(Careful with this one — B2B buyers will punish you for a real price dodge. Use it as a beat, not a wall. Give the number if he asks twice.)*
+- **"Does it handle kids class questions?"** → "It handles the question you're actually worried about, which isn't that one. I'll show you."
+
+### 5. The bonus you don't name
+
+"Buy my book and get a free gift." "What's the gift?" "Buy the book."
+
+Your versions:
+- "Every school that onboards this month also gets the Script. I don't put it on the site and I don't send it separately."
+- "You'll get one thing in week two that I only give to schools that actually run the system. Owners tend to say it was worth more than the software."
+- "There's a second thing included. I'll tell you what it is when you're set up."
+
+Make it real and make it good — a genuinely useful phone script, a recorded teardown of their calls, a benchmark report against schools in their region. In B2B the unnamed bonus buys you the meeting; a disappointing one costs you the renewal.
+
+### 6. Insider versus outsider
+
+"You wanted to be on the inside, not the outside." School owners feel this hard — most of them are excellent martial artists and self-taught businesspeople, and they suspect other people know things they don't.
+
+- "The schools that broke 300 students all handle the phone the same way. It's not the way you're doing it."
+- "There's a reason the big academies never have the owner answering the phone, and it's not the money."
+- "I work with five schools per city. Two open in Vienna right now."
+- "I send a monthly breakdown to the schools on the system — pick-up rates, peak call hours, what leads actually ask. It doesn't go anywhere else."
+
+---
+
+## How to internalize it (so it becomes reflex, not homework)
+
+**The filter question.** Before anything ships — email, ad, DM, landing page, even a voicemail — ask one thing: *what does this make him want to ask me?* If the answer is "nothing," it's dead copy. Rewrite. Tate's version of this is "don't put out any company messaging without a tinge of curiosity." That's the reflex you're building.
+
+**The nod test.** Read your message as the school owner. Can he nod and move on? If yes, you closed every loop. Something must be left unclosed.
+
+**The 90/10 rule.** Every message delivers 90% and holds 10%. Not 50/50 — that's clickbait and it reads as evasive to a business buyer. You want him thinking "this guy clearly knows, and there's one more thing."
+
+**Daily drill, ten minutes.** Take five pieces of copy — yours, competitors', anything in your inbox — and rewrite each headline so one specific thing is withheld. Then rewrite the withheld thing so it's *believable and about something he already cares about*. That second constraint is where most people fail. "Secret" about something he doesn't care about generates zero pull.
+
+**Swipe file.** Every subject line or DM that made *you* open, save it, and write one line on what gap it opened. You're training pattern recognition, not collecting templates.
+
+**One loop per message.** Stacked mysteries read as manipulation. One gap, clean, then pay it off.
+
+---
+
+## Where to deploy it across your funnel
+
+- **Cold email subject line:** "your 6:40pm call" / "Tuesday, 18:42" / "your phone, one thing" — specific enough to be real, incomplete enough to open.
+- **First line of the email:** install the question. "Do you know what your line does during the kids class?"
+- **DM:** "Ran something on your school's number. Want it?" (Nothing else. Let him ask.)
+- **Landing page headline:** result + method withheld. Contents list goes *below* the fold, never above it.
+- **Demo call open:** "Before I show you anything — guess how many calls you missed last month. I'll tell you the real number after."
+- **Follow-up after no-reply:** "Still have that recording. Say the word." Open loops survive follow-ups better than value props do.
+- **Post-purchase:** the unnamed bonus in week two. Curiosity reduces early churn, because he's waiting for something.
+
+The whole thing compresses to one sentence you can carry around: **make him aware of a gap in his own business, prove you can see into it, don't close it until he's on a call with you.**
+
+The core idea in that transcript is not really "mystery" by itself. It's a specific marketing principle:
+
+> People often value discovering information more than receiving information.
+
+The speaker is arguing that **curiosity creates attention**, and attention creates engagement, conversations, leads, and sales.
+
+For your business—AI phone agents for martial arts schools—the mistake would be explaining the technology too early.
+
+Most AI companies market like this:
+
+> "We offer AI voice agents that answer calls, qualify leads, schedule appointments, integrate with CRMs, and provide 24/7 support."
+
+Nobody cares.
+
+A martial arts school owner doesn't wake up wanting AI voice agents.
+
+They wake up wanting:
+
+* More students
+* Fewer missed calls
+* More trial bookings
+* Less admin work
+* More revenue
+
+The curiosity angle is to sell the outcome first and leave an information gap.
+
+---
+
+# Principle 1: Sell the Result, Not the Mechanism
+
+The transcript repeatedly says:
+
+> Don't tell them exactly what's inside.
+>
+> Tell them what they'll get.
+
+### Bad
+
+"AI phone agent for martial arts schools that answers calls 24/7."
+
+### Better
+
+"The martial arts schools using this are enrolling students from calls they're currently missing."
+
+The owner immediately thinks:
+
+> "How?"
+
+Now they're curious.
+
+---
+
+### More examples
+
+#### Example A
+
+Bad:
+
+> "Our AI answers calls after hours."
+
+Curiosity:
+
+> "Most martial arts schools don't realize how many enrollments they're losing between 5pm and 9pm."
+
+The next question becomes:
+
+> "How many am I losing?"
+
+---
+
+#### Example B
+
+Bad:
+
+> "We automate lead qualification."
+
+Curiosity:
+
+> "One school owner found a hidden leak in his enrollment process after listening to three phone recordings."
+
+Now people wonder:
+
+> "What leak?"
+
+---
+
+#### Example C
+
+Bad:
+
+> "AI booking assistant."
+
+Curiosity:
+
+> "The first thing our AI says on the phone is responsible for a surprising number of trial bookings."
+
+Owner thinks:
+
+> "What is it saying?"
+
+---
+
+# Principle 2: Create an Open Loop
+
+An open loop is when you start a story without finishing it.
+
+The human brain wants closure.
+
+The transcript is essentially saying:
+
+> Start loops. Don't close them immediately.
+
+---
+
+### Example
+
+Bad:
+
+> "We increased trial bookings by 27%."
+
+Interesting, but finished.
+
+---
+
+Better:
+
+> "A simple phone change helped one martial arts school increase trial bookings by 27%."
+
+Now they're wondering:
+
+> What change?
+
+---
+
+Better still:
+
+> "We discovered something about martial arts inquiries that most schools completely overlook."
+
+Now they're wondering:
+
+> What is it?
+
+---
+
+# Principle 3: Use "Hidden Problems"
+
+One of the strongest curiosity triggers is revealing a problem people don't know they have.
+
+---
+
+### Example
+
+Most school owners think:
+
+> "If someone wants classes, they'll leave a voicemail."
+
+Your marketing could say:
+
+> "The majority of prospects who reach voicemail never call back."
+
+Now they're thinking:
+
+> Is that true?
+
+> How much is it costing me?
+
+---
+
+More examples:
+
+### Hidden Problem #1
+
+> "Your front desk staff may be accidentally discouraging trial bookings."
+
+---
+
+### Hidden Problem #2
+
+> "The busiest time for new student inquiries isn't when most school owners think."
+
+---
+
+### Hidden Problem #3
+
+> "Many martial arts schools are measuring the wrong phone metric."
+
+---
+
+Each creates curiosity because it challenges an existing belief.
+
+---
+
+# Principle 4: Tease a Discovery
+
+The transcript repeatedly uses the word "secret."
+
+You don't need to literally say "secret."
+
+In fact, for business owners, these often work better:
+
+* Discovery
+* Insight
+* Pattern
+* Finding
+* Mistake
+* Blind spot
+* Opportunity
+
+---
+
+Examples:
+
+### LinkedIn Post
+
+> After analyzing hundreds of martial arts inquiry calls, we found one pattern that predicts whether a prospect books a trial.
+
+Don't reveal it immediately.
+
+Let them ask.
+
+---
+
+### Ad
+
+> We reviewed thousands of missed calls from martial arts schools.
+>
+> What we found surprised us.
+
+---
+
+### Email Subject
+
+> The phone mistake costing martial arts schools new students
+
+---
+
+### Video Hook
+
+> I listened to 100 martial arts school inquiry calls.
+>
+> Almost every owner was missing the same thing.
+
+---
+
+# Principle 5: Make Them Wonder if They're Missing Out
+
+The transcript links curiosity to FOMO.
+
+For martial arts schools:
+
+### Bad
+
+> "Our AI answers calls."
+
+No FOMO.
+
+---
+
+### Better
+
+> "Some schools are converting inquiries while they're asleep."
+
+Now owners wonder:
+
+> Am I behind?
+
+---
+
+### Better
+
+> "The schools growing fastest are handling phone inquiries differently."
+
+Now they're thinking:
+
+> What are they doing?
+
+---
+
+### Better
+
+> "While most schools let missed calls go to voicemail, others are turning those calls into booked trials."
+
+FOMO + curiosity.
+
+---
+
+# Principle 6: Reveal Information Gradually
+
+Most founders dump everything at once.
+
+Curiosity marketing works because each piece of content creates another question.
+
+Think:
+
+### Post 1
+
+> Most martial arts schools underestimate how many leads they're losing from missed calls.
+
+Question created:
+
+> How many?
+
+---
+
+### Post 2
+
+> We measured it.
+
+> The number was larger than most owners expected.
+
+Question:
+
+> What number?
+
+---
+
+### Post 3
+
+> Here's how top-performing schools are solving it.
+
+Question:
+
+> How?
+
+---
+
+Instead of giving everything away in one post.
+
+---
+
+# Principle 7: Curiosity Must Lead to a Real Payoff
+
+This is where many marketers fail.
+
+The transcript sometimes borders on:
+
+> "Create mystery even if there's no difference."
+
+That's risky.
+
+If curiosity repeatedly leads nowhere, trust collapses.
+
+The better formula is:
+
+**Curiosity → Discovery → Value**
+
+Not:
+
+**Curiosity → Nothing**
+
+---
+
+For example:
+
+### Good
+
+> "The first 15 seconds of an inquiry call matter more than most owners realize."
+
+Then actually show why.
+
+---
+
+### Bad
+
+> "The shocking secret martial arts schools don't want you to know!!!"
+
+And then reveal something obvious.
+
+People feel manipulated.
+
+---
+
+# How I'd Apply This to Your Business
+
+Three positioning angles that combine curiosity with credibility:
+
+### Angle 1: The Missed Call Angle
+
+> How many new students called your school last month and never got an answer?
+
+---
+
+### Angle 2: The Hidden Revenue Angle
+
+> Most martial arts school owners don't know the value of a missed call until they calculate it.
+
+---
+
+### Angle 3: The Call Recording Angle
+
+> We can usually identify why a martial arts school isn't converting more inquiries within five recorded phone calls.
+
+---
+
+### Angle 4: The After-Hours Angle
+
+> The most important call your school receives this week may happen when nobody is there to answer it.
+
+---
+
+### Angle 5: The Enrollment Pattern Angle
+
+> After analyzing martial arts inquiry calls, we found one question that predicts whether a prospect will book a trial.
+
+---
+
+The big takeaway from the transcript is:
+
+> Don't lead with "AI phone agents."
+
+Lead with an unresolved question, a hidden opportunity, a surprising pattern, or a result the school owner wants. Then use your AI phone agent as the explanation for how that result is achieved.
+
+The curiosity gets the click. The result gets the lead. The proof gets the sale.
