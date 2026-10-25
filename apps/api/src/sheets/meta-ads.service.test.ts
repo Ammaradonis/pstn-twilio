@@ -40,7 +40,9 @@ const ROWS = [
     'https://www.facebook.com/austinshotokan',
     '5125550001',
   ],
-  ['Dallas Karate', 'Dallas, TX', 'd@x.test', '', '2145550002'],
+  // Sheets drops a row's trailing empty cells: no page and no phone here, so the
+  // row comes back three cells long, shorter than the header.
+  ['Dallas Karate', 'Dallas, TX', 'd@x.test'],
   ['Houston Judo', 'Houston, TX', 'h@x.test', 'https://www.facebook.com/houstonjudo', '7135550003'],
   // The row links a page the evidence does not know: never matched by title alone.
   [
@@ -332,6 +334,10 @@ describe('the Meta ad filter', () => {
 
     const written = sheets.calls.find((c) => c.method === 'PUT')!;
     expect(written.url).toContain('valueInputOption=RAW');
+    // Google answers a majorDimension query parameter with a 400; it belongs in
+    // the body. That 400 was why every press failed.
+    expect(new URL(written.url).searchParams.has('majorDimension')).toBe(false);
+    expect((written.body as { majorDimension: string }).majorDimension).toBe('ROWS');
     const values = (written.body as { values: string[][] }).values;
     expect(values[0]).toEqual([
       ...HEADER,
@@ -350,6 +356,12 @@ describe('the Meta ad filter', () => {
     expect(values[1]![8]).toBe('');
     // Which identity matched: this tab's own page was the ad's page.
     expect(values[1]![11]).toBe('page');
+    // The trimmed Dallas row is padded first, so its ad lines up under the
+    // meta headers instead of starting right after its last filled cell.
+    expect(values[2]).toHaveLength(values[0]!.length);
+    expect(values[2]!.slice(3, 5)).toEqual(['', '']);
+    expect(values[2]![5]).toBe('2222222222');
+    expect(values[2]![6]).toBe('Running');
   });
 
   it('offers the past filter separately', async () => {
@@ -443,6 +455,33 @@ describe('the Meta ad filter', () => {
     expect(result.rows).toBe(0);
     const written = sheets.calls.find((c) => c.method === 'PUT')!;
     expect((written.body as { values: string[][] }).values).toHaveLength(1);
+  });
+
+  it('keeps a row below the frozen header when a re-press matches nothing', async () => {
+    const sheets = stubSheets([
+      { sheetId: 7, title: 'Texas', columnCount: 5 },
+      { sheetId: 42, title: 'Meta ads - running now - Texas', columnCount: 12 },
+    ]);
+    const service = new MetaAdsService(
+      stubPrisma([
+        evidence({ schoolTitle: 'Closed Dojo', facebookUrl: 'https://facebook.com/closeddojo' }),
+      ]),
+      sheets.service,
+    );
+    await service.filter('user', 'sheet-1', 'Texas', 'ACTIVE');
+    const resize = sheets.calls.find(
+      (c) => c.url.endsWith(':batchUpdate') && JSON.stringify(c.body).includes('"rowCount"'),
+    )!;
+    const props = (
+      resize.body as {
+        requests: {
+          updateSheetProperties: { properties: { gridProperties: { rowCount: number } } };
+        }[];
+      }
+    ).requests[0]!.updateSheetProperties.properties;
+    // The header is frozen after the first press; a one-row grid would be all
+    // frozen rows, which Sheets refuses.
+    expect(props.gridProperties.rowCount).toBe(2);
   });
 });
 

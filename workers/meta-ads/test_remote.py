@@ -166,6 +166,22 @@ class UploadTest(unittest.TestCase):
         self.assertIn(['Texas'], seen)
         self.assertIn(['Massachusetts'], seen)
 
+    def test_reports_how_many_tabs_were_stored(self):
+        # The API answers tabs=1 for every one-tab request; the summary used to
+        # take the max of those and said "1 tab" after storing 32.
+        def handler(request: httpx.Request) -> httpx.Response:
+            observations = json.loads(request.content)['observations']
+            return httpx.Response(200, json={'saved': len(observations), 'tabs': 1})
+
+        big = [result({**ACTIVE_AD, 'adId': str(10_000 + i)},
+                      lead={**LEAD, 'sheetId': 9, 'sheetTitle': 'Vermont'})
+               for i in range(MAX_BATCH + 1)]
+        rows = evidence_rows([result(ACTIVE_AD), *big])
+        saved = asyncio.run(upload(rows, token='t', base='https://api.test',
+                                   transport=httpx.MockTransport(handler)))
+        # Vermont takes two requests and still counts once.
+        self.assertEqual(saved, {'saved': MAX_BATCH + 2, 'tabs': 2})
+
 
 if __name__ == '__main__':
     unittest.main()

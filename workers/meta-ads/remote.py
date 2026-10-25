@@ -135,7 +135,10 @@ async def upload(
     token = token or worker_token()
     if not token:
         raise RuntimeError('EMAIL_FINDER_WORKER_TOKEN is not set, so matches cannot reach the app.')
-    saved, tabs = 0, 0
+    saved = 0
+    # Each request is one tab, so the API's own `tabs` is always 1: count the
+    # tabs it accepted here instead (a big tab can take several requests).
+    stored: set[tuple] = set()
     rejected: list[str] = []
     async with httpx.AsyncClient(
         base_url=f'{(base or api_base()).rstrip("/")}/api/meta-ads/worker',
@@ -157,10 +160,10 @@ async def upload(
             except ValueError:  # a proxy's HTML page, not our API
                 body = {}
             saved += int(body.get('saved') or 0)
-            tabs = max(tabs, int(body.get('tabs') or 0))
+            stored.add((chunk[0]['spreadsheetId'], chunk[0]['sheetId']))
     if rejected:
         raise RuntimeError(
             f'evidence upload failed for {len(rejected)} tab(s), {saved} row(s) saved; '
             f'first refusal: {rejected[0]}'
         )
-    return {'saved': saved, 'tabs': tabs}
+    return {'saved': saved, 'tabs': len(stored)}

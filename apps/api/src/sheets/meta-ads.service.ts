@@ -261,27 +261,33 @@ export class MetaAdsService {
     let widest = header.length;
     for (const row of rows) if (row.length > widest) widest = row.length;
     const width = widest + META_HEADERS.length;
+    // Sheets drops each row's trailing empty cells, so most rows come back
+    // shorter than the header. Pad every row to the widest one first, or the
+    // meta values land under the wrong headers.
+    const cells = (row: Row) =>
+      padRow(
+        row.map((cell) => text(cell)),
+        widest,
+      );
     const values: string[][] = [
-      padRow([...header.map((cell) => text(cell)), ...META_HEADERS], width),
-      ...matches.map(({ row, evidence: e }) =>
-        padRow(
-          [
-            ...row.map((cell) => text(cell)),
-            e.adId,
-            e.status === 'ACTIVE' ? 'Running' : 'Ended',
-            isoDate(e.startedAt),
-            isoDate(e.endedAt),
-            e.advertiserName,
-            isoDate(e.observedAt),
-            e.matchKind,
-          ],
-          width,
-        ),
-      ),
+      [...cells(header), ...META_HEADERS],
+      ...matches.map(({ row, evidence: e }) => [
+        ...cells(row),
+        e.adId,
+        e.status === 'ACTIVE' ? 'Running' : 'Ended',
+        isoDate(e.startedAt),
+        isoDate(e.endedAt),
+        e.advertiserName,
+        isoDate(e.observedAt),
+        e.matchKind,
+      ]),
     ];
 
     const tabTitle = tabTitleFor(mode, sourceSheetTitle);
     const existing = tabs.find((t) => t.title === tabTitle);
+    // One row past the frozen header: Sheets refuses a grid whose every row is
+    // frozen, so a re-press with no matches could not resize the tab.
+    const rowCount = Math.max(2, values.length);
     let sheetId: number;
     if (existing) {
       sheetId = existing.sheetId;
@@ -305,10 +311,7 @@ export class MetaAdsService {
                 updateSheetProperties: {
                   properties: {
                     sheetId,
-                    gridProperties: {
-                      rowCount: Math.max(1, values.length),
-                      columnCount: width,
-                    },
+                    gridProperties: { rowCount, columnCount: width },
                   },
                   fields: 'gridProperties.rowCount,gridProperties.columnCount',
                 },
@@ -332,10 +335,7 @@ export class MetaAdsService {
                 addSheet: {
                   properties: {
                     title: tabTitle,
-                    gridProperties: {
-                      rowCount: Math.max(1, values.length),
-                      columnCount: width,
-                    },
+                    gridProperties: { rowCount, columnCount: width },
                   },
                 },
               },
@@ -347,9 +347,12 @@ export class MetaAdsService {
     }
 
     const range = a1(tabTitle, 'A1');
+    // majorDimension goes in the body only: values.update rejects it as a query
+    // parameter ("Cannot bind query parameter"), and every press used to fail
+    // here after the tab was created, leaving it empty.
     await this.sheets.google(
       token,
-      `${SHEETS}${encodeURIComponent(spreadsheetId)}/values/${encodeURIComponent(range)}?valueInputOption=RAW&majorDimension=ROWS`,
+      `${SHEETS}${encodeURIComponent(spreadsheetId)}/values/${encodeURIComponent(range)}?valueInputOption=RAW`,
       'write meta ad filter rows',
       { method: 'PUT', body: { range, majorDimension: 'ROWS', values } },
     );
