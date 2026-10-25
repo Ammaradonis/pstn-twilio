@@ -180,12 +180,16 @@ def candidate_handles(name: str, website: str | None) -> list[str]:
     if words:
         add("".join(words))
         add("_".join(words))
-        add(words[0])
         if len(words) > 1:
+            # Not the first word on its own: in a name of several words it is a
+            # common word ("the", "tiger", "texas", "martial") whose handle is
+            # someone else's, and each guess costs one of the phone's lookups.
             add(words[0] + words[1])
             add(words[0] + "_" + words[1])
     host = _bare_host(website or "")
-    if host:
+    # A website cell holding a Facebook or Instagram page names the network, not
+    # the school: its label made @facebook the guess for every such row.
+    if host and not platform_of(website or ""):
         label = host.removeprefix("www.").split(".")[0]
         add(label)
         add(label.replace("-", ""))

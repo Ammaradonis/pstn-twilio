@@ -446,6 +446,21 @@ class Galaxy:
         state = self.cache.get(STATE_NS, "galaxy-pause") or {}
         return max(0.0, float(state.get("until", 0)) - time.time())
 
+    def ready_in(self, app: str) -> float:
+        """Seconds until a lookup in this app could run, 0 when it could now.
+
+        The longest wait that applies: the whole phone's pause (a challenge in
+        either app stops both), this app's own pause, and, once the day's
+        lookups are spent, the counter's next day (UTC, as `Cache.reserve`
+        counts it). A row that waits on the phone is deferred by this; the half
+        hour it used to get meant researching it again ~30 times while a 12 h
+        pause or a spent limit could not have let it through anyway.
+        """
+        wait = max(self.phone_paused_for(), self.paused_for(app))
+        if self.cache.count("galaxy") >= self.daily_limit:
+            wait = max(wait, 86400 - time.time() % 86400)
+        return wait
+
     def _pause(self, app: str, why: str) -> None:
         self.cache.set(STATE_NS, f"{app}-app-pause", {"until": time.time() + APP_PAUSE, "why": why}, 30 * 86400)
         log.warning("%s: the %s app shows %s. It needs you on the phone; the worker leaves it alone for "

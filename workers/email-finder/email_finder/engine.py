@@ -507,22 +507,33 @@ class _Job:
         galaxy = self.e.galaxy
         if galaxy is None:
             return
+        if _phone_wait_seconds(galaxy, "instagram"):
+            # Paused, or out of lookups for the day: every lookup below would be
+            # refused in turn, so none is queued behind the phone's lock.
+            self.finding.research_complete = False
+            self.finding.notes.append("Galaxy A20e paused or out of lookups for social discovery")
+            return
         if not await galaxy.available():
             self.finding.research_complete = False
             self.finding.notes.append("Galaxy A20e not available for social discovery")
             return
-        # 1. Profiles the earlier methods already named: confirm and enrich them.
-        for url in sorted(self.social):
-            platform = social_platform_of(url)
-            if platform not in SIGNED_IN_HOSTS:
-                continue
-            before = dict(self.finding.enrichment)
-            await self._galaxy_lookup(platform, url)
-            for column, value in self.finding.enrichment.items():
-                if column not in before:
-                    log.info("Galaxy A20e confirmed %s for %s", column, self.row.title)
-            if self._enrichment_goal_met():
-                return
+        # 1. Profiles the earlier methods already named. Those links are the
+        #    row's answer already, so the phone refusing must not hold the row
+        #    back: it did, and found links went unwritten for hours while the row
+        #    was researched again every half hour. All the app can still add is
+        #    the number on Instagram's Contact sheet (this mode writes no
+        #    address), so a profile is only opened while the row has no number.
+        if not (self.row.phone or self.finding.enrichment.get("phoneNumber")):
+            for url in sorted(self.social):
+                if social_platform_of(url) != "instagram":
+                    continue
+                before = dict(self.finding.enrichment)
+                await self._galaxy_lookup("instagram", url, optional=True)
+                for column, value in self.finding.enrichment.items():
+                    if column not in before:
+                        log.info("Galaxy A20e confirmed %s for %s", column, self.row.title)
+                if self._enrichment_goal_met():
+                    return
         # 2. Guessed Instagram handles, confirmed by reading the profile.
         if not self.finding.enrichment.get("instagramUrl"):
             for handle in candidate_handles(self.row.title, self.row.website):
@@ -913,8 +924,13 @@ class _Job:
                 break
             await self._galaxy_lookup("instagram", url, must_match=url in guessed)
 
-    async def _galaxy_lookup(self, app: str, url: str, must_match: bool = False) -> None:
-        """Read a profile in the real app on the user's Galaxy A20e."""
+    async def _galaxy_lookup(self, app: str, url: str, must_match: bool = False,
+                             optional: bool = False) -> None:
+        """Read a profile in the real app on the user's Galaxy A20e.
+
+        `optional` is a lookup the row can be finished without: the phone
+        refusing it then leaves the row as it is instead of deferring it.
+        """
         galaxy = self.e.galaxy
         if galaxy is None:
             return
@@ -933,11 +949,11 @@ class _Job:
             # that is genuinely paused (a login wall, a checkpoint) needs the
             # user, so that defers for longer.
             log.info("Galaxy A20e didn't look at %s (%s)", url, found.blocked)
-            if not must_match:
+            if not (must_match or optional):
                 # A guessed handle is the exception: the phone refusing it is
                 # useful information and the row carries on.
                 self.finding.research_complete = False
-                self.finding.retry_after = (_phone_pause_seconds(galaxy, app)
+                self.finding.retry_after = (_phone_wait_seconds(galaxy, app)
                                             or RETRY_WHEN_PHONE_UNAVAILABLE)
                 self.finding.notes.append(f"Galaxy A20e didn't look at {url} ({found.blocked})")
             return
@@ -1594,17 +1610,19 @@ def _same_address(a: str, b: str) -> bool:
     return bool(num_a and num_a == num_b and fuzz.token_set_ratio(name_a, name_b) >= 85)
 
 
-def _phone_pause_seconds(galaxy, app: str) -> int | None:
-    """Seconds the phone's app is paused for, if it says so.
+def _phone_wait_seconds(galaxy, app: str) -> int | None:
+    """Seconds until the phone will take this app's lookups again, if it says so.
 
-    A pause is the phone deliberately left alone (a login wall, a checkpoint), so
-    a row waiting on it should wait about that long rather than retrying into a
-    wall every few minutes. Whole seconds, rounded up: the API takes an integer
-    (a float in retryAfter got the whole result rejected) and erring long only
-    leaves the phone alone a moment more.
+    A pause is the phone deliberately left alone (a login wall, a checkpoint), and
+    a spent daily limit only comes back with the counter's next day, so a row
+    waiting on either should wait about that long rather than being researched
+    again every half hour into the same refusal. Whole seconds, rounded up: the
+    API takes an integer (a float in retryAfter got the whole result rejected)
+    and erring long only leaves the phone alone a moment more.
     """
     try:
-        paused = float(galaxy.paused_for(app) or 0)
+        ready_in = getattr(galaxy, "ready_in", None)
+        paused = float(ready_in(app) if ready_in else (galaxy.paused_for(app) or 0))
     except Exception:  # noqa: BLE001 - a stand-in without the method, or a bad state
         return None
     return math.ceil(paused) if paused > 0 else None

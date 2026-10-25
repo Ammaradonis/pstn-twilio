@@ -76,6 +76,16 @@ def test_handle_guesses_are_plausible_instagram_handles():
     assert candidate_handles("Calsma Taekwondo", None)[0] == "calsmataekwondo"
 
 
+def test_handle_guesses_skip_the_network_and_lone_common_words():
+    # The website cell held the school's Facebook page, whose label is "facebook".
+    assert "facebook" not in candidate_handles("Poole Ki Aikido Club",
+                                               "https://www.facebook.com/PooleKiAikido")
+    handles = candidate_handles("Tiger Rock Martial Arts", None)
+    assert "tiger" not in handles and "tigerrock" in handles
+    # A name of one word is still its own guess.
+    assert candidate_handles("Satori", None) == ["satori"]
+
+
 class _StubRow:
     title = "Nevada Shotokan"
     website = "https://nevadashotokan.com"
@@ -131,6 +141,71 @@ def test_enrichment_runs_every_method_then_stops_once_fb_and_ig_are_known():
     assert finding.enrichment["facebookUrl"] == "https://www.facebook.com/nevadashotokan"
     assert finding.enrichment["instagramUrl"] == "https://www.instagram.com/nevadashotokan/"
     assert finding.enrichment["youtubeUrl"] == "https://youtube.com/@nevadashotokan"
+
+
+class _RefusingPhone:
+    """The Galaxy at its daily limit (or paused, with `wait`): it refuses every lookup."""
+
+    def __init__(self, wait: float = 0.0):
+        self.wait, self.asked = wait, []
+
+    def ready_in(self, app):
+        return self.wait
+
+    async def available(self):
+        return True
+
+    async def instagram(self, handle):
+        from email_finder.android import AppLookup
+        self.asked.append(handle)
+        return AppLookup(blocked="daily limit")
+
+    async def facebook(self, url):
+        from email_finder.android import AppLookup
+        self.asked.append(url)
+        return AppLookup(blocked="daily limit")
+
+
+def _phone_job(galaxy, **row_values):
+    row = _StubRow()
+    for name, value in row_values.items():
+        setattr(row, name, value)
+    engine = object.__new__(Engine)
+    engine.galaxy = galaxy
+    return engine_module._Job(engine, row, social_only=True)
+
+
+def test_found_links_are_not_held_back_when_the_phone_refuses():
+    """784 rows in a day and a half had found their Facebook or Instagram link
+    and were deferred anyway, unwritten, because the phone could not re-read it."""
+    from email_finder.worker import to_result
+
+    phone = _RefusingPhone()
+    job = _phone_job(phone, phone="")  # no number yet, so the profile is opened
+    job.social = {"https://www.instagram.com/nevadashotokan/"}
+    job.finding.enrichment["facebookUrl"] = "https://www.facebook.com/nevadashotokan"
+    asyncio.run(job._enrich_phone_discovery())
+    assert phone.asked[0] == "nevadashotokan"
+    result = to_result("row", job.finding, "lease", "ENRICH")
+    assert result["status"] == "FOUND" and "retryAfter" not in result
+
+
+def test_known_links_are_not_reopened_once_the_row_has_a_number():
+    # Opening them could add nothing this mode writes: the lookup would only
+    # spend one of the phone's daily lookups.
+    phone = _RefusingPhone()
+    job = _phone_job(phone)
+    job.social = {"https://www.instagram.com/nevadashotokan/", "https://www.facebook.com/nevadashotokan"}
+    job.finding.enrichment["instagramUrl"] = "https://www.instagram.com/nevadashotokan"
+    asyncio.run(job._enrich_phone_discovery())
+    assert phone.asked == []
+
+
+def test_a_paused_phone_is_not_handed_guesses():
+    phone = _RefusingPhone(wait=12 * 3600)
+    job = _phone_job(phone)
+    asyncio.run(job._enrich_phone_discovery())
+    assert phone.asked == [] and job.finding.retry_after is None
 
 
 def test_enrichment_keeps_a_value_the_sheet_already_had():

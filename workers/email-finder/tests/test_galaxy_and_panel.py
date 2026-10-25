@@ -188,6 +188,22 @@ def test_the_phone_wide_stop_can_be_turned_off(tmp_path, monkeypatch):
     assert asyncio.run(phone.instagram("someone_else")).blocked == "paused"
 
 
+def test_ready_in_is_the_longest_wait_that_applies(tmp_path):
+    phone = Galaxy(Cache(tmp_path / "c.db"), "adb", lock_path=tmp_path / "galaxy.lock", daily_limit=1)
+    assert phone.ready_in("instagram") == 0
+    # A Facebook checkpoint stops the whole phone; Instagram's own pause is 0.
+    phone._pause("facebook", "a security checkpoint")
+    phone._stop_everything("a security checkpoint")
+    assert phone.paused_for("instagram") == 0
+    assert 11 * 3600 < phone.ready_in("instagram") <= 12 * 3600
+
+
+def test_a_spent_daily_limit_is_ready_with_the_counters_next_day(tmp_path):
+    phone = Galaxy(Cache(tmp_path / "c.db"), "adb", lock_path=tmp_path / "galaxy.lock", daily_limit=1)
+    assert phone.cache.reserve("galaxy", 1)
+    assert abs(phone.ready_in("instagram") - (86400 - time.time() % 86400)) < 5
+
+
 def test_facebook_app_reads_the_page_then_its_about_tab(tmp_path, monkeypatch):
     _quick(monkeypatch)
     fb = "com.facebook.katana"
@@ -287,6 +303,35 @@ def test_unread_known_profile_is_deferred(blocked):
     assert result["status"] == "RETRY" and result["researchComplete"] is False
     assert 60 <= result["retryAfter"] <= 86405
     assert blocked in result["notes"]
+
+
+def test_a_row_waiting_on_the_stopped_phone_waits_until_it_restarts(tmp_path):
+    """The Facebook checkpoint of 2026-10-25 stopped the phone for 12 h, but an
+    Instagram row was deferred by the Instagram app's own pause (none), so it
+    came back every half hour into the same refusal."""
+    from email_finder.worker import to_result
+
+    phone = FakePhone(tmp_path, [])
+    phone._pause("facebook", "a security checkpoint")
+    phone._stop_everything("a security checkpoint")
+    job = _job(_Fetcher(), phone, title="Dojo")
+    asyncio.run(job._galaxy_lookup("instagram", "https://instagram.com/dojo/"))
+    result = to_result("row", job.finding, "lease")
+    assert result["status"] == "RETRY"
+    assert 11 * 3600 < result["retryAfter"] <= 12 * 3600 + 1
+
+
+def test_a_row_refused_for_the_daily_limit_waits_for_the_next_day(tmp_path):
+    from email_finder.worker import to_result
+
+    phone = FakePhone(tmp_path, [])
+    phone.daily_limit = 1
+    assert phone.cache.reserve("galaxy", 1)
+    job = _job(_Fetcher(), phone, title="Dojo")
+    asyncio.run(job._galaxy_lookup("instagram", "https://instagram.com/dojo/"))
+    result = to_result("row", job.finding, "lease")
+    assert result["status"] == "RETRY" and "daily limit" in result["notes"]
+    assert abs(result["retryAfter"] - (86400 - time.time() % 86400)) < 60
 
 
 def test_blocked_handle_guess_does_not_defer_completed_research():
