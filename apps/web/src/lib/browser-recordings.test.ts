@@ -1,10 +1,15 @@
+import { renderHook } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { api, ApiError } from './api-client';
 import {
+  describeBrowserRecording,
+  isUploadSkipped,
   recordCallInBrowser,
   setRecordingStoreForTests,
+  setUploadSkipped,
   uploadPendingRecordings,
+  useBrowserRecordingStatus,
 } from './browser-recordings';
 import { saveBlob } from './download';
 import { createMemoryRecordingStore, type RecordingStore } from './recording-store';
@@ -101,6 +106,13 @@ function talkFor(seconds: number) {
   vi.setSystemTime(Date.now() + seconds * 1000);
 }
 
+// The status the call screens show, read without staying mounted.
+function latestStatus() {
+  const { result, unmount } = renderHook(() => useBrowserRecordingStatus());
+  unmount();
+  return result.current;
+}
+
 describe('recordCallInBrowser', () => {
   beforeEach(() => {
     vi.useFakeTimers({ toFake: ['Date'] });
@@ -178,6 +190,100 @@ describe('recordCallInBrowser', () => {
     expect(await store.chunks(recordingId)).toEqual([]);
     expect(saveBlob).not.toHaveBeenCalled();
     expect(api.recordings.uploadBrowser).not.toHaveBeenCalled();
+  });
+
+  it('deletes a long call instead of uploading it when No R2 is switched on mid-call', async () => {
+    const call = fakeCall();
+    recordCallInBrowser(call, META);
+    call.emit('accept');
+    await vi.waitFor(() => expect(recorderMock.instances).toHaveLength(1));
+    recorderMock.instances[0]!.onChunk(0, new Blob(['voicemail'], { type: 'audio/webm' }));
+    talkFor(60);
+    setUploadSkipped(true);
+    expect(isUploadSkipped()).toBe(true);
+    talkFor(120);
+    call.emit('disconnect');
+    // Once the call is over, its setting is final.
+    setUploadSkipped(false);
+
+    await vi.waitFor(() => expect(latestStatus()?.state).toBe('discarded'));
+    expect(describeBrowserRecording(latestStatus()!)).toBe(
+      'No R2 was on, so the recording was deleted.',
+    );
+    expect(await store.list()).toEqual([]);
+    expect(api.recordings.uploadBrowser).not.toHaveBeenCalled();
+    expect(saveBlob).not.toHaveBeenCalled();
+    expect(isUploadSkipped()).toBe(false);
+  });
+
+  it('uploads the call as usual when No R2 is switched off again before it ends', async () => {
+    vi.mocked(api.recordings.uploadBrowser).mockResolvedValue({} as never);
+    const call = fakeCall();
+    recordCallInBrowser(call, META);
+    call.emit('accept');
+    await vi.waitFor(() => expect(recorderMock.instances).toHaveLength(1));
+    recorderMock.instances[0]!.onChunk(0, new Blob(['opus'], { type: 'audio/webm' }));
+    setUploadSkipped(true);
+    talkFor(120);
+    setUploadSkipped(false);
+    call.emit('disconnect');
+
+    await vi.waitFor(() => expect(api.recordings.uploadBrowser).toHaveBeenCalledTimes(1));
+  });
+
+  it('applies No R2 switched on while the call rings, and only to that call', async () => {
+    vi.mocked(api.recordings.uploadBrowser).mockResolvedValue({} as never);
+    const voicemail = fakeCall();
+    recordCallInBrowser(voicemail, META);
+    setUploadSkipped(true);
+    voicemail.emit('accept');
+    await vi.waitFor(() => expect(recorderMock.instances).toHaveLength(1));
+    recorderMock.instances[0]!.onChunk(0, new Blob(['voicemail'], { type: 'audio/webm' }));
+    talkFor(120);
+    voicemail.emit('disconnect');
+    await vi.waitFor(() => expect(latestStatus()?.state).toBe('discarded'));
+
+    const next = fakeCall();
+    recordCallInBrowser(next, META);
+    expect(isUploadSkipped()).toBe(false);
+    next.emit('accept');
+    await vi.waitFor(() => expect(recorderMock.instances).toHaveLength(2));
+    recorderMock.instances[1]!.onChunk(0, new Blob(['conversation'], { type: 'audio/webm' }));
+    talkFor(120);
+    next.emit('disconnect');
+
+    await vi.waitFor(() => expect(api.recordings.uploadBrowser).toHaveBeenCalledTimes(1));
+    const [, blob] = vi.mocked(api.recordings.uploadBrowser).mock.calls[0]!;
+    expect(await blobText(blob)).toBe('conversation');
+  });
+
+  it('saves No R2 with the recording, so a tab that dies mid-call cannot upload it later', async () => {
+    vi.mocked(api.recordings.uploadBrowser).mockResolvedValue({} as never);
+    const addChunk = vi.spyOn(store, 'addChunk');
+    const call = fakeCall();
+    recordCallInBrowser(call, META);
+    call.emit('accept');
+    await vi.waitFor(() => expect(recorderMock.instances).toHaveLength(1));
+    recorderMock.instances[0]!.onChunk(0, new Blob(['voicemail'], { type: 'audio/webm' }));
+    await vi.waitFor(() => expect(addChunk).toHaveBeenCalled());
+    talkFor(120);
+    const switchedAt = Date.now();
+    setUploadSkipped(true);
+
+    // A fresh updatedAt, or another tab would take the live call for one cut off.
+    await vi.waitFor(async () => {
+      const [row] = await store.list();
+      expect(row).toMatchObject({ skipUpload: true, endedAt: null });
+      expect(row!.updatedAt).toBeGreaterThanOrEqual(switchedAt);
+    });
+
+    // The tab dies mid-call, and a reload finds the recording later.
+    setRecordingStoreForTests(store);
+    talkFor(5 * 60);
+    await uploadPendingRecordings();
+
+    expect(api.recordings.uploadBrowser).not.toHaveBeenCalled();
+    expect(await store.list()).toEqual([]);
   });
 
   it('does not record a call that is never answered', async () => {

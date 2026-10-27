@@ -19,6 +19,8 @@ export interface StoredBrowserRecording {
   updatedAt: number;
   attempts: number;
   lastError: string | null;
+  /** "No R2" was on: deleted when the call ends, never uploaded. */
+  skipUpload?: boolean;
 }
 
 export interface RecordingStore {

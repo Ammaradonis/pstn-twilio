@@ -23,7 +23,9 @@ import { api, ApiError } from '../lib/api-client';
 import {
   describeBrowserRecording,
   isBrowserRecordingSupported,
+  isUploadSkipped,
   recordCallInBrowser,
+  setUploadSkipped,
   useBrowserRecordingStatus,
 } from '../lib/browser-recordings';
 import type { RecordableCall } from '../lib/call-recorder';
@@ -152,6 +154,11 @@ export function DialPage() {
   const [activeCallTwilioRecorded, setActiveCallTwilioRecorded] = useState(false);
   const [backupBusy, setBackupBusy] = useState(false);
   const [backupError, setBackupError] = useState<string | null>(null);
+  // "No R2": the call that is up, or between calls the next one, has its
+  // recording deleted when it ends instead of uploaded. It switches back off
+  // when the call ends, so a forgotten switch cannot delete a real call.
+  const [noR2, setNoR2] = useState(isUploadSkipped);
+  const noR2Ref = useRef(noR2);
   const activeCallRef = useRef<RecordableCall | null>(null);
   const latestRecording = useBrowserRecordingStatus();
   const browserRecording = latestRecording?.direction === 'outbound' ? latestRecording : null;
@@ -231,13 +238,20 @@ export function DialPage() {
   }
 
   useEffect(() => {
-    if (inCallMode) return;
+    if (inCallMode) {
+      // An incoming call answered while "No R2" is on stays out of R2 too.
+      if (noR2Ref.current) setUploadSkipped(true);
+      return;
+    }
     setSentTones('');
     setActiveCallRecorded(false);
     setActiveCallBrowserRecorded(false);
     setActiveCallTwilioRecorded(false);
     setBackupError(null);
     activeCallRef.current = null;
+    // Only the switch: the call that just ended keeps its own setting.
+    noR2Ref.current = false;
+    setNoR2(false);
   }, [inCallMode]);
 
   // An outbound call opens its status panel as soon as it starts, so notes can
@@ -279,6 +293,13 @@ export function DialPage() {
       writeBooleanPreference(TWILIO_BACKUP_STORAGE_KEY, !prev);
       return !prev;
     });
+  }
+
+  function toggleNoR2() {
+    const next = !noR2Ref.current;
+    noR2Ref.current = next;
+    setNoR2(next);
+    setUploadSkipped(next);
   }
 
   // Has Twilio record the rest of the live call, e.g. once it is going well.
@@ -377,9 +398,11 @@ export function DialPage() {
         callerE164: selectedNumber.data.phoneNumberE164,
       };
       // The browser records for free; Twilio records too as a backup, or
-      // instead when this browser cannot record.
+      // instead when this browser cannot record. Not with "No R2" on: every
+      // Twilio recording is archived to R2.
       const recordInBrowser = recordCall && browserRecordingSupported;
-      const recordOnTwilio = recordCall && (twilioBackup || !browserRecordingSupported);
+      const recordOnTwilio =
+        recordCall && !noR2Ref.current && (twilioBackup || !browserRecordingSupported);
       const call = await voice.makeCall(numberId, destinationNumber, {
         recordCall: recordOnTwilio,
         onPrepared: (p) => {
@@ -398,6 +421,8 @@ export function DialPage() {
             numberId,
             outboundIntentId: intent.outboundIntentId,
           });
+        // "No R2" switched on before this call's recording was set up.
+        if (browserRecorded && noR2Ref.current) setUploadSkipped(true);
         // An API that predates the setting omits recordCall and always records.
         const twilioRecorded = intent.recordCall !== false;
         setActiveCallRecorded(browserRecorded || twilioRecorded);
@@ -637,9 +662,29 @@ export function DialPage() {
       )}
 
       <div className="rounded border border-slate-200 bg-white p-4">
-        <label htmlFor="destination-number" className="text-sm text-slate-700">
-          Destination (E.164)
-        </label>
+        <div className="flex items-end justify-between gap-2">
+          <label htmlFor="destination-number" className="text-sm text-slate-700">
+            Destination (E.164)
+          </label>
+          {/* Never locked: a call often turns out to be a voicemail only once it is up. */}
+          <button
+            type="button"
+            aria-pressed={noR2}
+            onClick={toggleNoR2}
+            title={
+              noR2
+                ? "On: this call's recording is deleted when it ends instead of going to R2"
+                : "Keep this call's recording out of R2"
+            }
+            className={`rounded border px-3 py-1.5 text-sm font-medium transition-colors ${
+              noR2
+                ? 'border-amber-600 bg-amber-400 text-amber-950 hover:bg-amber-300'
+                : 'border-slate-300 hover:bg-slate-50'
+            }`}
+          >
+            No R2
+          </button>
+        </div>
         <div className="mt-1 flex gap-2">
           <input
             id="destination-number"
@@ -735,14 +780,22 @@ export function DialPage() {
                 {inCallMode
                   ? activeCallRecorded
                     ? activeCallBrowserRecorded
-                      ? 'Recording in this browser. If the call reaches 90 seconds, the file downloads when it ends.'
-                      : 'The MP3 downloads automatically after the call ends.'
+                      ? noR2
+                        ? 'Recording in this browser. No R2 is on, so the recording is deleted when the call ends.'
+                        : 'Recording in this browser. If the call reaches 90 seconds, the file downloads when it ends.'
+                      : noR2
+                        ? 'Twilio is recording this call. No R2 does not stop its copy going to R2.'
+                        : 'The MP3 downloads automatically after the call ends.'
                     : 'Changes apply to your next call.'
                   : !recordCall
                     ? 'The call will not be recorded.'
-                    : browserRecordingSupported
-                      ? 'Recorded in this browser for free. Calls of 90 seconds or more download when they end and are added to the call log; shorter ones are deleted.'
-                      : 'The call is recorded and the MP3 downloads automatically when it ends.'}
+                    : noR2
+                      ? browserRecordingSupported
+                        ? "No R2 is on: the next call's recording is deleted when it ends."
+                        : 'No R2 is on: the next call is not recorded.'
+                      : browserRecordingSupported
+                        ? 'Recorded in this browser for free. Calls of 90 seconds or more download when they end and are added to the call log; shorter ones are deleted.'
+                        : 'The call is recorded and the MP3 downloads automatically when it ends.'}
               </p>
             </div>
             <button
@@ -775,10 +828,16 @@ export function DialPage() {
                 <p id="twilio-backup-hint" className="text-xs text-slate-500">
                   {inCallMode
                     ? activeCallTwilioRecorded
-                      ? 'Twilio is also recording this call.'
-                      : 'Have Twilio record the rest of this call ($0.0025/min).'
+                      ? noR2
+                        ? 'Twilio is also recording this call. No R2 does not stop its copy going to R2.'
+                        : 'Twilio is also recording this call.'
+                      : noR2
+                        ? 'Turn off No R2 to back this call up on Twilio.'
+                        : 'Have Twilio record the rest of this call ($0.0025/min).'
                     : twilioBackup
-                      ? 'Twilio also records each call ($0.0025/min) while browser recordings prove reliable.'
+                      ? noR2
+                        ? 'Not for the next call: No R2 is on.'
+                        : 'Twilio also records each call ($0.0025/min) while browser recordings prove reliable.'
                       : 'Off. During a call you can still back it up on Twilio.'}
                 </p>
               </div>
@@ -791,7 +850,7 @@ export function DialPage() {
                   <button
                     type="button"
                     onClick={() => void backUpActiveCall()}
-                    disabled={backupBusy || voice.connectionState !== 'open'}
+                    disabled={backupBusy || voice.connectionState !== 'open' || noR2}
                     className="shrink-0 rounded border border-slate-300 px-2 py-1 text-xs font-medium hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-60"
                   >
                     {backupBusy ? 'Starting…' : 'Back up this call'}

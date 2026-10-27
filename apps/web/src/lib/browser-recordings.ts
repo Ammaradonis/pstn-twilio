@@ -16,6 +16,8 @@ import {
 // MIN_UPLOAD_SECONDS is uploaded to the call log without a local download;
 // a shorter one is deleted everywhere (memory,
 // IndexedDB, never downloaded) so cold-call hang-ups don't fill the disk.
+// So is a call of any length with "No R2" on (the Dial page), which can be
+// switched until the call ends.
 // Uploads that fail (no network, storage not set up yet) wait in IndexedDB
 // and are retried.
 
@@ -24,7 +26,7 @@ export type BrowserRecordingState =
   | 'saving'
   | 'uploading'
   | 'uploaded'
-  // Under MIN_UPLOAD_SECONDS: deleted, never downloaded or uploaded.
+  // Under MIN_UPLOAD_SECONDS, or "No R2" was on: deleted, never downloaded or uploaded.
   | 'discarded'
   | 'waiting'
   | 'failed';
@@ -64,6 +66,7 @@ const KEEP_UNUPLOADED_MS = 14 * 24 * 60 * 60_000;
 const PERMANENT_UPLOAD_ERRORS = new Set([400, 403, 409, 413]);
 const CALL_CLOSED_POLL_MS = 2_000;
 const MAX_STATUSES = 20;
+const NO_R2_DELETED = 'No R2 was on, so the recording was deleted.';
 
 interface Session {
   recorder: CallRecorder;
@@ -71,9 +74,17 @@ interface Session {
   row: StoredBrowserRecording;
 }
 
+// A call from recordCallInBrowser until it ends, while its "No R2" can change.
+interface LiveRecording {
+  skipUpload: boolean;
+  /** Set once the call is answered and recording. */
+  sessionId: string | null;
+}
+
 let store: RecordingStore =
   typeof indexedDB === 'undefined' ? createMemoryRecordingStore() : indexedDbRecordingStore;
 const sessions = new Map<string, Session>();
+const liveRecordings = new Set<LiveRecording>();
 // Finished in this tab: upload from memory even if IndexedDB lost chunks.
 const finishedBlobs = new Map<string, Blob>();
 const uploadsInFlight = new Set<string>();
@@ -86,6 +97,7 @@ let retryTimer: ReturnType<typeof setTimeout> | null = null;
 export function setRecordingStoreForTests(next: RecordingStore): void {
   store = next;
   sessions.clear();
+  liveRecordings.clear();
   finishedBlobs.clear();
   uploadsInFlight.clear();
   statuses.clear();
@@ -150,7 +162,7 @@ export function describeBrowserRecording(status: BrowserRecordingStatus): string
         ? `Saved as ${status.filename} and added to the call log.`
         : 'Recording added to the call log.';
     case 'discarded':
-      return `Under ${MIN_UPLOAD_SECONDS} seconds, so the recording was deleted.`;
+      return status.message ?? `Under ${MIN_UPLOAD_SECONDS} seconds, so the recording was deleted.`;
     default:
       return status.message ?? 'The recording could not be saved.';
   }
@@ -164,15 +176,19 @@ export function recordCallInBrowser(call: RecordableCall, meta: BrowserRecording
   const mimeType = recordingMimeType();
   if (!mimeType) return false;
 
+  const live: LiveRecording = { skipUpload: false, sessionId: null };
+  liveRecordings.add(live);
   let started: Promise<string | null> | null = null;
   let closedPoll: ReturnType<typeof setInterval> | null = null;
   const stop = () => {
+    // The call is over, so its "No R2" is final.
+    liveRecordings.delete(live);
     if (closedPoll) clearInterval(closedPoll);
     closedPoll = null;
     void started?.then((id) => (id ? finishSession(id, call) : undefined));
   };
   call.on?.('accept', () => {
-    started ??= startSession(call, meta, mimeType);
+    started ??= startSession(call, meta, mimeType, live);
     // The SDK can close a call without emitting disconnect (see use-voice-device).
     closedPoll ??= setInterval(() => {
       if (call.status?.() === 'closed') stop();
@@ -182,10 +198,38 @@ export function recordCallInBrowser(call: RecordableCall, meta: BrowserRecording
   return true;
 }
 
+/**
+ * "No R2" on or off for every call being recorded, or waiting to be answered
+ * and recorded: when on, the recording is deleted when the call ends instead
+ * of being uploaded.
+ */
+export function setUploadSkipped(skip: boolean): void {
+  for (const live of liveRecordings) {
+    live.skipUpload = skip;
+    if (live.sessionId) saveSkipUpload(live.sessionId, skip);
+  }
+}
+
+/** Whether "No R2" is on for a call being recorded. */
+export function isUploadSkipped(): boolean {
+  return [...liveRecordings].some((live) => live.skipUpload);
+}
+
+// Kept on the stored row too, so a recording cut off by a crash keeps it.
+function saveSkipUpload(id: string, skip: boolean): void {
+  const session = sessions.get(id);
+  if (!session) return;
+  // The call is up: an old updatedAt would make another tab take the row for
+  // one cut off mid-call.
+  session.row = { ...session.row, skipUpload: skip, updatedAt: Date.now() };
+  void store.put(session.row).catch(() => undefined);
+}
+
 async function startSession(
   call: RecordableCall,
   meta: BrowserRecordingMeta,
   mimeType: string,
+  live: LiveRecording,
 ): Promise<string | null> {
   const row: StoredBrowserRecording = {
     id: crypto.randomUUID(),
@@ -200,7 +244,9 @@ async function startSession(
     updatedAt: Date.now(),
     attempts: 0,
     lastError: null,
+    skipUpload: live.skipUpload,
   };
+  live.sessionId = row.id;
   const status = {
     direction: meta.direction,
     counterpart: meta.counterpart,
@@ -227,6 +273,8 @@ async function startSession(
     });
     return null;
   }
+  // "No R2" was switched while the row was being saved.
+  if (live.skipUpload !== row.skipUpload) saveSkipUpload(row.id, live.skipUpload);
   setStatus(row.id, { ...status, state: 'recording' });
   return row.id;
 }
@@ -247,10 +295,10 @@ async function finishSession(id: string, call: RecordableCall): Promise<void> {
     endedAt: endedAt.toISOString(),
     updatedAt: Date.now(),
   };
-  if (durationSeconds(row) < MIN_UPLOAD_SECONDS) {
+  if (row.skipUpload || durationSeconds(row) < MIN_UPLOAD_SECONDS) {
     session.chunks.length = 0;
     await forget(id);
-    setStatus(id, { state: 'discarded' });
+    setStatus(id, { state: 'discarded', message: row.skipUpload ? NO_R2_DELETED : null });
     return;
   }
   const blob = await assemble(session.chunks, row);
@@ -331,7 +379,7 @@ async function uploadOne(row: StoredBrowserRecording): Promise<'done' | 'retry' 
 }
 
 async function upload(row: StoredBrowserRecording): Promise<'done' | 'retry' | 'dropped'> {
-  if (durationSeconds(row) < MIN_UPLOAD_SECONDS) {
+  if (row.skipUpload || durationSeconds(row) < MIN_UPLOAD_SECONDS) {
     await forget(row.id);
     setStatus(row.id, {
       direction: row.direction,
@@ -339,6 +387,7 @@ async function upload(row: StoredBrowserRecording): Promise<'done' | 'retry' | '
       startedAt: row.startedAt,
       filename: null,
       state: 'discarded',
+      message: row.skipUpload ? NO_R2_DELETED : null,
     });
     return 'dropped';
   }

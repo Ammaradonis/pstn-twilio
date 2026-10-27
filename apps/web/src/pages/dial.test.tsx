@@ -62,12 +62,15 @@ vi.mock('../lib/recording-downloads', () => ({
 const browserRecordingMock = vi.hoisted(() => ({
   supported: false,
   record: vi.fn((_call: unknown, _meta: unknown) => true),
+  setUploadSkipped: vi.fn((_skip: boolean) => undefined),
 }));
 
 vi.mock('../lib/browser-recordings', () => ({
   describeBrowserRecording: () => '',
   isBrowserRecordingSupported: () => browserRecordingMock.supported,
+  isUploadSkipped: () => false,
   recordCallInBrowser: (call: unknown, meta: unknown) => browserRecordingMock.record(call, meta),
+  setUploadSkipped: (skip: boolean) => browserRecordingMock.setUploadSkipped(skip),
   useBrowserRecordingStatus: () => null,
 }));
 
@@ -198,6 +201,7 @@ describe('DialPage dialpad', () => {
     window.localStorage.removeItem('pstn-twilio.twilio-backup');
     browserRecordingMock.supported = false;
     browserRecordingMock.record.mockClear();
+    browserRecordingMock.setUploadSkipped.mockClear();
     for (const key of Object.keys(window.localStorage)) {
       if (key.startsWith('pstn-twilio.post-call.')) window.localStorage.removeItem(key);
     }
@@ -486,6 +490,104 @@ describe('DialPage dialpad', () => {
 
       await waitFor(() => expect(api.recordings.startTwilioBackup).toHaveBeenCalledWith(CALL_SID));
       expect(await screen.findByText('Twilio is also recording this call.')).toBeInTheDocument();
+    });
+
+    it('keeps a live call out of R2 when No R2 is switched on, then switches it off', async () => {
+      voiceMock.current.makeCall = vi.fn(async (_numberId, _destination, options) => {
+        options?.onPrepared?.(prepared(false));
+        return { on: vi.fn(), parameters: { CallSid: CALL_SID } };
+      });
+      window.localStorage.setItem('pstn-twilio.twilio-backup', 'false');
+      const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+      const page = () => (
+        <QueryClientProvider client={client}>
+          <DialPage />
+        </QueryClientProvider>
+      );
+      const view = renderBase(page());
+      await screen.findByText(/Caller ID:/);
+      await placeCall();
+      voiceMock.current = { ...voiceMock.current, active: true, connectionState: 'open' };
+      view.rerender(page());
+
+      const noR2 = screen.getByRole('button', { name: 'No R2' });
+      expect(screen.getByRole('button', { name: 'Paste' })).toBeDisabled();
+      expect(noR2).toHaveAttribute('aria-pressed', 'false');
+      fireEvent.click(noR2);
+
+      expect(browserRecordingMock.setUploadSkipped).toHaveBeenCalledWith(true);
+      expect(noR2).toHaveAttribute('aria-pressed', 'true');
+      expect(noR2).toHaveClass('bg-amber-400');
+      expect(
+        screen.getByText(
+          'Recording in this browser. No R2 is on, so the recording is deleted when the call ends.',
+        ),
+      ).toBeInTheDocument();
+      // A Twilio backup would put the call in R2 after all.
+      expect(screen.getByRole('button', { name: 'Back up this call' })).toBeDisabled();
+
+      voiceMock.current = { ...voiceMock.current, active: false, connectionState: 'closed' };
+      view.rerender(page());
+
+      await waitFor(() =>
+        expect(screen.getByRole('button', { name: 'No R2' })).toHaveAttribute(
+          'aria-pressed',
+          'false',
+        ),
+      );
+      expect(screen.getByRole('button', { name: 'No R2' })).not.toHaveClass('bg-amber-400');
+      // Only the switch goes off: the call that just ended stays out of R2.
+      expect(browserRecordingMock.setUploadSkipped).toHaveBeenCalledTimes(1);
+    });
+
+    it('keeps the next call out of R2, Twilio backup included, when No R2 is on before it', async () => {
+      const call = { on: vi.fn(), parameters: { CallSid: CALL_SID } };
+      voiceMock.current.makeCall = vi.fn(async (_numberId, _destination, options) => {
+        options?.onPrepared?.(prepared(false));
+        return call;
+      });
+      await renderDial();
+      expect(screen.getByRole('switch', { name: /twilio backup copy/i })).toBeChecked();
+
+      fireEvent.click(screen.getByRole('button', { name: 'No R2' }));
+      expect(
+        screen.getByText("No R2 is on: the next call's recording is deleted when it ends."),
+      ).toBeInTheDocument();
+      expect(screen.getByText('Not for the next call: No R2 is on.')).toBeInTheDocument();
+      browserRecordingMock.setUploadSkipped.mockClear();
+      await placeCall();
+
+      // Every Twilio recording is archived to R2, so Twilio does not record.
+      expect(voiceMock.current.makeCall).toHaveBeenCalledWith(
+        'pn1',
+        '+12547024877',
+        expect.objectContaining({ recordCall: false }),
+      );
+      await waitFor(() => expect(browserRecordingMock.setUploadSkipped).toHaveBeenCalledWith(true));
+      expect(browserRecordingMock.record).toHaveBeenCalledWith(call, expect.anything());
+      // Applied once the recording is set up, or it would reach nothing.
+      expect(browserRecordingMock.setUploadSkipped.mock.invocationCallOrder[0]).toBeGreaterThan(
+        browserRecordingMock.record.mock.invocationCallOrder[0]!,
+      );
+    });
+
+    it('keeps an incoming call answered while No R2 is on out of R2', async () => {
+      const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+      const page = () => (
+        <QueryClientProvider client={client}>
+          <DialPage />
+        </QueryClientProvider>
+      );
+      const view = renderBase(page());
+      await screen.findByText(/Caller ID:/);
+      fireEvent.click(screen.getByRole('button', { name: 'No R2' }));
+      browserRecordingMock.setUploadSkipped.mockClear();
+
+      voiceMock.current = { ...voiceMock.current, active: true, connectionState: 'open' };
+      view.rerender(page());
+
+      expect(browserRecordingMock.setUploadSkipped).toHaveBeenCalledWith(true);
+      expect(screen.getByRole('button', { name: 'No R2' })).toHaveAttribute('aria-pressed', 'true');
     });
   });
 
