@@ -19,6 +19,7 @@ import { SettingsDiagnostics } from './pages/settings-diagnostics';
 import { SettingsSecurity } from './pages/settings-security';
 import { SettingsSheets } from './pages/settings-sheets';
 import { SettingsTwilio } from './pages/settings-twilio';
+import { VoicemailDropPage } from './pages/voicemail-drop';
 
 // Only voice app accounts download the voice app.
 const VoiceApp = lazy(() => import('./voice/voice-app').then((m) => ({ default: m.VoiceApp })));
@@ -48,6 +49,7 @@ export function App() {
           <Route path="/numbers/:numberId/recordings" element={<RecordingsPage />} />
           <Route path="/numbers/:numberId/answer" element={<AnswerPage />} />
           <Route path="/numbers/:numberId/dial" element={<DialPage />} />
+          <Route path="/voicemail-drop" element={<VoicemailDropPage />} />
           <Route path="/settings" element={<Settings />} />
           <Route path="/settings/twilio" element={<SettingsTwilio />} />
           <Route path="/settings/security" element={<SettingsSecurity />} />

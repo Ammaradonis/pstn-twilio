@@ -114,6 +114,7 @@ model User {
   fbGroupsRuns        FbGroupsRun[]
   voiceSettings       VoiceSettings?
   voicemailGreeting   VoicemailGreeting?
+  voicemailDrop       VoicemailDrop?
   contacts            Contact[]
   blockedNumbers      BlockedNumber[]
   forwardingNumbers   ForwardingNumber[]
@@ -717,6 +718,23 @@ model VoicemailGreeting {
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@map("voicemail_greetings")
+}
+
+// The message the Dial page's "Drop voicemail" button plays into a callee's
+// voicemail: one per user, re-recorded often. Served to Twilio <Play> at an
+// unguessable URL that changes with every recording.
+model VoicemailDrop {
+  userId      String   @id @map("user_id")
+  audio       Bytes
+  contentType String   @map("content_type")
+  durationMs  Int      @map("duration_ms")
+  token       String   @unique
+  createdAt   DateTime @default(now()) @map("created_at")
+  updatedAt   DateTime @updatedAt @map("updated_at")
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("voicemail_drops")
 }
 
 model Contact {

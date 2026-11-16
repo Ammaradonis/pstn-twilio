@@ -5,7 +5,7 @@ import {
 } from '@pstn-twilio/shared';
 import { useQuery } from '@tanstack/react-query';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { useParams } from 'react-router-dom';
+import { Link, useParams } from 'react-router-dom';
 
 import { AiAgentPanel } from '../components/ai-agent-panel';
 import { CallQualityPanel } from '../components/call-quality';
@@ -29,7 +29,7 @@ import {
   useBrowserRecordingStatus,
 } from '../lib/browser-recordings';
 import type { RecordableCall } from '../lib/call-recorder';
-import { formatDate, formatPhone } from '../lib/format';
+import { formatClock, formatDate, formatPhone } from '../lib/format';
 import { watchRecordingDownload } from '../lib/recording-downloads';
 
 const DIALPAD_KEYS = ['1', '2', '3', '4', '5', '6', '7', '8', '9', '*', '0', '#', '+'] as const;
@@ -154,6 +154,10 @@ export function DialPage() {
   const [activeCallTwilioRecorded, setActiveCallTwilioRecorded] = useState(false);
   const [backupBusy, setBackupBusy] = useState(false);
   const [backupError, setBackupError] = useState<string | null>(null);
+  // "Drop voicemail": leaves the recorded message on the live call and ends it.
+  const [dropBusy, setDropBusy] = useState(false);
+  const [dropError, setDropError] = useState<string | null>(null);
+  const [dropNotice, setDropNotice] = useState<string | null>(null);
   // "No R2": the call that is up, or between calls the next one, has its
   // recording deleted when it ends instead of uploaded. It switches back off
   // when the call ends, so a forgotten switch cannot delete a real call.
@@ -181,6 +185,12 @@ export function DialPage() {
   useEffect(() => writePersistedCallPanels(callPanels), [callPanels]);
 
   const voice = useVoiceDevice();
+  // Recorded on the Voicemail drop page (same query key).
+  const voicemailMessage = useQuery({
+    queryKey: ['voicemail-drop'],
+    queryFn: api.voicemailDrop.get,
+    staleTime: 30_000,
+  });
   const outboundAnalytics = useQuery({
     queryKey: ['calls', numberId, 'analytics', 30],
     queryFn: () => api.calls.outboundAnalytics(numberId!, 30),
@@ -241,6 +251,8 @@ export function DialPage() {
     if (inCallMode) {
       // An incoming call answered while "No R2" is on stays out of R2 too.
       if (noR2Ref.current) setUploadSkipped(true);
+      setDropError(null);
+      setDropNotice(null);
       return;
     }
     setSentTones('');
@@ -319,6 +331,34 @@ export function DialPage() {
       setBackupError(err instanceof Error ? err.message : String(err));
     } finally {
       setBackupBusy(false);
+    }
+  }
+
+  // Twilio takes the callee's side out of the call to play the message into
+  // their voicemail, then hangs it up. This browser's side ends right away.
+  async function dropVoicemail() {
+    const callSid = activeCallRef.current?.parameters?.CallSid;
+    if (!callSid) {
+      setDropError('The call is still connecting. Try again in a moment.');
+      return;
+    }
+    setDropBusy(true);
+    setDropError(null);
+    // Nothing more from this microphone reaches their voicemail.
+    const muted = !voice.isMuted;
+    if (muted) voice.toggleMute();
+    try {
+      const result = await api.voicemailDrop.drop(callSid);
+      voice.hangup();
+      setDropNotice(
+        `Voicemail dropped: your ${formatClock(result.durationMs)} message is playing into their mailbox.`,
+      );
+    } catch (err) {
+      // The call is still up, so the user can leave the message by voice.
+      if (muted) voice.toggleMute();
+      setDropError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setDropBusy(false);
     }
   }
 
@@ -926,6 +966,26 @@ export function DialPage() {
           >
             Hangup
           </button>
+          {/* Outbound calls only: activeCallRef holds the call this page placed. */}
+          <button
+            type="button"
+            onClick={() => void dropVoicemail()}
+            disabled={
+              !inCallMode ||
+              voice.connectionState !== 'open' ||
+              !activeCallRef.current ||
+              !voicemailMessage.data ||
+              dropBusy
+            }
+            title={
+              voicemailMessage.data
+                ? `Plays your ${formatClock(voicemailMessage.data.durationMs)} message into their voicemail and ends the call. Press it after the beep.`
+                : 'Record your message on the Voicemail drop page first'
+            }
+            className="rounded bg-violet-600 px-3 py-1.5 text-sm font-semibold text-white hover:bg-violet-700 disabled:opacity-60"
+          >
+            {dropBusy ? 'Dropping…' : 'Drop voicemail'}
+          </button>
           <button
             onClick={() => setDestination('')}
             disabled={destination.length === 0 || inCallMode}
@@ -934,6 +994,25 @@ export function DialPage() {
             Clear
           </button>
         </div>
+
+        {dropError && (
+          <p role="alert" className="mt-2 text-sm text-rose-700">
+            {dropError}
+          </p>
+        )}
+        {dropNotice && (
+          <p role="status" className="mt-2 text-sm text-violet-800">
+            {dropNotice}
+          </p>
+        )}
+        {voicemailMessage.isSuccess && !voicemailMessage.data && (
+          <p className="mt-2 text-xs text-slate-500">
+            Drop voicemail needs a recorded message.{' '}
+            <Link to="/voicemail-drop" className="underline">
+              Record it
+            </Link>
+          </p>
+        )}
 
         <p className="mt-3 text-xs text-slate-500">
           Live state: <span className="font-mono">{voice.connectionState}</span>

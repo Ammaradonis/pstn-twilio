@@ -35,6 +35,8 @@ import type {
   SmsMessageDto,
   UserDto,
   VoicemailDto,
+  VoicemailDropDto,
+  VoicemailDropResultDto,
   VoiceTokenDto,
 } from '@pstn-twilio/shared';
 
@@ -323,6 +325,27 @@ export const api = {
         '/recordings/twilio-backup',
         { method: 'POST', body: { callSid } },
       ),
+  },
+
+  // The message the Dial page's "Drop voicemail" button leaves on a call.
+  voicemailDrop: {
+    get: () => request<VoicemailDropDto | null>('/voicemail-drop'),
+    save: (audioBase64: string, durationMs: number) =>
+      request<VoicemailDropDto>('/voicemail-drop', {
+        method: 'PUT',
+        body: { audioBase64, contentType: 'audio/wav', durationMs },
+        timeoutMs: 60_000,
+      }),
+    remove: () => request<void>('/voicemail-drop', { method: 'DELETE' }),
+    audio: () => requestBlob('/voicemail-drop/audio'),
+    // Plays the message to the callee of this live outbound call (the
+    // browser's CallSid) and ends the browser's side.
+    drop: (callSid: string) =>
+      request<VoicemailDropResultDto>('/voicemail-drop/drop', {
+        method: 'POST',
+        body: { callSid },
+        timeoutMs: 15_000,
+      }),
   },
 
   voicemail: {

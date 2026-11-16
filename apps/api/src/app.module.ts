@@ -21,6 +21,7 @@ import { SheetsModule } from './sheets/sheets.module';
 import { TwilioModule } from './twilio/twilio.module';
 import { VoiceModule } from './voice/voice.module';
 import { VoiceAppModule } from './voice-app/voice-app.module';
+import { VoicemailDropModule } from './voicemail-drop/voicemail-drop.module';
 import { WebhooksModule } from './webhooks/webhooks.module';
 
 @Module({
@@ -48,6 +49,7 @@ import { WebhooksModule } from './webhooks/webhooks.module';
     AiCallsModule,
     SheetsModule,
     VoiceAppModule,
+    VoicemailDropModule,
   ],
 })
 export class AppModule implements NestModule {

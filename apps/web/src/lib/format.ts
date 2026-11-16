@@ -18,3 +18,9 @@ export function formatDate(iso: string | null): string {
 export function capabilityBadge(value: boolean): string {
   return value ? '✓' : '—';
 }
+
+/** 83 000 ms -> "1:23". */
+export function formatClock(ms: number): string {
+  const total = Math.max(0, Math.round(ms / 1000));
+  return `${Math.floor(total / 60)}:${String(total % 60).padStart(2, '0')}`;
+}

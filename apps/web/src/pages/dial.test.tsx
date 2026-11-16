@@ -142,6 +142,10 @@ vi.mock('../lib/api-client', () => {
           .fn()
           .mockResolvedValue({ recordingSid: 'RE9', alreadyRecording: false }),
       },
+      voicemailDrop: {
+        get: vi.fn().mockResolvedValue(null),
+        drop: vi.fn(),
+      },
       sheets: {
         status: vi
           .fn()
@@ -588,6 +592,99 @@ describe('DialPage dialpad', () => {
 
       expect(browserRecordingMock.setUploadSkipped).toHaveBeenCalledWith(true);
       expect(screen.getByRole('button', { name: 'No R2' })).toHaveAttribute('aria-pressed', 'true');
+    });
+
+    describe('Drop voicemail', () => {
+      function renderLive() {
+        voiceMock.current.makeCall = vi.fn(async (_numberId, _destination, options) => {
+          options?.onPrepared?.(prepared(false));
+          return { on: vi.fn(), parameters: { CallSid: CALL_SID } };
+        });
+        const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+        const page = () => (
+          <QueryClientProvider client={client}>
+            <DialPage />
+          </QueryClientProvider>
+        );
+        const view = renderBase(page());
+        return {
+          async goLive() {
+            await screen.findByText(/Caller ID:/);
+            await placeCall();
+            voiceMock.current = { ...voiceMock.current, active: true, connectionState: 'open' };
+            view.rerender(page());
+          },
+        };
+      }
+
+      beforeEach(() => {
+        vi.mocked(api.voicemailDrop.get).mockResolvedValue({
+          durationMs: 23_000,
+          updatedAt: '2026-11-16T10:00:00.000Z',
+        });
+        vi.mocked(api.voicemailDrop.drop).mockReset();
+      });
+
+      it('drops the recorded message and ends the call', async () => {
+        vi.mocked(api.voicemailDrop.drop).mockResolvedValue({
+          calleeCallSid: 'CAfedcba9876543210fedcba9876543210',
+          durationMs: 23_000,
+        });
+        await renderLive().goLive();
+
+        const drop = await screen.findByRole('button', { name: 'Drop voicemail' });
+        await waitFor(() => expect(drop).toBeEnabled());
+        fireEvent.click(drop);
+
+        await waitFor(() => expect(api.voicemailDrop.drop).toHaveBeenCalledWith(CALL_SID));
+        await waitFor(() => expect(voiceMock.current.hangup).toHaveBeenCalled());
+        // Muted first, so the user's own audio stays out of their voicemail.
+        expect(voiceMock.current.toggleMute).toHaveBeenCalledTimes(1);
+        expect(voiceMock.current.toggleMute.mock.invocationCallOrder[0]).toBeLessThan(
+          vi.mocked(api.voicemailDrop.drop).mock.invocationCallOrder[0]!,
+        );
+        expect(
+          await screen.findByText(
+            'Voicemail dropped: your 0:23 message is playing into their mailbox.',
+          ),
+        ).toBeInTheDocument();
+      });
+
+      it('keeps the call up and unmuted when the drop fails', async () => {
+        vi.mocked(api.voicemailDrop.drop).mockRejectedValue(
+          new Error(
+            'Nobody has answered yet. Wait for the voicemail greeting and the beep, then drop.',
+          ),
+        );
+        await renderLive().goLive();
+
+        const drop = await screen.findByRole('button', { name: 'Drop voicemail' });
+        await waitFor(() => expect(drop).toBeEnabled());
+        fireEvent.click(drop);
+
+        expect(await screen.findByText(/Nobody has answered yet/)).toBeInTheDocument();
+        expect(voiceMock.current.hangup).not.toHaveBeenCalled();
+        expect(voiceMock.current.toggleMute).toHaveBeenCalledTimes(2);
+      });
+
+      it('stays off until a message is recorded', async () => {
+        vi.mocked(api.voicemailDrop.get).mockResolvedValue(null);
+        await renderLive().goLive();
+
+        expect(
+          await screen.findByText(/Drop voicemail needs a recorded message/),
+        ).toBeInTheDocument();
+        expect(screen.getByRole('button', { name: 'Drop voicemail' })).toBeDisabled();
+      });
+
+      it('stays off on a call this page did not place', async () => {
+        voiceMock.current = { ...voiceMock.current, active: true, connectionState: 'open' };
+        render(<DialPage />);
+        await screen.findByText(/Caller ID:/);
+        await waitFor(() => expect(api.voicemailDrop.get).toHaveBeenCalled());
+
+        expect(screen.getByRole('button', { name: 'Drop voicemail' })).toBeDisabled();
+      });
     });
   });
 
