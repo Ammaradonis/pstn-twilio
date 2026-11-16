@@ -226,6 +226,26 @@ describe('rendering', () => {
     expect(email.body).not.toMatch(/\{\{/);
   });
 
+  it('ends the first email of every sequence with the Loom video, and only the first', () => {
+    const loom = 'https://www.loom.com/share/a3614b444000454daebb01634bc47711';
+    for (const key of Object.values(TAG_EMAIL_TEMPLATE)) {
+      const [first, ...rest] = loadSequence(key);
+      for (const [vars, region] of [
+        [usVars, 'US'],
+        [ukVars, 'UK'],
+      ] as const) {
+        const body = renderSequenceEmail(first!, vars, region)!.body;
+        expect(body, `${key} ${region}`).toMatch(
+          /\n\nAmmar\n\nPS\. I recorded a personal video for martial arts school owners .+\n/,
+        );
+        // On its own line, so mail apps turn it into a link.
+        expect(body.endsWith(`\n${loom}`), `${key} ${region}`).toBe(true);
+      }
+      for (const email of rest)
+        expect(email.body, `${key} ${email.step}`).not.toContain('loom.com');
+    }
+  });
+
   it('uses exactly 02045726501 for The Official UK, in subjects too', () => {
     for (const key of Object.values(TAG_EMAIL_TEMPLATE)) {
       for (const template of loadSequence(key)) {

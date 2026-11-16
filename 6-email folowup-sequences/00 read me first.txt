@@ -23,6 +23,8 @@ NOTES
 
 matboss.online only appears in emails 5 and 6. Emails 1 to 4 never mention the site.
 
+Email 1 of every sequence ends with a PS linking the personal Loom video (Stop Missing Calls, Plug the Leaks). The link sits on its own line so mail apps make it clickable.
+
 Every email pushes the demo line (667) 220-6726 and asks for a reply with two things in this order. First how the demo call felt. Then one thing about their school that exposes a blind spot.
 
 The typos, missing apostrophes and plain punctuation are on purpose. Dont let anyone clean them up.
