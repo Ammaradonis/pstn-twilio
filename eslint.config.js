@@ -123,7 +123,7 @@ export default [
     },
   },
   {
-    files: ['scripts/**/*.{js,cjs}'],
+    files: ['scripts/**/*.{js,cjs}', 'workers/**/*.cjs'],
     languageOptions: {
       ecmaVersion: 2022,
       sourceType: 'commonjs',
