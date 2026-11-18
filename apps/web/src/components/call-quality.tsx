@@ -67,6 +67,10 @@ export function CallQualityPanel({
   warnings: string[];
 }) {
   const messages = [...new Set(warnings.map((w) => WARNING_MESSAGES[w]).filter(Boolean))];
+  // e.g. "opus · via frankfurt": the codec, and the edge where the audio enters Twilio.
+  const route = [quality?.codec, quality?.edge && `via ${quality.edge}`]
+    .filter(Boolean)
+    .join(' · ');
 
   return (
     <div className="mt-3 rounded border border-slate-200 p-3" aria-label="Call quality">
@@ -92,10 +96,8 @@ export function CallQualityPanel({
           value={format(quality?.mos ?? null, 1, '')}
           tone={mosTone(quality?.mos ?? null)}
         />
-        {quality?.codec && (
-          <span className="text-[11px] uppercase tracking-wide text-slate-500">
-            {quality.codec}
-          </span>
+        {route && (
+          <span className="text-[11px] uppercase tracking-wide text-slate-500">{route}</span>
         )}
       </div>
       {messages.length > 0 && (

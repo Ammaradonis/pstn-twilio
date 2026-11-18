@@ -11,6 +11,7 @@ const voiceSdkMock = vi.hoisted(() => ({
   autoRegister: true,
   instances: [] as Array<{
     state: 'destroyed' | 'unregistered' | 'registering' | 'registered';
+    edge: string | null;
     register: ReturnType<typeof vi.fn>;
     updateToken: ReturnType<typeof vi.fn>;
     destroy: ReturnType<typeof vi.fn>;
@@ -54,6 +55,8 @@ vi.mock('../lib/browser-recordings', () => ({
 vi.mock('@twilio/voice-sdk', () => {
   class Device {
     state: 'destroyed' | 'unregistered' | 'registering' | 'registered' = 'unregistered';
+    // The SDK fills this in from Twilio's 'connected' message.
+    edge: string | null = null;
     options: Record<string, unknown>;
     register = vi.fn(async () => {
       if (this.state !== 'unregistered') {
@@ -152,9 +155,20 @@ describe('useVoiceDevice', () => {
 
   afterEach(() => {
     act(() => current?.destroy());
+    Reflect.deleteProperty(document, 'visibilityState');
+    Reflect.deleteProperty(navigator, 'onLine');
     vi.useRealTimers();
     vi.clearAllMocks();
   });
+
+  // What Android does to the page: puts it in the background or takes it offline.
+  function setPage({ visible, online }: { visible: boolean; online: boolean }) {
+    Object.defineProperty(document, 'visibilityState', {
+      configurable: true,
+      get: () => (visible ? 'visible' : 'hidden'),
+    });
+    Object.defineProperty(navigator, 'onLine', { configurable: true, get: () => online });
+  }
 
   it('waits for the SDK to confirm recovery when 31005 fires while the device state is still registered', async () => {
     render(<Harness onChange={(voice) => (current = voice)} />);
@@ -199,7 +213,7 @@ describe('useVoiceDevice', () => {
     expect(current!.error).toBeNull();
   });
 
-  it('passes validated fallback edges and signaling recovery options to the Twilio device', async () => {
+  it('passes the nearest edge and signaling recovery options to the Twilio device', async () => {
     vi.mocked(api.voice.deviceConfig).mockResolvedValue({
       codecPreferences: ['opus', 'pcmu'],
       edge: ['frankfurt', 'dublin', 'ashburn'],
@@ -222,7 +236,8 @@ describe('useVoiceDevice', () => {
     if (!device) throw new Error('Mock Twilio Device was not created');
     expect(device.options).toEqual({
       codecPreferences: ['opus', 'pcmu'],
-      edge: ['frankfurt', 'dublin', 'ashburn'],
+      // One edge: given the list, the SDK would drift down it on reconnects.
+      edge: 'frankfurt',
       dscp: true,
       closeProtection: true,
       enableImprovedSignalingErrorPrecision: true,
@@ -288,7 +303,7 @@ describe('useVoiceDevice', () => {
     expect(device.updateToken).toHaveBeenCalledWith('voice.jwt');
   });
 
-  it('replaces an idle stale device after eight seconds and rotates the edge order', async () => {
+  it('replaces an idle stale device after eight seconds, again through the nearest edge', async () => {
     vi.mocked(api.voice.deviceConfig).mockResolvedValue({
       edge: ['frankfurt', 'dublin', 'ashburn'],
     });
@@ -323,9 +338,98 @@ describe('useVoiceDevice', () => {
     expect(stalledDevice.destroy).toHaveBeenCalledTimes(1);
     expect(voiceSdkMock.instances).toHaveLength(2);
     expect(voiceSdkMock.instances[1]?.register).toHaveBeenCalledTimes(1);
-    expect(voiceSdkMock.instances[1]?.options.edge).toEqual(['dublin', 'ashburn', 'frankfurt']);
+    // It had registered, so Frankfurt works: the network or Android cut it off.
+    expect(voiceSdkMock.instances[1]?.options.edge).toBe('frankfurt');
     expect(current!.registered).toBe(true);
     expect(current!.error).toBeNull();
+  });
+
+  it('tries the next edge only after one fails to register, and comes back once it can', async () => {
+    vi.mocked(api.voice.deviceConfig).mockResolvedValue({
+      edge: ['frankfurt', 'dublin', 'ashburn'],
+    });
+    voiceSdkMock.autoRegister = false;
+    render(<Harness onChange={(voice) => (current = voice)} />);
+
+    await act(async () => {
+      await current!.init();
+      await Promise.resolve();
+    });
+    expect(voiceSdkMock.instances[0]?.options.edge).toBe('frankfurt');
+
+    // Frankfurt never registers the Device although the page is visible and online.
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(8_000);
+    });
+    expect(voiceSdkMock.instances).toHaveLength(2);
+    const dublin = voiceSdkMock.instances[1]!;
+    expect(dublin.options.edge).toBe('dublin');
+
+    act(() => {
+      dublin.state = 'registered';
+      dublin.emit('registered');
+    });
+    expect(current!.registered).toBe(true);
+
+    // When Dublin's Device is cut off later, its replacement tries Frankfurt again.
+    voiceSdkMock.autoRegister = true;
+    act(() => {
+      dublin.emit('error', Object.assign(new Error('transport unavailable'), { code: 31009 }));
+    });
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(8_000);
+    });
+    expect(voiceSdkMock.instances).toHaveLength(3);
+    expect(voiceSdkMock.instances[2]?.options.edge).toBe('frankfurt');
+    expect(current!.registered).toBe(true);
+  });
+
+  it('does not hold a registration that stalled in the background against the edge', async () => {
+    vi.mocked(api.voice.deviceConfig).mockResolvedValue({
+      edge: ['frankfurt', 'dublin', 'ashburn'],
+    });
+    voiceSdkMock.autoRegister = false;
+    render(<Harness onChange={(voice) => (current = voice)} />);
+
+    await act(async () => {
+      await current!.init();
+      await Promise.resolve();
+    });
+
+    // The user switches to another app while Frankfurt is connecting, then comes back.
+    await act(async () => {
+      setPage({ visible: false, online: true });
+      document.dispatchEvent(new Event('visibilitychange'));
+      await vi.advanceTimersByTimeAsync(2_000);
+      setPage({ visible: true, online: true });
+      document.dispatchEvent(new Event('visibilitychange'));
+      await vi.advanceTimersByTimeAsync(4_000);
+    });
+
+    expect(voiceSdkMock.instances).toHaveLength(2);
+    expect(voiceSdkMock.instances[1]?.options.edge).toBe('frankfurt');
+  });
+
+  it('does not hold a registration that stalled offline against the edge', async () => {
+    vi.mocked(api.voice.deviceConfig).mockResolvedValue({
+      edge: ['frankfurt', 'dublin', 'ashburn'],
+    });
+    voiceSdkMock.autoRegister = false;
+    render(<Harness onChange={(voice) => (current = voice)} />);
+
+    await act(async () => {
+      await current!.init();
+      await Promise.resolve();
+    });
+
+    await act(async () => {
+      setPage({ visible: true, online: false });
+      window.dispatchEvent(new Event('offline'));
+      await vi.advanceTimersByTimeAsync(8_000);
+    });
+
+    expect(voiceSdkMock.instances).toHaveLength(2);
+    expect(voiceSdkMock.instances[1]?.options.edge).toBe('frankfurt');
   });
 
   it('recreates an idle device that remains registering after eight seconds', async () => {
@@ -1081,6 +1185,25 @@ describe('useVoiceDevice', () => {
       );
     });
 
+    it('sends the Android microphone to the call without the limiter in between', async () => {
+      androidInputs('Speakerphone', 'Headset earpiece');
+      const device = await initDevice();
+      const limiter = device.audio.addProcessor.mock.calls[0]![0] as SendLimiter;
+      limiter.enabled = true;
+      let limiterAtCapture: boolean | undefined;
+      // The SDK captures the microphone, and runs the processor, on setInputDevice.
+      device.audio.setInputDevice.mockImplementation(async () => {
+        limiterAtCapture = limiter.enabled;
+      });
+      device.connect.mockReturnValue({ on: vi.fn(), isMuted: vi.fn().mockReturnValue(false) });
+
+      await act(async () => {
+        await current!.makeCall('pn1', '+1 555-111-1111');
+      });
+
+      expect(limiterAtCapture).toBe(false);
+    });
+
     it('uses the chosen route for outgoing and incoming calls and remembers it', async () => {
       androidInputs('Speakerphone', 'Headset earpiece');
       const device = await initDevice();
@@ -1271,6 +1394,24 @@ describe('useVoiceDevice', () => {
     expect(current!.error).toContain('DTMF digits');
   });
 
+  it('keeps the send limiter for microphones other than Android phones', async () => {
+    render(<Harness onChange={(voice) => (current = voice)} />);
+    await act(async () => {
+      await current!.init();
+      await Promise.resolve();
+    });
+    const device = voiceSdkMock.instances[0]!;
+    const limiter = device.audio.addProcessor.mock.calls[0]![0] as SendLimiter;
+    limiter.enabled = false;
+    device.connect.mockReturnValue({ on: vi.fn(), isMuted: vi.fn().mockReturnValue(false) });
+
+    await act(async () => {
+      await current!.makeCall('pn1', '+1 555-111-1111');
+    });
+
+    expect(limiter.enabled).toBe(true);
+  });
+
   it('tracks live call quality samples and warnings until the call ends', async () => {
     render(<Harness onChange={(voice) => (current = voice)} />);
 
@@ -1281,6 +1422,7 @@ describe('useVoiceDevice', () => {
 
     const device = voiceSdkMock.instances[0];
     if (!device) throw new Error('Mock Twilio Device was not created');
+    device.edge = 'frankfurt';
     const handlers = new Map<string, (...args: unknown[]) => void>();
     const call = {
       on: vi.fn((event: string, handler: (...args: unknown[]) => void) => {
@@ -1313,6 +1455,7 @@ describe('useVoiceDevice', () => {
       packetLossPct: 2.5,
       mos: 3.4,
       codec: 'opus',
+      edge: 'frankfurt',
     });
     expect(current!.qualityWarnings).toEqual(['high-rtt', 'high-packet-loss']);
 

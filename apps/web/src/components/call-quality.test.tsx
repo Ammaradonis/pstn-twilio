@@ -14,7 +14,14 @@ describe('CallQualityPanel', () => {
   it('grades each metric against Twilio network guidance', () => {
     render(
       <CallQualityPanel
-        quality={{ rttMs: 450, jitterMs: 20, packetLossPct: 0.4, mos: 4.3, codec: 'opus' }}
+        quality={{
+          rttMs: 450,
+          jitterMs: 20,
+          packetLossPct: 0.4,
+          mos: 4.3,
+          codec: 'opus',
+          edge: 'frankfurt',
+        }}
         warnings={[]}
       />,
     );
@@ -23,7 +30,7 @@ describe('CallQualityPanel', () => {
     expect(screen.getByText('20 ms').parentElement).toHaveClass('text-amber-800');
     expect(screen.getByText('0.4%').parentElement).toHaveClass('text-emerald-800');
     expect(screen.getByText('4.3').parentElement).toHaveClass('text-emerald-800');
-    expect(screen.getByText('opus')).toBeInTheDocument();
+    expect(screen.getByText('opus · via frankfurt')).toBeInTheDocument();
   });
 
   it('explains active warnings once each and ignores unknown ones', () => {

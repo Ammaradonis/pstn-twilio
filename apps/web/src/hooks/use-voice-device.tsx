@@ -39,6 +39,8 @@ type VoiceDevice = {
     (event: string, handler: VoiceEventHandler): void;
   };
   state?: VoiceDeviceRegistrationState;
+  // The Twilio edge the Device is connected through, e.g. 'frankfurt'.
+  edge?: string | null;
   register?: () => Promise<void> | void;
   destroy?: () => void;
   disconnectAll?: () => void;
@@ -93,6 +95,8 @@ export interface CallQuality {
   packetLossPct: number | null;
   mos: number | null;
   codec: string | null;
+  // Where the call's audio enters Twilio's network, e.g. 'frankfurt'.
+  edge: string | null;
 }
 
 type RtcSample = {
@@ -197,8 +201,8 @@ const TOKEN_ERROR_CODES = new Set([20101, 20104, 31202, 31204, 31205]);
 // whenever the user switches to another app.
 const TRANSIENT_SIGNALING_CODES = new Set([31005, 31009, 53000, 53001]);
 const TOKEN_REFRESH_WINDOW_MS = 2 * 60_000;
-// An idle device can safely fail over sooner than an established call. Rotate
-// the edge order when replacing it, instead of repeatedly retrying edge one.
+// An idle device can safely fail over sooner than an established call. When an
+// edge fails to register a Device, its replacement uses the next edge.
 const IDLE_RECOVERY_WINDOW_MS = 8_000;
 const MAX_RECOVERY_WINDOW_MS = 30_000;
 // On returning to the tab or the network, the SDK normally restores signaling
@@ -223,7 +227,8 @@ const ANDROID_HEADSET_INPUT_LABELS = new Set(['Wired headset', 'Bluetooth headse
 // Inputs only Chrome on Android lists, also in its "desktop site" mode, whose
 // user agent claims Linux.
 const ANDROID_ONLY_INPUT_LABELS = new Set([ANDROID_EARPIECE_INPUT_LABEL, 'Speakerphone']);
-// Keeps what the microphone sends under -3 dBFS (lib/send-limiter.ts).
+// Keeps what the microphone sends under -3 dBFS (lib/send-limiter.ts), except
+// on Android (see callProcessing).
 const sendLimiter = new SendLimiter();
 const MICROPHONE_STORAGE_KEY = 'pstn-twilio.microphone';
 
@@ -253,7 +258,13 @@ const runtime: {
   recoveryTimer: ReturnType<typeof setTimeout> | null;
   recoveryStartedAt: number | null;
   deviceStartedAt: number;
+  // Index into the configured edges of the edge the next Device uses.
   edgeOffset: number;
+  // Whether the current Device has registered at least once.
+  deviceRegistered: boolean;
+  // Whether the page has stayed visible and online while the current Device
+  // tried its edge, so that a failure to register counts against the edge.
+  edgeTestFair: boolean;
   generation: number;
   callSequence: number;
   outcomeTimer: ReturnType<typeof setTimeout> | null;
@@ -281,6 +292,8 @@ const runtime: {
   recoveryStartedAt: null,
   deviceStartedAt: 0,
   edgeOffset: 0,
+  deviceRegistered: false,
+  edgeTestFair: false,
   generation: 0,
   callSequence: 0,
   outcomeTimer: null,
@@ -552,6 +565,7 @@ function markDeviceRegistered(): void {
   runtime.recoveryTimer = null;
   runtime.recoveryStartedAt = null;
   runtime.hasRegistered = true;
+  runtime.deviceRegistered = true;
   setRuntimeState({
     ready: true,
     registered: true,
@@ -595,6 +609,8 @@ function disposeCurrentDevice(resetState: boolean): void {
   // Device, e.g. when switching to another phone number.
   const device = runtime.device;
   runtime.device = null;
+  runtime.deviceRegistered = false;
+  runtime.edgeTestFair = false;
   try {
     device?.destroy?.();
   } catch {
@@ -618,16 +634,29 @@ function disposeCurrentDevice(resetState: boolean): void {
   }
 }
 
+function isAndroidAudio(inputs: Array<{ label: string }>): boolean {
+  return (
+    inputs.some((input) => ANDROID_ONLY_INPUT_LABELS.has(input.label)) ||
+    (typeof navigator !== 'undefined' && /Android/i.test(navigator.userAgent))
+  );
+}
+
 // Avoid adding browser gain on Android's communication input. Keep echo
 // cancellation and noise suppression; elsewhere AGC keeps quiet mics audible.
 // This is a gain-staging precaution, not a diagnosis of carrier/network quality.
 function processingConstraints(inputs: Array<{ label: string }>): MediaTrackConstraints {
-  const android =
-    inputs.some((input) => ANDROID_ONLY_INPUT_LABELS.has(input.label)) ||
-    (typeof navigator !== 'undefined' && /Android/i.test(navigator.userAgent));
-  return android
+  return isAndroidAudio(inputs)
     ? { ...DEFAULT_AUDIO_CONSTRAINTS, autoGainControl: false }
     : DEFAULT_AUDIO_CONSTRAINTS;
+}
+
+// Processing for a microphone about to be captured for a call. Android also
+// skips the send limiter: its Web Audio engine sits between the microphone and
+// the call and delays every word, on top of the long way to US numbers. The
+// rare peak above -3 dBFS then reaches the encoder as it is.
+function callProcessing(inputs: Array<{ label: string }>): MediaTrackConstraints {
+  sendLimiter.enabled = !isAndroidAudio(inputs);
+  return processingConstraints(inputs);
 }
 
 // Microphone constraints for a call. On an Android phone with no headset this
@@ -645,9 +674,9 @@ async function callAudioConstraints(
       throw new Error(
         'Could not check the selected microphone. Refresh microphones or choose Automatic.',
       );
-    return processingConstraints(runtime.state.microphoneInputs);
+    return callProcessing(runtime.state.microphoneInputs);
   }
-  const processing = processingConstraints(inputs);
+  const processing = callProcessing(inputs);
   if (selectedId) {
     if (!inputs.some((device) => device.deviceId === selectedId)) {
       throw new Error(
@@ -813,10 +842,29 @@ function scheduleTokenRefresh(expiresAt: string): void {
   }, delay);
 }
 
+function pageCanConnect(): boolean {
+  return (
+    (typeof document === 'undefined' || document.visibilityState !== 'hidden') &&
+    (typeof navigator === 'undefined' || navigator.onLine !== false)
+  );
+}
+
+// A Device that tries to register while Android has the page in the background,
+// or while the phone is offline, learns nothing about its edge.
+function spoilEdgeTest(): void {
+  if (!pageCanConnect()) runtime.edgeTestFair = false;
+}
+
 function replaceForRecovery(): void {
   // Never destroy a live or waiting incoming call just to refresh registration.
   if (runtime.state.active || runtime.state.incoming) return;
-  runtime.edgeOffset += 1;
+  // Move on to the next edge only when this Device's edge failed to register it
+  // although the page stayed visible and online. Otherwise start again from the
+  // first, nearest edge: a Device that registered was cut off by the network or
+  // by Android (every app switch closes Chrome's socket), not by its edge, and
+  // a farther edge carries the call's audio a longer way.
+  const edgeFailed = !runtime.deviceRegistered && runtime.edgeTestFair;
+  runtime.edgeOffset = edgeFailed ? runtime.edgeOffset + 1 : 0;
   disposeCurrentDevice(false);
   void initVoiceDevice(isBrowserSupported());
 }
@@ -1072,6 +1120,7 @@ function attachCallListeners(conn: VoiceCall, prepared?: OutboundCallPreparation
         packetLossPct: finiteOrNull(s.packetsLostFraction),
         mos: finiteOrNull(s.mos),
         codec: typeof s.codecName === 'string' ? s.codecName : null,
+        edge: runtime.device?.edge ?? null,
       },
     });
   });
@@ -1326,12 +1375,18 @@ async function initVoiceDevice(
 
       const options = sanitizeDeviceConfig(config);
       if (Array.isArray(options.edge)) {
+        // One edge per Device. Given a list, the SDK steps down it after each
+        // failed reconnect (e.g. while Android has Chrome in the background),
+        // then stays wherever it connects, possibly an edge far from the user
+        // that every call's audio then has to reach over the public internet.
+        // replaceForRecovery() picks the next edge only when this one fails.
         const edges = options.edge as string[];
-        const offset = runtime.edgeOffset % edges.length;
-        options.edge = [...edges.slice(offset), ...edges.slice(0, offset)];
+        options.edge = edges[runtime.edgeOffset % edges.length];
       }
       const device = new Device(tokenResp.token, options);
       runtime.device = device;
+      runtime.deviceRegistered = false;
+      runtime.edgeTestFair = pageCanConnect();
       if (!sdkIncomingSound) {
         try {
           device.audio?.incoming?.(false);
@@ -1692,6 +1747,8 @@ function installRecoveryListeners(): void {
   window.addEventListener('online', recoverNow);
   window.addEventListener('pageshow', recoverNow);
   document.addEventListener('visibilitychange', recoverNow);
+  window.addEventListener('offline', spoilEdgeTest);
+  document.addEventListener('visibilitychange', spoilEdgeTest);
   // General safety net: if the Voice SDK ever emits an unhandled rejection with
   // a reconnectable error code, recover gracefully instead of surfacing it to
   // the user. SDK 2.18.5 fixes a false token error after signaling drops, but

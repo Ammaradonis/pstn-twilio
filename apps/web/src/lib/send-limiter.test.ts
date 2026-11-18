@@ -92,8 +92,11 @@ describe('SendLimiter (Voice SDK audio processor)', () => {
     } as unknown as MediaStream;
     const close = vi.fn().mockResolvedValue(undefined);
     const connect = vi.fn((node: unknown) => node);
-    const created = { limiterNodes: 0, node: null as FakeWorkletNode | null };
+    const created = { contexts: 0, limiterNodes: 0, node: null as FakeWorkletNode | null };
     class FakeAudioContext {
+      constructor() {
+        created.contexts++;
+      }
       state = state;
       audioWorklet = { addModule };
       resume = vi.fn(() => new Promise<void>(() => {})); // never settles without a gesture
@@ -137,6 +140,17 @@ describe('SendLimiter (Voice SDK audio processor)', () => {
     expect(stop).toHaveBeenCalledTimes(1);
     await limiter.destroyProcessedStream(destinationStream);
     expect(close).toHaveBeenCalledTimes(1);
+  });
+
+  it('sends the microphone as it is, without starting an audio engine, while switched off', async () => {
+    const { created } = stubAudioContext('running', async () => undefined);
+    const limiter = new SendLimiter();
+    limiter.enabled = false;
+    await expect(limiter.createProcessedStream(mic)).resolves.toBe(mic);
+    expect(created.contexts).toBe(0);
+    limiter.enabled = true;
+    await expect(limiter.createProcessedStream(mic)).resolves.not.toBe(mic);
+    expect(created.contexts).toBe(1);
   });
 
   it('sends the microphone unprocessed rather than silence when the engine is not allowed to start', async () => {

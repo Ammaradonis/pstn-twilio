@@ -25,9 +25,12 @@ interface Graph {
 }
 
 export class SendLimiter {
+  // When false, microphones acquired from then on are sent unprocessed.
+  enabled = true;
   private readonly graphs = new Map<MediaStream, Graph>();
 
   async createProcessedStream(stream: MediaStream): Promise<MediaStream> {
+    if (!this.enabled) return stream;
     let context: AudioContext | undefined;
     let source: MediaStreamAudioSourceNode | undefined;
     let limiter: AudioWorkletNode | undefined;
