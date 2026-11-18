@@ -120,6 +120,8 @@ model User {
   forwardingNumbers   ForwardingNumber[]
   devices             UserDevice[]
   readMarkers         ReadMarker[]
+  smsCampaign         SmsCampaign?
+  smsCampaignSends    SmsCampaignSend[]
 
   @@map("users")
 }
@@ -230,7 +232,8 @@ model SmsMessage {
   createdAt        DateTime         @default(now()) @map("created_at")
   updatedAt        DateTime         @updatedAt @map("updated_at")
 
-  phoneNumber PhoneNumber @relation(fields: [phoneNumberId], references: [id], onDelete: Cascade)
+  phoneNumber  PhoneNumber      @relation(fields: [phoneNumberId], references: [id], onDelete: Cascade)
+  campaignSend SmsCampaignSend?
 
   @@index([phoneNumberId, createdAt(sort: Desc)])
   @@index([twilioMessageSid])
@@ -735,6 +738,49 @@ model VoicemailDrop {
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@map("voicemail_drops")
+}
+
+// The cold SMS campaign: one text per called lead (sheets_push_logs) from the
+// toll-free line, at most daily_cap in any 24 hours. One per user.
+model SmsCampaign {
+  userId     String    @id @map("user_id")
+  enabled    Boolean   @default(false)
+  body       String
+  dailyCap   Int       @default(100) @map("daily_cap")
+  // When it was last switched on; the carrier-block check only counts texts since then.
+  startedAt  DateTime? @map("started_at")
+  // The latest send attempt; sends are spaced by this, across machines.
+  lastSendAt DateTime? @map("last_send_at")
+  lastError  String?   @map("last_error")
+  createdAt  DateTime  @default(now()) @map("created_at")
+  updatedAt  DateTime  @updatedAt @map("updated_at")
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("sms_campaigns")
+}
+
+// One row per number the campaign texted (or tried to). The unique key is
+// what keeps a number from ever getting the campaign text twice.
+model SmsCampaignSend {
+  id           String   @id @default(uuid())
+  userId       String   @map("user_id")
+  toE164       String   @map("to_e164")
+  pushLogId    String?  @map("push_log_id")
+  schoolName   String?  @map("school_name")
+  // SENDING | SENT | FAILED | OPTED_OUT
+  status       String
+  smsMessageId String?  @unique @map("sms_message_id")
+  error        String?
+  createdAt    DateTime @default(now()) @map("created_at")
+  updatedAt    DateTime @updatedAt @map("updated_at")
+
+  user       User        @relation(fields: [userId], references: [id], onDelete: Cascade)
+  smsMessage SmsMessage? @relation(fields: [smsMessageId], references: [id], onDelete: SetNull)
+
+  @@unique([userId, toE164])
+  @@index([userId, createdAt(sort: Desc)])
+  @@map("sms_campaign_sends")
 }
 
 model Contact {

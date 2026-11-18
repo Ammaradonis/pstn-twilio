@@ -4,3 +4,4 @@ export * from './types/index';
 export * from './events/index';
 export * from './phone';
 export * from './us-states';
+export * from './sms-campaign';

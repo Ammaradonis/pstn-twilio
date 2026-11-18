@@ -13,6 +13,7 @@ const PRIMARY_NAV = [
   { to: '/numbers', label: 'Numbers' },
   { to: '/numbers/new', label: 'New number' },
   { to: '/voicemail-drop', label: 'Voicemail drop' },
+  { to: '/sms-campaign', label: 'SMS campaign' },
 ];
 
 const SECONDARY_NAV = [

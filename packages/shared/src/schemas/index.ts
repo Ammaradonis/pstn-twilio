@@ -134,3 +134,4 @@ export const pushCallResultSchema = z.object({
 
 export * from './voice-app';
 export * from './voicemail-drop';
+export * from './sms-campaign';

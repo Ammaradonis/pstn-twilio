@@ -314,3 +314,4 @@ export * from './sheets.dto';
 export * from './meta-ads.dto';
 export * from './voice-app.dto';
 export * from './voicemail-drop.dto';
+export * from './sms-campaign.dto';

@@ -32,6 +32,9 @@ import type {
   SheetsStatusDto,
   SheetsTimeZoneCheckDto,
   SheetTabDto,
+  SmsCampaignDto,
+  SmsCampaignTestResultDto,
+  SmsCampaignUpdateInput,
   SmsMessageDto,
   UserDto,
   VoicemailDto,
@@ -345,6 +348,19 @@ export const api = {
         method: 'POST',
         body: { callSid },
         timeoutMs: 15_000,
+      }),
+  },
+
+  // The cold SMS campaign to called leads, sent from the toll-free line.
+  smsCampaign: {
+    get: () => request<SmsCampaignDto>('/sms-campaign'),
+    update: (input: SmsCampaignUpdateInput) =>
+      request<SmsCampaignDto>('/sms-campaign', { method: 'PUT', body: input }),
+    test: (to: string) =>
+      request<SmsCampaignTestResultDto>('/sms-campaign/test', {
+        method: 'POST',
+        body: { to },
+        timeoutMs: 20_000,
       }),
   },
 

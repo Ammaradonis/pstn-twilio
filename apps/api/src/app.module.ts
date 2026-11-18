@@ -18,6 +18,7 @@ import { RealtimeModule } from './realtime/realtime.module';
 import { RecordingsModule } from './recordings/recordings.module';
 import { RedisModule } from './redis/redis.module';
 import { SheetsModule } from './sheets/sheets.module';
+import { SmsCampaignModule } from './sms-campaign/sms-campaign.module';
 import { TwilioModule } from './twilio/twilio.module';
 import { VoiceModule } from './voice/voice.module';
 import { VoiceAppModule } from './voice-app/voice-app.module';
@@ -50,6 +51,7 @@ import { WebhooksModule } from './webhooks/webhooks.module';
     SheetsModule,
     VoiceAppModule,
     VoicemailDropModule,
+    SmsCampaignModule,
   ],
 })
 export class AppModule implements NestModule {
