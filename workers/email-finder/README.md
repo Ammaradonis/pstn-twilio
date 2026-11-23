@@ -241,6 +241,30 @@ reply, follow, DM) through the two DeepSeek prompts in `prompts/`. It reuses
 caps are its own. See [FB-GROUPS.md](FB-GROUPS.md) and
 `python scripts/fb_groups.py --help`.
 
+## Instagram DM outreach
+
+`scripts/ig_dm.py` (root launcher `ig-dm.cmd`) messages the martial arts
+schools whose Instagram URL is on a U.S. Conquest tab, starting with Texas, from
+@matboss_online only. One message per school, ever: personal (owner's first
+name, city, Google rating, what happened when the school was called from the
+877 line), different for every school, and never with a link. 50 a day by the
+Texas calendar, weekends included, 09:00 to 21:00 Central, in batches of 3 to 6.
+
+Each send is verified step by step on the phone: the signed-in account (it
+switches to @matboss_online through the app's account switcher and back, and
+never signs in), the school's own thread, an empty thread, the exact text in the
+box, and the message on screen after Send. A lead is marked before Send is
+tapped, so nothing is sent twice. "Try again later", "action blocked" or a failed
+send stops DMs for 24 h and Instagram lookups for 12 h; security and login
+screens pause the phone as everywhere else. The scheduled task "BestSoftphone IG
+DMs" (`install-ig-dm-autostart.ps1`) keeps `run --loop` going.
+
+    ig-dm preview --n 8      the next messages, nothing touches the phone
+    ig-dm probe              one lead up to the empty message box, sends nothing
+    ig-dm report             counts, today's total, .cache/ig-dm-sent.csv
+    ig-dm requeue held       after a misread screen (screens in .cache/ig-dm-screens)
+    ig-dm sync --tab Oklahoma   add the next state's leads
+
 ## Profiles for the status cell
 
 A third job mode runs beside the address hunt and the social enrichment:

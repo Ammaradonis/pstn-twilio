@@ -111,6 +111,7 @@ class Node:
     center: tuple[int, int]
     bounds: tuple[int, int, int, int] = (0, 0, 0, 0)
     selected: bool = False
+    cls: str = ""  # the widget class, e.g. android.widget.EditText
 
     @property
     def label(self) -> str:
@@ -143,7 +144,7 @@ def parse_dump(xml: str) -> list[Node]:
         center = ((box[0] + box[2]) // 2, (box[1] + box[3]) // 2) if m else (0, 0)
         nodes.append(Node(n.get("text", ""), n.get("content-desc", ""), n.get("resource-id", ""),
                           n.get("package", ""), n.get("clickable") == "true", center, box,
-                          n.get("selected") == "true"))
+                          n.get("selected") == "true", n.get("class", "")))
     return nodes
 
 
