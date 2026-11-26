@@ -31,6 +31,7 @@ import type {
   SheetsSpreadsheetDto,
   SheetsStatusDto,
   SheetsTimeZoneCheckDto,
+  SheetDialListDto,
   SheetTabDto,
   SmsCampaignDto,
   SmsCampaignTestResultDto,
@@ -458,6 +459,10 @@ export const api = {
     listSpreadsheets: () => request<SheetsSpreadsheetDto[]>('/sheets/spreadsheets'),
     listTabs: (spreadsheetId: string) =>
       request<SheetTabDto[]>(`/sheets/tabs/${encodeURIComponent(spreadsheetId)}`),
+    dialList: (spreadsheetId: string, sheetTitle: string) =>
+      request<SheetDialListDto>(
+        `/sheets/dial-list/${encodeURIComponent(spreadsheetId)}?tab=${encodeURIComponent(sheetTitle)}`,
+      ),
     push: (body: PushCallResultDto) =>
       request<SheetsStatusDto>('/sheets/push', { method: 'POST', body }),
     followUps: () => request<SheetsFollowUpDto[]>('/sheets/follow-ups'),

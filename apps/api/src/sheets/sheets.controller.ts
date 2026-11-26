@@ -59,6 +59,7 @@ import { EmailFinderService, type FinderMode } from './email-finder.service';
 import { FollowUpRenderer } from './follow-up-renderer.service';
 import { SheetsConfig } from './sheets.config';
 import { SheetsService, SheetsUnavailableError } from './sheets.service';
+import { extractEmails, joinRecipients } from './sheets.util';
 
 type AuthedRequest = Request & { user: { id: string } };
 
@@ -107,6 +108,19 @@ export class SheetsController {
   @Get('tabs/:spreadsheetId')
   tabs(@Req() req: AuthedRequest, @Param('spreadsheetId') spreadsheetId: string) {
     return userFacing(this.sheets.listSheetTabs(req.user.id, spreadsheetId));
+  }
+
+  /** The tab's phone numbers for the Dial page's sheet dialer (?tab=<title>). */
+  @Get('dial-list/:spreadsheetId')
+  dialList(
+    @Req() req: AuthedRequest,
+    @Param('spreadsheetId') spreadsheetId: string,
+    @Query('tab') tab: unknown,
+  ) {
+    if (typeof tab !== 'string' || !tab.trim() || tab.length > 200) {
+      throw new BadRequestException('Pick a tab.');
+    }
+    return userFacing(this.sheets.dialList(req.user.id, spreadsheetId, tab));
   }
 
   @Post('push')
@@ -374,6 +388,21 @@ const publicHttpUrl = z
   .max(1000)
   .url()
   .refine((v) => /^https?:\/\//i.test(v));
+const oneEmail = z.string().max(254).email();
+// Every address the worker found for a school, best first: "a@x.com, b@y.com"
+// (email_finder_rows.email holds up to 2000 characters). Each comma-separated
+// part must be one valid address; the list is stored de-duplicated.
+const emailList = z
+  .string()
+  .max(2000)
+  .refine((v) => {
+    const parts = v
+      .split(',')
+      .map((p) => p.trim())
+      .filter(Boolean);
+    return parts.length > 0 && parts.every((p) => oneEmail.safeParse(p).success);
+  }, 'Invalid email')
+  .transform((v) => joinRecipients(extractEmails(v)) ?? v);
 export const finderResultsSchema = z.object({
   results: z
     .array(
@@ -382,7 +411,7 @@ export const finderResultsSchema = z.object({
           id: z.string().uuid(),
           leaseToken: z.string().uuid(),
           status: z.enum(['FOUND', 'CONTACT_FORM', 'NOT_FOUND', 'FAILED', 'RETRY']),
-          email: z.string().max(254).email().nullish(),
+          email: emailList.nullish(),
           emailType: z.enum(['decision-maker', 'business', 'staff']).nullish(),
           confidence: z.number().int().min(0).max(100).nullish(),
           sourceUrl: publicHttpUrl.nullish(),

@@ -465,6 +465,39 @@ describe('SheetsFollowUpService sequence sweep', () => {
     expect(gmail.send).toHaveBeenCalledTimes(1);
   });
 
+  it('sends one email to every address the lead has', async () => {
+    const log = pushLog({ emailTo: 'info@school.test, owner@gmail.com' });
+    const { service, gmail } = sweepService(log);
+    await service.sweep(new Date());
+    expect(gmail.send).toHaveBeenCalledTimes(1);
+    expect(gmail.send.mock.calls[0]![1]).toBe('info@school.test, owner@gmail.com');
+  });
+
+  it('adds addresses the email finder found for the lead since the push', async () => {
+    const log = pushLog({ sequenceStep: 2, emailSentAt: new Date() });
+    const { service, prisma, gmail } = sweepService(log);
+    prisma.emailFinderRow.findMany.mockResolvedValue([
+      {
+        input: { phone: US_CTX.destinationE164, title: 'Guetho Texas BJJ' },
+        email: 'owner@school.test, coach@gmail.com',
+      },
+      // Another school in the tab: not this lead.
+      { input: { phone: '+15125550000', title: 'Other Dojo' }, email: 'x@other.test' },
+    ]);
+    gmail.hasReplyFrom.mockResolvedValue(false);
+    await service.sweep(new Date());
+    expect(prisma.sheetsPushLog.update).toHaveBeenCalledWith({
+      where: { id: 'log1' },
+      data: { emailTo: 'owner@school.test, coach@gmail.com' },
+    });
+    expect(gmail.hasReplyFrom).toHaveBeenCalledWith(
+      'u1',
+      'owner@school.test, coach@gmail.com',
+      US_CTX.callEndedAt,
+    );
+    expect(gmail.send.mock.calls[0]![1]).toBe('owner@school.test, coach@gmail.com');
+  });
+
   it('finishes the sequence after email 6', async () => {
     const log = pushLog({ sequenceStep: 6, emailSentAt: new Date() });
     const { service, prisma, gmail } = sweepService(log);

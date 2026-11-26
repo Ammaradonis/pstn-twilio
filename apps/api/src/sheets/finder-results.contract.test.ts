@@ -19,6 +19,31 @@ const base = {
 const enrichment = { facebookUrl: 'https://www.facebook.com/dojo' };
 
 describe('email finder worker results', () => {
+  it('accepts every address the worker found for a school', () => {
+    const parsed = finderResultsSchema.safeParse({
+      results: [
+        {
+          ...base,
+          status: 'FOUND',
+          email: 'info@dojo.com, owner@gmail.com,  INFO@dojo.com',
+          mode: 'EMAIL',
+        },
+      ],
+    });
+    expect(parsed.success).toBe(true);
+    if (parsed.success)
+      expect(parsed.data.results[0]!.email).toBe('info@dojo.com, owner@gmail.com');
+  });
+
+  it('rejects an address list with anything else in it', () => {
+    for (const email of ['info@dojo.com, call us', 'info@dojo.com; owner@gmail.com', ',']) {
+      const parsed = finderResultsSchema.safeParse({
+        results: [{ ...base, status: 'FOUND', email, mode: 'EMAIL' }],
+      });
+      expect(parsed.success, email).toBe(false);
+    }
+  });
+
   it('accepts an ENRICH result that found socials but no email', () => {
     const parsed = finderResultsSchema.safeParse({
       results: [{ ...base, status: 'FOUND', email: null, enrichment, mode: 'ENRICH' }],

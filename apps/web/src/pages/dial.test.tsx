@@ -154,6 +154,7 @@ vi.mock('../lib/api-client', () => {
           .fn()
           .mockResolvedValue([{ spreadsheetId: 'ss1', name: 'U.S. Conquest' }]),
         listTabs: vi.fn().mockResolvedValue([{ sheetId: 1, title: 'Texas' }]),
+        dialList: vi.fn().mockResolvedValue({ sheetTitle: 'Texas', phoneColumn: 'G', rows: [] }),
         push: vi.fn(),
       },
       emailFinder: {
@@ -863,6 +864,48 @@ describe('DialPage dialpad', () => {
     );
     expect(await screen.findByText(/Row 7 of Texas updated/)).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Push again (overwrites)' })).toBeInTheDocument();
+  });
+
+  it('calls the sheet rows in order, and Next during a call hangs up first', async () => {
+    vi.mocked(api.sheets.dialList).mockResolvedValueOnce({
+      sheetTitle: 'Texas',
+      phoneColumn: 'G',
+      rows: [
+        { row: 2, name: 'Tiger Dojo', phone: '(512) 555-0101', status: '' },
+        { row: 3, name: 'Dragon BJJ', phone: '512-555-0102', status: '' },
+      ],
+    });
+    window.localStorage.removeItem('pstn-twilio.sheet-dialer.position:ss1:Texas');
+    const dial = dialHarness();
+    await screen.findByText(/Caller ID:/);
+    await screen.findByRole('list', { name: 'Phone numbers in Texas' });
+
+    fireEvent.click(screen.getByRole('button', { name: 'Start' }));
+    await waitFor(() =>
+      expect(voiceMock.current.makeCall).toHaveBeenCalledWith(
+        'pn1',
+        '+15125550101',
+        expect.anything(),
+      ),
+    );
+    expect(screen.getByLabelText(/destination/i)).toHaveValue('+15125550101');
+    voiceMock.current = { ...voiceMock.current, active: true, connectionState: 'open' };
+    dial.view.rerender(dial.page());
+
+    fireEvent.click(screen.getByRole('button', { name: /^Hang up and call next/ }));
+    expect(voiceMock.current.hangup).toHaveBeenCalledTimes(1);
+    expect(voiceMock.current.makeCall).toHaveBeenCalledTimes(1);
+
+    dial.hangUp();
+    await waitFor(() =>
+      expect(voiceMock.current.makeCall).toHaveBeenLastCalledWith(
+        'pn1',
+        '+15125550102',
+        expect.anything(),
+      ),
+    );
+    // The first call's status panel stays open for its statuses.
+    expect(screen.getAllByRole('region', { name: /post-call status/i }).length).toBeGreaterThan(0);
   });
 
   it('keeps notes typed during the next call through its hangup', async () => {

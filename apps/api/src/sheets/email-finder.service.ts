@@ -43,7 +43,16 @@ import {
   type Columns,
   type Row,
 } from './sheets.service';
-import { a1, columnLetter, extractEmail, nationalDigits, normalizeHeader } from './sheets.util';
+import {
+  a1,
+  columnLetter,
+  extractEmail,
+  extractEmails,
+  joinRecipients,
+  mergeRecipients,
+  nationalDigits,
+  normalizeHeader,
+} from './sheets.util';
 
 const WORKER_SEEN_KEY = 'email-finder:worker:last-seen';
 const WORKER_ONLINE_MS = 2 * 60_000;
@@ -712,11 +721,16 @@ export class EmailFinderService implements OnModuleDestroy, OnModuleInit {
       for (const i of indexes) {
         // the row was deleted meanwhile
         const row = sheetRows[i] ?? [];
-        // Never overwrite an email someone typed in while the finder ran.
-        if (r.email && !extractEmail(text(row[at.email]))) {
-          cell(at.email, i, r.email);
+        // Every address the finder collected goes in the cell. Addresses already
+        // there (typed in, or found earlier) stay first; new ones are added after.
+        const had = extractEmails(text(row[at.email]));
+        if (r.email && had.length === 0) {
+          cell(at.email, i, joinRecipients(extractEmails(r.email)) ?? r.email);
           cell(at.emailType, i, r.emailType ?? '');
           cell(at.emailSource, i, r.sourceUrl ?? '');
+        } else if (r.email) {
+          const merged = mergeRecipients(had, extractEmails(r.email));
+          if (merged.length > had.length) cell(at.email, i, joinRecipients(merged)!);
         }
         if (r.decisionMaker && !text(row[at.decisionMaker]).trim())
           cell(at.decisionMaker, i, r.decisionMaker);

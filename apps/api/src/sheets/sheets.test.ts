@@ -17,9 +17,13 @@ import {
   cellHasPhone,
   columnLetter,
   extractEmail,
+  extractEmails,
   formatLocalTime,
   formatStatusTime,
+  joinRecipients,
+  mergeRecipients,
   nationalDigits,
+  sharesRecipient,
   stripCountryCode,
 } from './sheets.util';
 
@@ -208,6 +212,23 @@ describe('status cell', () => {
     expect(extractEmail('mailto: Info@TigerDojo.com ')).toBe('Info@TigerDojo.com');
     expect(extractEmail('n/a')).toBeNull();
   });
+
+  it('finds every email in a cell, each once', () => {
+    expect(
+      extractEmails('info@dojo.com, Owner@Gmail.com; INFO@dojo.com and kids@dojo.com.'),
+    ).toEqual(['info@dojo.com', 'Owner@Gmail.com', 'kids@dojo.com']);
+    expect(extractEmails('')).toEqual([]);
+    expect(extractEmails(null)).toEqual([]);
+    expect(joinRecipients(['a@x.com', 'b@y.com'])).toBe('a@x.com, b@y.com');
+    expect(joinRecipients([])).toBeNull();
+  });
+
+  it('merges and compares recipient lists', () => {
+    expect(mergeRecipients(['a@x.com'], ['A@x.com', 'b@y.com'])).toEqual(['a@x.com', 'b@y.com']);
+    expect(sharesRecipient('a@x.com, b@y.com', ['B@Y.com'])).toBe(true);
+    expect(sharesRecipient('a@x.com', ['xa@x.com'])).toBe(false);
+    expect(sharesRecipient(null, ['a@x.com'])).toBe(false);
+  });
 });
 
 describe('follow-up email choice', () => {
@@ -259,6 +280,17 @@ describe('email templates', () => {
     const raw = Buffer.from(encodeMessage('a@b.co', 'Hi — there', 'Body'), 'base64url').toString();
     expect(raw).toContain('Subject: =?UTF-8?B?');
     expect(() => encodeMessage('a@b.co\r\nBcc: x@y.z', 's', 'b')).toThrow();
+  });
+
+  it('addresses one email to every recipient, and nothing else', () => {
+    const raw = Buffer.from(
+      encodeMessage('info@dojo.com, owner@gmail.com', 's', 'b'),
+      'base64url',
+    ).toString();
+    expect(raw).toContain('To: info@dojo.com, owner@gmail.com\r\n');
+    expect(() => encodeMessage('info@dojo.com, Bcc x@y.z', 's', 'b')).toThrow();
+    expect(() => encodeMessage('"Boss" <owner@gmail.com>', 's', 'b')).toThrow();
+    expect(() => encodeMessage('', 's', 'b')).toThrow();
   });
 });
 

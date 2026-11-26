@@ -12,6 +12,26 @@ export interface SheetTabDto {
   title: string;
 }
 
+/** One row of a tab that has a phone number, for the Dial page's sheet dialer. */
+export interface SheetDialRowDto {
+  /** The row number Google Sheets shows (the header is row 1). */
+  row: number;
+  /** The school / business name, or "" when the tab has no name column. */
+  name: string;
+  /** The phone cell as written; it may list more than one number. */
+  phone: string;
+  /** The Status cell (what earlier calls pushed), or "". */
+  status: string;
+}
+
+/** Every row of a tab that has a phone number, in sheet order. */
+export interface SheetDialListDto {
+  sheetTitle: string;
+  /** Column letter of the phone column, or null when row 1 has none. */
+  phoneColumn: string | null;
+  rows: SheetDialRowDto[];
+}
+
 /** Sent from the Dial page after a call ends. */
 export interface PushCallResultDto {
   spreadsheetId: string;

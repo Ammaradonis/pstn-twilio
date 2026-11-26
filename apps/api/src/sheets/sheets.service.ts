@@ -20,6 +20,7 @@ import {
   pickFollowUpTemplate,
   US_STATES,
   type PushCallResultDto,
+  type SheetDialListDto,
   type SheetsConnectionStatusDto,
   type SheetsEmailStatus,
   type SheetsFollowUpDto,
@@ -52,10 +53,12 @@ import {
   a1,
   cellHasPhone,
   columnLetter,
-  extractEmail,
+  extractEmails,
   formatStatusTime,
+  joinRecipients,
   nationalDigits,
   normalizeHeader,
+  sharesRecipient,
   stripCountryCode,
 } from './sheets.util';
 import { personaliseStatus } from './status-sentences';
@@ -223,6 +226,37 @@ export class SheetsService {
     return tabs.map(({ sheetId, title }) => ({ sheetId, title }));
   }
 
+  /**
+   * Every row of a tab with something in its phone column, in sheet order, so
+   * the Dial page can call them one after another. Rows keep the numbers Google
+   * Sheets shows (header = row 1).
+   */
+  async dialList(
+    userId: string,
+    spreadsheetId: string,
+    sheetTitle: string,
+  ): Promise<SheetDialListDto> {
+    const token = await this.getAccessToken(userId);
+    const tab = (await this.fetchTabs(token, spreadsheetId)).find((t) => t.title === sheetTitle);
+    if (!tab) throw new NotFoundException(`Tab "${sheetTitle}" no longer exists.`);
+    const rows = await this.fetchRows(token, spreadsheetId, sheetTitle);
+    const cols = findColumns((rows[0] ?? []).map(normalizeHeader));
+    if (cols.phone === -1) return { sheetTitle, phoneColumn: null, rows: [] };
+    const out: SheetDialListDto['rows'] = [];
+    for (let i = 1; i < rows.length; i++) {
+      const row = rows[i] ?? [];
+      const phone = text(row[cols.phone]).trim();
+      if (!phone) continue;
+      out.push({
+        row: i + 1,
+        name: cols.school !== -1 ? text(row[cols.school]).trim().slice(0, 200) : '',
+        phone: phone.slice(0, 200),
+        status: cols.status !== -1 ? text(row[cols.status]).trim().slice(0, 300) : '',
+      });
+    }
+    return { sheetTitle, phoneColumn: columnLetter(cols.phone + 1), rows: out };
+  }
+
   // ── Post-call push ────────────────────────────────────────────────────────
 
   async pushCallResult(userId: string, dto: PushCallResultDto): Promise<SheetsStatusDto> {
@@ -310,10 +344,11 @@ export class SheetsService {
 
     const contactFormUrl =
       cols.contactForm !== -1 ? text(row[cols.contactForm]).trim() || null : null;
+    // Every address in the email cell: the follow-up goes to all of them.
     const email = await this.planFollowUp(
       conn.id,
       dto,
-      extractEmail(text(row[cols.email])),
+      extractEmails(text(row[cols.email])),
       contactFormUrl,
     );
     const dueAt = ['PENDING', 'MANUAL', 'WAITING_RESEARCH'].includes(email.status)
@@ -440,7 +475,7 @@ export class SheetsService {
   private async planFollowUp(
     connectionId: string,
     dto: PushCallResultDto,
-    to: string | null,
+    recipients: readonly string[],
     contactFormUrl: string | null,
   ): Promise<{
     status: SheetsEmailStatus;
@@ -448,6 +483,7 @@ export class SheetsService {
     template: string | null;
     note: string | null;
   }> {
+    const to = joinRecipients(recipients);
     const decision = pickFollowUpTemplate(dto.orderedTags);
     if (decision.template === null) {
       return { status: 'NONE', to, template: null, note: decision.reason };
@@ -463,15 +499,22 @@ export class SheetsService {
       };
     }
     // A sequence still running (PENDING with an email already sent) counts too.
-    const recent = await this.prisma.sheetsPushLog.findFirst({
+    // Any shared address counts: a school isn't emailed twice because a second
+    // address turned up meanwhile.
+    const candidates = await this.prisma.sheetsPushLog.findMany({
       where: {
         connectionId,
-        emailTo: { equals: to, mode: 'insensitive' },
+        OR: recipients.map((address) => ({
+          emailTo: { contains: address, mode: 'insensitive' as const },
+        })),
         emailStatus: { in: ['SENT', 'SENDING', 'PENDING'] },
         emailSentAt: { gte: new Date(Date.now() - RECENT_EMAIL_WINDOW_MS) },
       },
-      select: { emailSentAt: true, emailStatus: true, sequenceStep: true },
+      orderBy: { emailSentAt: 'desc' },
+      take: 20,
+      select: { emailTo: true, emailSentAt: true, emailStatus: true, sequenceStep: true },
     });
+    const recent = candidates.find((c) => sharesRecipient(c.emailTo, recipients));
     if (recent) {
       return {
         status: 'NONE',

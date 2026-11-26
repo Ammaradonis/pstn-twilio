@@ -15,6 +15,7 @@ import { MetaAdFilterButton } from '../components/meta-ad-filter-button';
 import { MicrophonePicker } from '../components/microphone-picker';
 import { PersonalizeButton } from '../components/personalize-button';
 import { postCallDraftKey, PostCallStatusPanel } from '../components/post-call-status-panel';
+import { SheetDialer } from '../components/sheet-dialer';
 import { SocialEnrichmentButton } from '../components/social-enrichment-button';
 import { readPersistedSpreadsheet, SpreadsheetPicker } from '../components/spreadsheet-picker';
 import { VoiceRecovery } from '../components/voice-recovery';
@@ -491,6 +492,28 @@ export function DialPage() {
     await placeCall();
   }
 
+  // The sheet dialer's Next during a call: hang up, then call the next row as
+  // soon as the line is free (the effect below).
+  const pendingSheetDial = useRef<string | null>(null);
+  function dialFromSheet(e164: string) {
+    if (inCallMode) {
+      pendingSheetDial.current = e164;
+      voice.hangup();
+      return;
+    }
+    setDestination(e164);
+    void placeCall(e164);
+  }
+  useEffect(() => {
+    if (inCallMode || !pendingSheetDial.current) return;
+    const next = pendingSheetDial.current;
+    pendingSheetDial.current = null;
+    setDestination(next);
+    void placeCall(next);
+    // placeCall is recreated every render; only the end of the call matters here.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [inCallMode]);
+
   async function handlePasteAndCall() {
     if (clipboardInFlight.current || callInFlight.current || inCallMode || !selectedNumber.data)
       return;
@@ -700,6 +723,21 @@ export function DialPage() {
           {voice.callNotice}
         </p>
       )}
+
+      <SheetDialer
+        spreadsheetId={spreadsheetId}
+        sheetTitle={sheetTitle}
+        dialingCountry={dialingCountry}
+        canDial={
+          Boolean(selectedNumber.data) &&
+          !submitting &&
+          !voice.reconnecting &&
+          !voice.recoveryFailed &&
+          voice.micPermission !== 'denied'
+        }
+        inCall={inCallMode}
+        onDial={dialFromSheet}
+      />
 
       <div className="rounded border border-slate-200 bg-white p-4">
         <div className="flex items-end justify-between gap-2">

@@ -76,6 +76,64 @@ describe('email finder row identity and writes', () => {
     expect(request.body.valueInputOption).toBe('RAW');
     const emails = request.body.data.filter((d) => d.values[0]?.[0] === 'owner@dojo.org');
     expect(emails.map((d) => d.range)).toEqual(["'Schools'!C2", "'Schools'!C3"]);
+    // The typed-in address stays first; the found one is added after it.
+    expect(request.body.data.find((d) => d.range === "'Schools'!C4")?.values).toEqual([
+      ['already@dojo.org, owner@dojo.org'],
+    ]);
+  });
+
+  it('adds only addresses the cell does not have yet', async () => {
+    const sheetRows = [
+      ['title', 'address', 'email'],
+      ['Tiger Dojo', '1 Main St', 'Info@dojo.org'],
+    ];
+    const cols = findColumns(['title', 'address', 'email']);
+    const result = {
+      id: 'row',
+      fingerprint: fingerprint(sheetRows[1]!, cols),
+      email: 'info@dojo.org, coach@gmail.com, owner@dojo.org',
+      emailType: 'business',
+      sourceUrl: 'https://dojo.org/contact',
+      decisionMaker: null,
+      contactFormUrl: null,
+    };
+    const prisma = {
+      emailFinderJob: {
+        findUnique: vi.fn().mockResolvedValue({
+          id: 'job',
+          userId: 'u',
+          spreadsheetId: 'spreadsheet',
+          sheetTitle: 'Schools',
+          status: 'RUNNING',
+        }),
+        updateMany: vi.fn(),
+      },
+      emailFinderRow: {
+        findMany: vi.fn().mockResolvedValue([result]),
+        updateMany: vi.fn(),
+        count: vi.fn().mockResolvedValue(0),
+      },
+    };
+    const sheets = {
+      getAccessToken: vi.fn().mockResolvedValue('test'),
+      fetchTabs: vi.fn().mockResolvedValue([{ title: 'Schools', sheetId: 1, columnCount: 20 }]),
+      fetchRows: vi.fn().mockResolvedValue(sheetRows),
+      google: vi.fn().mockResolvedValue({}),
+    };
+    const service = new EmailFinderService(
+      prisma as unknown as PrismaService,
+      sheets as unknown as SheetsService,
+      {} as RedisService,
+      {} as RealtimeService,
+    );
+    await service.flush('job');
+    const request = sheets.google.mock.calls[0]![3] as {
+      body: { data: { range: string; values: string[][] }[] };
+    };
+    const c2 = request.body.data.filter((d) => d.range === "'Schools'!C2");
+    expect(c2.map((d) => d.values)).toEqual([[['Info@dojo.org, coach@gmail.com, owner@dojo.org']]]);
+    // The type and source describe the address that was there first: left alone.
+    expect(request.body.data.some((d) => d.range === "'Schools'!D2")).toBe(false);
   });
 
   it('fills only empty cells with what the finder verified and follows the row identity', async () => {

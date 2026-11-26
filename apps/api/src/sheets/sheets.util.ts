@@ -105,3 +105,38 @@ const EMAIL_RE = /[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/i;
 export function extractEmail(cell: string): string | null {
   return EMAIL_RE.exec(cell)?.[0] ?? null;
 }
+
+/**
+ * Every email address in a cell (or a stored recipient list), in order, each
+ * once (case doesn't matter). The email finder writes all the addresses it
+ * found for a school as "a@x.com, b@y.com"; a follow-up goes to all of them.
+ */
+export function extractEmails(cell: string | null | undefined): string[] {
+  const out: string[] = [];
+  const seen = new Set<string>();
+  for (const match of String(cell ?? '').matchAll(new RegExp(EMAIL_RE.source, 'gi'))) {
+    const address = match[0].replace(/^[.]+|[.]+$/g, '');
+    const key = address.toLowerCase();
+    if (!seen.has(key)) {
+      seen.add(key);
+      out.push(address);
+    }
+  }
+  return out;
+}
+
+/** Recipients as one To: value / emailTo column: "a@x.com, b@y.com". */
+export function joinRecipients(addresses: readonly string[]): string | null {
+  return addresses.length ? addresses.join(', ') : null;
+}
+
+/** `extra` added after `base`, skipping addresses `base` already has. */
+export function mergeRecipients(base: readonly string[], extra: readonly string[]): string[] {
+  return extractEmails([...base, ...extra].join(' '));
+}
+
+/** Whether two recipient lists share an address. */
+export function sharesRecipient(a: string | null | undefined, b: readonly string[]): boolean {
+  const mine = new Set(extractEmails(a).map((x) => x.toLowerCase()));
+  return b.some((x) => mine.has(x.toLowerCase()));
+}
