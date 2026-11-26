@@ -364,6 +364,164 @@ describe('planSync', () => {
   });
 });
 
+describe('planSync: websiteUrl and openingTimes', () => {
+  const WITH_HOURS = [...HEADERS, 'openingTimes'];
+  const WEBSITE = 1;
+  const HOURS = WITH_HOURS.length - 1;
+  const row = ({ website = '', hours = '', id = '0x1:0xa', phone = '+1 (214) 555-0100' } = {}) => {
+    const values = Array(WITH_HOURS.length).fill('');
+    values[0] = 'Old Dojo';
+    values[WEBSITE] = website;
+    values[5] = '9 Elm St, Dallas, TX 75201';
+    values[6] = phone;
+    values[17] = url(id, 'Old Dojo');
+    values[HOURS] = hours;
+    return values;
+  };
+  const tab = (rows) => ({ title: 'Texas', headers: WITH_HOURS, rows });
+  const FULL = 'Mon–Thu 4–9 PM; Fri 4–8 PM; Sat 9 AM–12 PM; Sun closed';
+
+  it('writes the website Maps lists now when it is another page', () => {
+    const plan = lib.planSync({
+      tabs: [tab([row({ website: 'http://olddojo.com' })])],
+      scraped: [scraped({ placeUrl: url('0x1:0xa'), websiteUrl: 'https://newdojo.com/' })],
+      placeId,
+    });
+    assert.deepEqual(
+      plan.cellUpdates.map((u) => [u.field, u.row, u.col, u.old, u.value]),
+      [['websiteUrl', 2, WEBSITE, 'http://olddojo.com', 'https://newdojo.com/']],
+    );
+    assert.equal(plan.stats.websiteUpdates, 1);
+  });
+
+  it('leaves the website alone when only the scheme, www, slash or tracking differ, or Maps has none', () => {
+    const plan = lib.planSync({
+      tabs: [
+        tab([
+          row({ website: 'http://www.newdojo.com/' }),
+          row({ website: 'https://a.com', id: '0x2:0xb' }),
+        ]),
+      ],
+      scraped: [
+        scraped({ placeUrl: url('0x1:0xa'), websiteUrl: 'https://newdojo.com?utm_source=gmb' }),
+        scraped({ placeUrl: url('0x2:0xb'), websiteUrl: '' }),
+      ],
+      placeId,
+    });
+    assert.deepEqual(plan.cellUpdates, []);
+  });
+
+  it('writes the hours Maps lists, unless they cover fewer days than the cell', () => {
+    const plan = lib.planSync({
+      tabs: [
+        tab([
+          row({ website: 'https://newdojo.com', hours: 'Mon–Fri 5–9 PM' }),
+          row({ website: 'https://b.com', id: '0x2:0xb', hours: FULL }),
+          row({ website: 'https://c.com', id: '0x3:0xc' }),
+        ]),
+      ],
+      scraped: [
+        scraped({ placeUrl: url('0x1:0xa'), openingTimes: FULL }),
+        // Thanksgiving week: Thursday shows holiday hours, so six regular days.
+        scraped({
+          placeUrl: url('0x2:0xb'),
+          websiteUrl: 'https://b.com',
+          openingTimes: 'Mon–Wed 4–9 PM; Thu holiday; Fri 4–8 PM; Sat 9 AM–12 PM; Sun closed',
+        }),
+        // An empty cell still gets the holiday-week line; a later pass replaces it.
+        scraped({
+          placeUrl: url('0x3:0xc'),
+          websiteUrl: 'https://c.com',
+          openingTimes: 'Mon–Wed 4–9 PM; Thu–Fri holiday; Sat 9 AM–12 PM',
+        }),
+      ],
+      placeId,
+    });
+    assert.deepEqual(
+      plan.cellUpdates.map((u) => [u.field, u.row, u.value, u.source]),
+      [
+        ['openingTimes', 2, FULL, 'maps'],
+        ['openingTimes', 4, 'Mon–Wed 4–9 PM; Thu–Fri holiday; Sat 9 AM–12 PM', 'maps'],
+      ],
+    );
+  });
+
+  it('asks for the website when Maps lists no hours and the cell is empty, then uses its answer', () => {
+    const tabs = [
+      tab([row({ website: 'https://newdojo.com' }), row({ id: '0x2:0xb', hours: 'Mon 1–2 PM' })]),
+    ];
+    const places = [
+      scraped({ placeUrl: url('0x1:0xa'), openingTimes: '' }),
+      scraped({ placeUrl: url('0x2:0xb'), websiteUrl: 'https://b.com', openingTimes: '' }),
+    ];
+    const hoursOnly = (plan) => plan.cellUpdates.filter((u) => u.field === 'openingTimes');
+    const first = lib.planSync({ tabs, scraped: places, placeId });
+    assert.deepEqual(first.wantHours, [{ placeId: '0x1:0xa', websiteUrl: 'https://newdojo.com' }]);
+    assert.deepEqual(hoursOnly(first), []);
+
+    const second = lib.planSync({
+      tabs,
+      scraped: places,
+      placeId,
+      websiteHours: new Map([['0x1:0xa', 'Mon–Fri 4–9 PM']]),
+    });
+    assert.deepEqual(second.wantHours, []);
+    assert.deepEqual(
+      hoursOnly(second).map((u) => [u.field, u.row, u.value, u.source]),
+      [['openingTimes', 2, 'Mon–Fri 4–9 PM', 'website']],
+    );
+    assert.equal(second.stats.hoursFromWebsite, 1);
+
+    // Looked up, nothing found: not asked again.
+    const third = lib.planSync({
+      tabs,
+      scraped: places,
+      placeId,
+      websiteHours: new Map([['0x1:0xa', '']]),
+    });
+    assert.deepEqual(third.wantHours, []);
+    assert.deepEqual(hoursOnly(third), []);
+  });
+
+  it('gives a new school the hours from Maps, or else from its website', () => {
+    const fromMaps = lib.planSync({
+      tabs: [tab([])],
+      scraped: [scraped({ placeUrl: url('0x5:0x5'), openingTimes: FULL })],
+      placeId,
+    });
+    assert.equal(fromMaps.appends.Texas[0].values[HOURS], FULL);
+    assert.deepEqual(fromMaps.wantHours, []);
+
+    const ask = lib.planSync({
+      tabs: [tab([])],
+      scraped: [scraped({ placeUrl: url('0x5:0x5') })],
+      placeId,
+    });
+    assert.deepEqual(ask.wantHours, [{ placeId: '0x5:0x5', websiteUrl: 'https://newdojo.com' }]);
+
+    const fromSite = lib.planSync({
+      tabs: [tab([])],
+      scraped: [scraped({ placeUrl: url('0x5:0x5') })],
+      placeId,
+      websiteHours: new Map([['0x5:0x5', 'Mon–Fri 4–9 PM']]),
+    });
+    assert.equal(fromSite.appends.Texas[0].values[HOURS], 'Mon–Fri 4–9 PM');
+  });
+
+  it('places the openingTimes column after the last used one', () => {
+    assert.equal(lib.hoursColumnFor({ headers: WITH_HOURS, rows: [] }), -1);
+    assert.equal(
+      lib.hoursColumnFor({ headers: ['title', 'phoneNumber'], rows: [['a', 'b', '', 'stray']] }),
+      4,
+    );
+    assert.equal(lib.hoursColumnFor({ headers: HEADERS, rows: [] }), HEADERS.length);
+    assert.equal(lib.columnLetter(0), 'A');
+    assert.equal(lib.columnLetter(25), 'Z');
+    assert.equal(lib.columnLetter(26), 'AA');
+    assert.equal(lib.columnLetter(51), 'AZ');
+  });
+});
+
 describe('a1', () => {
   it('quotes tab titles', () => {
     assert.equal(lib.a1('New York', 'G12'), "'New York'!G12");

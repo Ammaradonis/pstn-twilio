@@ -2,6 +2,8 @@
 // Pure helpers for the weekly U.S. Conquest refresh (see refresh.cjs). Nothing here
 // touches the network, the disk or the scraper, so it is all unit-tested.
 
+const { daysCovered } = require('./hours.cjs');
+
 const STATE_NAMES = {
   AL: 'Alabama',
   AK: 'Alaska',
@@ -61,6 +63,8 @@ const PHONE_HEADERS = new Set(['phonenumber', 'number', 'phone']);
 // Older tabs (ALABAMA, ALASKA) name two columns differently.
 const HEADER_ALIASES = { name: 'title', number: 'phoneNumber', phone: 'phoneNumber' };
 const NUMERIC_FIELDS = new Set(['rating', 'reviewCount', 'qualityScore']);
+/** The column the refresh adds to every state tab (at the end, so nothing shifts). */
+const HOURS_HEADER = 'openingTimes';
 
 function stateAbbrev(value) {
   const text = String(value || '').trim();
@@ -187,6 +191,31 @@ function nameAddressKey(title, address) {
   return name && where ? `${name}|${where}` : '';
 }
 
+/** Two website URLs for the same page: scheme, "www.", a trailing slash and utm tags don't count. */
+function sameWebsite(a, b) {
+  const key = (value) => {
+    const text = String(value || '').trim();
+    try {
+      const u = new URL(text);
+      for (const name of [...u.searchParams.keys()]) {
+        if (/^(?:utm_.*|fbclid|gclid|y_source)$/i.test(name)) u.searchParams.delete(name);
+      }
+      const search = u.searchParams.toString();
+      return `${u.hostname.replace(/^www\./i, '').toLowerCase()}${u.pathname.replace(/\/+$/, '')}${search ? `?${search}` : ''}`;
+    } catch {
+      return text
+        .toLowerCase()
+        .replace(/^https?:\/\/(?:www\.)?/, '')
+        .replace(/\/+$/, '');
+    }
+  };
+  return key(a) === key(b);
+}
+
+function cellText(value) {
+  return value === undefined || value === null ? '' : String(value).trim();
+}
+
 function normHeader(header) {
   return String(header || '')
     .trim()
@@ -222,20 +251,32 @@ function rowValues(headers, scraped) {
  * tabs:    [{ title, headers, rows }]; rows exclude the header, so rows[i] is sheet row i + 2.
  * scraped: the scraper's consolidated rows (master.csv).
  * placeId: url -> Google place id (the scraper's placeIdFromUrl).
+ * websiteHours: placeId -> hours read off the school's website ("" = looked, none found).
  *
- * Known places (matched by place id anywhere in the workbook) get column G set to
- * the phone Maps lists now. Only a found number replaces one: a listing that
- * shows no phone this week leaves the cell alone. Places in no tab are new: a
- * relevant martial arts listing whose phone and name+address aren't listed
- * either goes to the bottom of the tab for the state in its address.
+ * Known places (matched by place id anywhere in the workbook):
+ *   - column G gets the phone Maps lists now (`updates`). Only a found number
+ *     replaces one: a listing that shows no phone this week leaves the cell alone.
+ *   - websiteUrl gets the website Maps lists now, when it is another page
+ *     (`cellUpdates`). A listing with no website never blanks the cell.
+ *   - openingTimes gets the hours Maps lists (the school's Business Profile).
+ *     A week Maps shows with fewer days than the cell (a holiday left out) keeps
+ *     the cell. With no hours on Maps, an empty cell gets the website's hours.
+ * Places in no tab are new: a relevant martial arts listing whose phone and
+ * name+address aren't listed either goes to the bottom of the tab for the state
+ * in its address, with Maps' hours or else the website's.
+ * `wantHours` lists the places whose website should be read for hours (no hours
+ * on Maps, an empty cell or a new row, and not looked up yet).
  */
-function planSync({ tabs, scraped, placeId, fallbackState = '' }) {
+function planSync({ tabs, scraped, placeId, fallbackState = '', websiteHours = new Map() }) {
   const stats = {
     scraped: scraped.length,
     matched: 0,
     unchanged: 0,
     noPhoneOnMaps: 0,
     phoneUpdates: 0,
+    websiteUpdates: 0,
+    hoursUpdates: 0,
+    hoursFromWebsite: 0,
     added: 0,
     skipped: {},
   };
@@ -257,13 +298,15 @@ function planSync({ tabs, scraped, placeId, fallbackState = '' }) {
       placeCol: headers.indexOf('placeurl'),
       titleCol: headers.findIndex((h) => h === 'title' || h === 'name'),
       addressCol: headers.indexOf('address'),
+      websiteCol: headers.indexOf('websiteurl'),
+      hoursCol: headers.indexOf(HOURS_HEADER.toLowerCase()),
     };
     info.set(tab, meta);
     tab.rows.forEach((row, i) => {
       const id = meta.placeCol >= 0 ? placeId(row[meta.placeCol] || '') : '';
       if (id) {
         if (!byId.has(id)) byId.set(id, []);
-        byId.get(id).push({ tab, row: i + 2, phone: row[PHONE_COL] || '' });
+        byId.get(id).push({ tab, row: i + 2, phone: row[PHONE_COL] || '', values: row });
       }
       const digits = phoneDigits(row[PHONE_COL]);
       if (digits) phones.add(digits);
@@ -273,8 +316,31 @@ function planSync({ tabs, scraped, placeId, fallbackState = '' }) {
   }
 
   const updates = [];
+  const cellUpdates = [];
+  const wantHours = new Map();
   const touched = new Set();
   const appends = {};
+  const setCell = (spot, col, field, old, value, source, title) => {
+    const key = `${spot.tab.title}!${spot.row}!${col}`;
+    if (touched.has(key)) return;
+    touched.add(key);
+    cellUpdates.push({
+      tab: spot.tab.title,
+      row: spot.row,
+      placeId: spot.id,
+      title,
+      field,
+      col,
+      old,
+      value,
+      source,
+    });
+    if (field === 'websiteUrl') stats.websiteUpdates += 1;
+    if (field === HOURS_HEADER) {
+      stats.hoursUpdates += 1;
+      if (source === 'website') stats.hoursFromWebsite += 1;
+    }
+  };
   for (const place of scraped) {
     const id = placeId(place.placeUrl || '');
     if (!id) {
@@ -282,11 +348,35 @@ function planSync({ tabs, scraped, placeId, fallbackState = '' }) {
       continue;
     }
     const fresh = phoneDigits(place.phoneNumber);
+    const website = cellText(place.websiteUrl);
+    const mapsHours = cellText(place.openingTimes);
+    const siteHours = cellText(websiteHours.get(id));
     const known = byId.get(id);
     if (known) {
       stats.matched += 1;
       for (const spot of known) {
-        if (!info.get(spot.tab).phoneIsG) {
+        const meta = info.get(spot.tab);
+        const where = { ...spot, id };
+        const title = place.title || '';
+        if (meta.websiteCol >= 0 && website) {
+          const old = cellText(spot.values[meta.websiteCol]);
+          if (!sameWebsite(old, website)) {
+            setCell(where, meta.websiteCol, 'websiteUrl', old, website, 'maps', title);
+          }
+        }
+        if (meta.hoursCol >= 0) {
+          const old = cellText(spot.values[meta.hoursCol]);
+          if (mapsHours) {
+            if (old !== mapsHours && daysCovered(mapsHours) >= daysCovered(old)) {
+              setCell(where, meta.hoursCol, HOURS_HEADER, old, mapsHours, 'maps', title);
+            }
+          } else if (!old && siteHours) {
+            setCell(where, meta.hoursCol, HOURS_HEADER, old, siteHours, 'website', title);
+          } else if (!old && website && !websiteHours.has(id)) {
+            wantHours.set(id, website);
+          }
+        }
+        if (!meta.phoneIsG) {
           skip('phone_not_in_column_G');
           continue;
         }
@@ -336,18 +426,49 @@ function planSync({ tabs, scraped, placeId, fallbackState = '' }) {
       skip('no_tab_for_state');
       continue;
     }
+    const hours = mapsHours || siteHours;
+    if (!hours && website && !websiteHours.has(id)) wantHours.set(id, website);
+    if (!mapsHours && siteHours) stats.hoursFromWebsite += 1;
     (appends[tab.title] = appends[tab.title] || []).push({
       placeId: id,
       title: place.title || '',
-      values: rowValues(tab.headers, place),
+      values: rowValues(tab.headers, { ...place, openingTimes: hours }),
     });
-    byId.set(id, [{ tab, row: -1, phone: place.phoneNumber || '' }]);
+    byId.set(id, [{ tab, row: -1, phone: place.phoneNumber || '', values: [] }]);
     if (fresh) phones.add(fresh);
     if (key) names.add(key);
     stats.added += 1;
   }
   stats.phoneUpdates = updates.length;
-  return { updates, appends, stats };
+  return {
+    updates,
+    cellUpdates,
+    appends,
+    wantHours: [...wantHours].map(([id, websiteUrl]) => ({ placeId: id, websiteUrl })),
+    stats,
+  };
+}
+
+/** 0-based column index -> letters: 0 -> "A", 26 -> "AA". */
+function columnLetter(index) {
+  let n = index + 1;
+  let out = '';
+  while (n > 0) {
+    const r = (n - 1) % 26;
+    out = String.fromCharCode(65 + r) + out;
+    n = Math.floor((n - 1) / 26);
+  }
+  return out;
+}
+
+/**
+ * Where a tab gets its openingTimes column: -1 if it has one already, else the
+ * column right after the last one any row uses, so no value is ever covered.
+ */
+function hoursColumnFor(tab) {
+  const headers = (tab.headers || []).map(normHeader);
+  if (headers.includes(HOURS_HEADER.toLowerCase())) return -1;
+  return Math.max(headers.length, ...(tab.rows || []).map((row) => (row || []).length));
 }
 
 /** "A1" notation for a tab: titles are quoted, with quotes doubled. */
@@ -359,6 +480,10 @@ function a1(title, range = '') {
 module.exports = {
   STATE_NAMES,
   PHONE_COL,
+  HOURS_HEADER,
+  columnLetter,
+  hoursColumnFor,
+  sameWebsite,
   stateAbbrev,
   parseCountiesFile,
   matchCounty,

@@ -11,8 +11,11 @@
  *   2. Scrape: the scraper's own CLI (cliV2.js --strict-validation) in a fresh data
  *      folder, so no cached place answers for this week.
  *   3. Sync: column G of every row whose place now lists another phone number gets
- *      the new number; martial arts places that are in no tab of the workbook are
- *      added at the bottom of the tab for the state in their address.
+ *      the new number; websiteUrl gets the website Maps lists now; openingTimes
+ *      gets the hours from the school's Business Profile on Maps (or, when Maps
+ *      lists none, from its own website). Martial arts places that are in no tab
+ *      of the workbook are added at the bottom of the tab for the state in their
+ *      address.
  * The UK workbook is not touched.
  *
  * Commands (run from the repo root):
@@ -20,6 +23,7 @@
  *   node workers/maps-refresh/refresh.cjs state TX      one state now, outside the weekly bookkeeping
  *   node workers/maps-refresh/refresh.cjs sync TX --from <scrape folder>   sync a finished scrape
  *   node workers/maps-refresh/refresh.cjs status
+ *   node workers/maps-refresh/refresh.cjs columns       add the openingTimes column to every state tab
  * Add --dry-run to state/sync to write the plan (sync-plan.json) without touching the sheet.
  *
  * The scheduled task "BestSoftphone Maps Refresh" (install-task.ps1) calls `run`
@@ -32,6 +36,7 @@ const fs = require('node:fs');
 const { createRequire } = require('node:module');
 const path = require('node:path');
 
+const hoursLib = require('./hours.cjs');
 const lib = require('./lib.cjs');
 const { SheetsClient } = require('./sheets.cjs');
 
@@ -54,6 +59,8 @@ const STATE_FILE = path.join(WORK_DIR, 'state.json');
 const LOCK_FILE = path.join(WORK_DIR, 'refresh.lock');
 const LOG_FILE = path.join(WORK_DIR, 'refresh.log');
 const ADDED_FILE = path.join(WORK_DIR, 'added-places.json');
+// School websites read at once when Maps lists no hours (plain HTTP, no browser).
+const WEBSITE_HOURS_CONCURRENCY = Number(process.env.MAPS_REFRESH_WEBSITE_CONCURRENCY || 6);
 
 function log(message) {
   const line = `${new Date().toISOString()} ${message}`;
@@ -176,6 +183,72 @@ async function readStateTabs(sheets) {
   return sheets.readTabs(titles);
 }
 
+/**
+ * Gives every state tab an openingTimes column, after the last column any row
+ * uses (so nothing moves and no value is covered), widening the grid if needed.
+ * The tabs passed in get the header too, so a plan made from them sees it.
+ */
+async function ensureHoursColumns(sheets, tabs, { dryRun = false } = {}) {
+  const props = new Map((await sheets.tabProps()).map((p) => [p.title, p]));
+  const added = [];
+  for (const tab of tabs) {
+    const col = lib.hoursColumnFor(tab);
+    if (col < 0) continue;
+    const grid = props.get(tab.title);
+    if (!dryRun) {
+      if (grid && col >= grid.columnCount)
+        await sheets.appendColumns(grid.sheetId, col + 1 - grid.columnCount);
+      await sheets.writeCells([
+        { range: lib.a1(tab.title, `${lib.columnLetter(col)}1`), value: lib.HOURS_HEADER },
+      ]);
+    }
+    while (tab.headers.length < col) tab.headers.push('');
+    tab.headers[col] = lib.HOURS_HEADER;
+    added.push(`${tab.title} ${lib.columnLetter(col)}`);
+  }
+  if (added.length) {
+    log(`${dryRun ? 'Would add' : 'Added'} the ${lib.HOURS_HEADER} column: ${added.join(', ')}`);
+  }
+  return added;
+}
+
+/**
+ * Hours from the schools' own websites for the places Maps lists none for.
+ * Answers (including "none found") are kept in the state's folder, so a resumed
+ * sync doesn't read the same sites again.
+ */
+async function lookUpWebsiteHours(dir, wanted) {
+  const file = path.join(dir, 'website-hours.json');
+  let cache = {};
+  try {
+    cache = JSON.parse(fs.readFileSync(file, 'utf8'));
+  } catch {
+    // First lookup for this state.
+  }
+  const todo = wanted.filter((w) => !(w.placeId in cache));
+  if (todo.length) {
+    log(`Reading ${todo.length} school websites for opening hours (Maps lists none for them)`);
+    let done = 0;
+    await hoursLib.mapLimit(todo, WEBSITE_HOURS_CONCURRENCY, async ({ placeId, websiteUrl }) => {
+      const found = await hoursLib
+        .websiteHours(websiteUrl)
+        .catch(() => ({ hours: '', source: '' }));
+      cache[placeId] = {
+        url: websiteUrl,
+        hours: found.hours,
+        source: found.source,
+        at: new Date().toISOString(),
+      };
+      done += 1;
+      if (done % 50 === 0) writeJson(file, cache);
+    });
+    writeJson(file, cache);
+    const hits = todo.filter((w) => cache[w.placeId].hours).length;
+    log(`Websites gave opening hours for ${hits} of ${todo.length} schools`);
+  }
+  return new Map(Object.entries(cache).map(([id, entry]) => [id, entry.hours || '']));
+}
+
 function placeColumn(tab) {
   return tab.headers.map((h) => String(h).trim().toLowerCase()).indexOf('placeurl');
 }
@@ -249,7 +322,12 @@ function runScraper(jobsFile, dir) {
       {
         cwd: SCRAPER_DIR,
         // The production profile: 9-13 s between a worker's searches, longer backoff when blocked.
-        env: { ...process.env, NODE_ENV: 'production' },
+        // Panels whose opening hours can't be read are sampled to hours-misses.jsonl.
+        env: {
+          ...process.env,
+          NODE_ENV: 'production',
+          MAPS_HOURS_DEBUG_FILE: path.join(dir, 'hours-misses.jsonl'),
+        },
         stdio: ['ignore', logFd, logFd],
         windowsHide: true,
       },
@@ -290,7 +368,12 @@ async function syncState(abbr, dir, { dryRun = false } = {}) {
 
   const sheets = sheetsClient();
   const tabs = await readStateTabs(sheets);
-  const plan = lib.planSync({ tabs, scraped, placeId, fallbackState: abbr });
+  await ensureHoursColumns(sheets, tabs, { dryRun });
+  let plan = lib.planSync({ tabs, scraped, placeId, fallbackState: abbr });
+  if (plan.wantHours.length) {
+    const websiteHours = await lookUpWebsiteHours(dir, plan.wantHours);
+    plan = lib.planSync({ tabs, scraped, placeId, fallbackState: abbr, websiteHours });
+  }
   writeJson(path.join(dir, 'sync-plan.json'), plan);
   if (dryRun) {
     log(`${abbr}: dry run, nothing written. ${JSON.stringify(plan.stats)}`);
@@ -299,7 +382,9 @@ async function syncState(abbr, dir, { dryRun = false } = {}) {
 
   // Re-read right before writing: a row someone moved or edited since the plan
   // was made is left alone rather than given another place's number.
-  const affected = [...new Set(plan.updates.map((u) => u.tab))];
+  const affected = [
+    ...new Set([...plan.updates.map((u) => u.tab), ...plan.cellUpdates.map((u) => u.tab)]),
+  ];
   const current = new Map((await sheets.readTabs(affected)).map((tab) => [tab.title, tab]));
   const cells = [];
   const changes = [];
@@ -318,6 +403,42 @@ async function syncState(abbr, dir, { dryRun = false } = {}) {
     }
     cells.push({ range: lib.a1(update.tab, `G${update.row}`), value: update.newPhone });
     changes.push([update.tab, update.row, update.title, update.oldPhone, update.newPhone]);
+  }
+
+  // websiteUrl and openingTimes: the same check, and the column is found again by
+  // its header in case one was inserted meanwhile.
+  const fieldChanges = [];
+  const written = { websiteUrl: 0, [lib.HOURS_HEADER]: 0, hoursFromWebsite: 0 };
+  for (const update of plan.cellUpdates) {
+    const tab = current.get(update.tab);
+    const row = tab ? tab.rows[update.row - 2] || [] : [];
+    const headers = tab ? tab.headers.map((h) => String(h).trim().toLowerCase()) : [];
+    const col = headers.indexOf(update.field.toLowerCase());
+    const placeCol = tab ? placeColumn(tab) : -1;
+    if (
+      col < 0 ||
+      placeCol < 0 ||
+      placeId(row[placeCol] || '') !== update.placeId ||
+      String(row[col] ?? '').trim() !== update.old
+    ) {
+      changedMeanwhile += 1;
+      continue;
+    }
+    cells.push({
+      range: lib.a1(update.tab, `${lib.columnLetter(col)}${update.row}`),
+      value: update.value,
+    });
+    fieldChanges.push([
+      update.tab,
+      update.row,
+      update.title,
+      update.field,
+      update.source,
+      update.old,
+      update.value,
+    ]);
+    written[update.field] += 1;
+    if (update.source === 'website') written.hoursFromWebsite += 1;
   }
   await sheets.writeCells(cells);
 
@@ -352,6 +473,12 @@ async function syncState(abbr, dir, { dryRun = false } = {}) {
   }
 
   const stamp = new Date().toISOString();
+  if (fieldChanges.length) {
+    fs.appendFileSync(
+      path.join(dir, 'field-changes.csv'),
+      fieldChanges.map((c) => csvLine([stamp, ...c])).join('\n') + '\n',
+    );
+  }
   if (changes.length) {
     fs.appendFileSync(
       path.join(dir, 'phone-changes.csv'),
@@ -366,13 +493,18 @@ async function syncState(abbr, dir, { dryRun = false } = {}) {
   }
   const result = {
     ...plan.stats,
-    phoneUpdates: cells.length,
+    phoneUpdates: changes.length,
+    websiteUpdates: written.websiteUrl,
+    hoursUpdates: written[lib.HOURS_HEADER],
+    hoursFromWebsite: written.hoursFromWebsite,
     added,
     changedMeanwhile,
     deletedBefore,
   };
   log(
-    `${abbr}: ${cells.length} phone numbers updated, ${added} new schools added` +
+    `${abbr}: ${changes.length} phone numbers, ${written.websiteUrl} websites and ` +
+      `${written[lib.HOURS_HEADER]} opening times updated (${written.hoursFromWebsite} from school websites), ` +
+      `${added} new schools added` +
       (changedMeanwhile ? `, ${changedMeanwhile} rows skipped (edited while syncing)` : '') +
       ` (${plan.stats.scraped} places scraped, ${plan.stats.matched} already listed)`,
   );
@@ -468,7 +600,8 @@ async function runWeekly(now = new Date()) {
   const done = Object.values(run.states);
   const total = (key) => done.reduce((sum, s) => sum + Number(s.result?.[key] || 0), 0);
   log(
-    `Week ${run.week}: refresh finished. ${total('phoneUpdates')} phone numbers updated, ` +
+    `Week ${run.week}: refresh finished. ${total('phoneUpdates')} phone numbers, ` +
+      `${total('websiteUpdates')} websites and ${total('hoursUpdates')} opening times updated, ` +
       `${total('added')} schools added, ${done.filter((s) => s.status === 'failed').length} states skipped`,
   );
   // Keep this run and the one before (its cut-off searches feed the next run's tiles).
@@ -496,7 +629,10 @@ function printStatus() {
     const r = s.result || {};
     console.info(
       `  ${abbr}: ${s.status || 'in progress'}` +
-        (s.status === 'done' ? `, ${r.phoneUpdates} phones updated, ${r.added} added` : '') +
+        (s.status === 'done'
+          ? `, ${r.phoneUpdates} phones, ${r.websiteUpdates ?? 0} websites, ` +
+            `${r.hoursUpdates ?? 0} opening times updated, ${r.added} added`
+          : '') +
         (s.error ? `, last error: ${s.error}` : ''),
     );
   }
@@ -511,6 +647,14 @@ async function main(argv) {
   const [command = 'run', arg] = argv;
   const dryRun = argv.includes('--dry-run');
   if (command === 'status') return printStatus();
+
+  if (command === 'columns') {
+    // Header cells only: safe next to a running refresh.
+    const sheets = sheetsClient();
+    const added = await ensureHoursColumns(sheets, await readStateTabs(sheets), { dryRun });
+    console.info(added.length ? added.join('\n') : 'Every state tab already has openingTimes.');
+    return;
+  }
 
   if (!acquireLock()) {
     if (command !== 'run') throw new Error('A refresh is already running; try again when it ends.');

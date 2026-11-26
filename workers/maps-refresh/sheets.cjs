@@ -79,6 +79,27 @@ class SheetsClient {
     return meta.sheets.map((sheet) => sheet.properties.title);
   }
 
+  /** [{ title, sheetId, columnCount }] for every tab. */
+  async tabProps() {
+    const meta = await this.call(
+      '?fields=sheets(properties(title,sheetId,gridProperties(columnCount)))',
+    );
+    return meta.sheets.map(({ properties }) => ({
+      title: properties.title,
+      sheetId: properties.sheetId,
+      columnCount: properties.gridProperties?.columnCount ?? 26,
+    }));
+  }
+
+  /** Widens a tab's grid by `count` columns at the right edge. */
+  async appendColumns(sheetId, count) {
+    if (count <= 0) return null;
+    return this.call(':batchUpdate', {
+      method: 'POST',
+      body: { requests: [{ appendDimension: { sheetId, dimension: 'COLUMNS', length: count } }] },
+    });
+  }
+
   /** Whole tabs: [{ title, headers, rows }], rows without the header (rows[i] is sheet row i + 2). */
   async readTabs(titles) {
     const out = [];
