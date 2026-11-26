@@ -2,6 +2,7 @@
 No phone and no network: screens are replayed from uiautomator-style dumps."""
 
 import asyncio
+import os
 import sys
 import time
 from pathlib import Path
@@ -281,6 +282,28 @@ def test_galaxy_finds_what_instagrams_website_hides_and_the_method_says_so():
     assert phone.asked == [("instagram", "calsma_official")]
     assert job.finding.email == "admin@calsma.com"
     assert job.finding.method == "Instagram Contact button in the app on the Galaxy A20e"
+
+
+def test_a_queued_process_gets_the_phone_before_the_workers_lookups(tmp_path):
+    worker = Galaxy(Cache(tmp_path / "c.db"), "adb", lock_path=tmp_path / "galaxy.lock")
+    worker._queue_path.write_text("999999")  # the DM sender is waiting
+    assert asyncio.run(worker._hold_phone(wait_s=0)) is False  # the worker lets it go first
+    assert not worker.lock_path.exists()
+    assert asyncio.run(worker._wait(5)) is False  # a Reel slice stops at once
+
+    sender = Galaxy(Cache(tmp_path / "c.db"), "adb", lock_path=tmp_path / "galaxy.lock")
+    assert asyncio.run(sender._hold_phone(wait_s=0, queue=True)) is True
+    assert not sender._queue_path.exists()  # its queue note is gone once it holds the phone
+    sender._release_phone()
+
+
+def test_a_stale_queue_note_does_not_block_the_worker(tmp_path):
+    worker = Galaxy(Cache(tmp_path / "c.db"), "adb", lock_path=tmp_path / "galaxy.lock")
+    worker._queue_path.write_text("999999")
+    old = time.time() - 600
+    os.utime(worker._queue_path, (old, old))
+    assert asyncio.run(worker._hold_phone(wait_s=0)) is True
+    worker._release_phone()
 
 
 def test_facebook_blocking_the_browser_sends_the_page_to_the_phone():

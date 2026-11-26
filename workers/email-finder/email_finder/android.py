@@ -65,6 +65,7 @@ EMAIL_APPS = ("com.google.android.gm", "com.samsung.android.email.provider")
 SETTLE_S = 3.0  # how long a loaded profile gets to show its Contact button
 LOAD_S = 10  # how long the app gets to put the profile on screen at all
 LOCK_STALE_S = 600  # a lock older than this was left by a process that died
+QUEUE_STALE_S = 120  # a queue note older than this is from a process that gave up or died
 # Instagram's answer for a handle it can't show. Golden rule: open it twice
 # before moving on (it is sometimes a passing hiccup).
 NOT_FOUND = re.compile(r"user not found|page isn.t available|link you followed may be broken", re.I)
@@ -397,24 +398,55 @@ class Galaxy:
 
     # ── one driver at a time ─────────────────────────────────────────────────
 
-    async def _hold_phone(self, wait_s: float = 150) -> bool:
+    @property
+    def _queue_path(self) -> Path:
+        return self.lock_path.with_name(self.lock_path.name + ".queue")
+
+    def _other_process_queued(self) -> bool:
+        """Another process (the Instagram DM sender) is waiting for the phone.
+
+        Without this the lock went to whoever polled first, and the worker's
+        lookups and minutes-long Reel slices kept the DM sender out (2026-11-23).
+        """
+        try:
+            owner = self._queue_path.read_text().strip()
+            fresh = time.time() - self._queue_path.stat().st_mtime < QUEUE_STALE_S
+        except OSError:
+            return False
+        return fresh and owner != str(os.getpid())
+
+    async def _hold_phone(self, wait_s: float = 150, queue: bool = False) -> bool:
+        """Take the phone, waiting up to `wait_s`. With `queue` this process
+        says it is waiting, and every other driver lets it go first: lookups
+        don't start and a Reel slice stops after the current Reel."""
         deadline = time.monotonic() + wait_s
-        while True:
-            try:
-                fd = os.open(self.lock_path, os.O_CREAT | os.O_EXCL | os.O_WRONLY)
-                os.write(fd, str(os.getpid()).encode())
-                os.close(fd)
-                return True
-            except FileExistsError:
+        try:
+            while True:
+                if queue:
+                    self._queue_path.write_text(str(os.getpid()))  # rewritten each poll: stays fresh
+                if queue or not self._other_process_queued():
+                    try:
+                        fd = os.open(self.lock_path, os.O_CREAT | os.O_EXCL | os.O_WRONLY)
+                        os.write(fd, str(os.getpid()).encode())
+                        os.close(fd)
+                        return True
+                    except FileExistsError:
+                        try:
+                            if time.time() - self.lock_path.stat().st_mtime > LOCK_STALE_S:
+                                self.lock_path.unlink(missing_ok=True)
+                                continue
+                        except FileNotFoundError:
+                            continue
+                if time.monotonic() > deadline:
+                    return False
+                await asyncio.sleep(2)
+        finally:
+            if queue:
                 try:
-                    if time.time() - self.lock_path.stat().st_mtime > LOCK_STALE_S:
-                        self.lock_path.unlink(missing_ok=True)
-                        continue
-                except FileNotFoundError:
-                    continue
-            if time.monotonic() > deadline:
-                return False
-            await asyncio.sleep(2)
+                    if self._queue_path.read_text().strip() == str(os.getpid()):
+                        self._queue_path.unlink(missing_ok=True)
+                except OSError:
+                    pass
 
     def _release_phone(self) -> None:
         """Remove the lock only while it is still ours: a hold that ran long
@@ -446,6 +478,11 @@ class Galaxy:
         lookups too, not just the app the challenge appeared in)."""
         state = self.cache.get(STATE_NS, "galaxy-pause") or {}
         return max(0.0, float(state.get("until", 0)) - time.time())
+
+    def has_spare(self, keep: float = 0.4) -> bool:
+        """Whether today's lookups leave room for one that is only nice to have:
+        `keep` of the daily limit stays free for rows that have no address yet."""
+        return self.cache.count("galaxy") < self.daily_limit * (1 - keep)
 
     def ready_in(self, app: str) -> float:
         """Seconds until a lookup in this app could run, 0 when it could now.
@@ -824,13 +861,17 @@ class Galaxy:
         45 s, which is longer than the gap a lookup would have waited anyway.
         False means the wait was cut short and nothing should be done.
         """
+        def yield_now() -> bool:
+            return ((self._wanted and not self._ambient_has_turn) or self._stop_ambient.is_set()
+                    or self._other_process_queued())
+
         left = seconds
         while left > 0:
-            if (self._wanted and not self._ambient_has_turn) or self._stop_ambient.is_set():
+            if yield_now():
                 return False
             await asyncio.sleep(min(step, left))
             left -= step
-        return not ((self._wanted and not self._ambient_has_turn) or self._stop_ambient.is_set())
+        return not yield_now()
 
     def _describe_screen(self, nodes: list[Node]) -> str:
         """What was on screen, for when the Reels labels don't match: without

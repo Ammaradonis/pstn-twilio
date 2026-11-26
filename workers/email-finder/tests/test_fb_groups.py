@@ -423,6 +423,27 @@ def test_a_ordinary_screen_is_neither():
     assert challenge_kind([node(text="Martial Arts School Owners")]) == ""
 
 
+def test_everyday_post_words_are_not_a_checkpoint():
+    # These stopped the phone for 12 h four times in two days, with no checkpoint.
+    for text in ("Who's in for our 30-day challenge?", "Confirm", "Sign up for the kids class!",
+                 "Log in to the parent portal on our site"):
+        assert challenge_kind([node(text="Home, tab 1 of 6", clickable=True), node(text=text)]) == "", text
+    for text in ("Who's in for our 30-day challenge?", "Confirm", "Delete request"):
+        assert challenge_kind([node(text=text)]) == "", text
+
+
+def test_a_long_post_quoting_security_words_is_not_a_checkpoint():
+    post = ("PSA for everyone in the group: if you get a message asking for a verification code, it is a scam. "
+            "Never share it with anyone, even if it looks like it comes from Facebook.")
+    assert challenge_kind([node(text=post)]) == ""
+
+
+def test_checkpoint_copy_on_a_full_screen_flow_is_a_checkpoint():
+    screen = [node(text="Confirm your identity"), node(text="Continue", clickable=True)]
+    assert challenge_kind(screen) == "challenge"
+    assert challenge_kind([node(text="We noticed unusual activity on your account")]) == "challenge"
+
+
 # ── the registry ─────────────────────────────────────────────────────────────
 
 

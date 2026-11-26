@@ -321,7 +321,11 @@ async def run() -> bool:
         log.info("Galaxy A20e backup for Facebook/Instagram: %s", "ready" if ready else
                  "not connected or locked right now (checked again before each use)")
     engine = Engine(fetcher, search, DomainChecker(cache), settings.max_site_pages,
-                    google=google, google_mode=settings.google_free, galaxy=galaxy)
+                    google=google, google_mode=settings.google_free, galaxy=galaxy,
+                    collect=settings.collect)
+    log.info("Collecting %s", {"all": "every address each school publishes (free sources)",
+                               "paid": "every address each school publishes (free and paid search)",
+                               "first": "the first good address per school"}[settings.collect])
     log.info("Scoring weights loaded: decision=%s own_domain=%s free_mail_with_own=%s minimum=%s",
              engine.scoring.decision_bonus, engine.scoring.own_domain_bonus,
              engine.scoring.free_mail_with_own_bonus, engine.scoring.minimum_score)

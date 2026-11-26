@@ -138,6 +138,29 @@ class Held(LookupError):
     button, an earlier conversation). Kept apart so `requeue` can undo it."""
 
 
+class Paused(RuntimeError):
+    """The phone or Instagram was paused (by any process) while this batch waited
+    for the phone or between its leads; the loop goes back to waiting."""
+
+
+class PhoneBusy(RuntimeError):
+    """Another process kept the phone past PHONE_WAIT_S. Not a failure: try again soon."""
+
+
+PHONE_WAIT_S = 600
+
+
+class Offline(RuntimeError):
+    """The phone has no internet. Offline, Instagram shows a deleted account's
+    "page isn't available" and endless spinners, so no lead is judged then."""
+
+
+# The phone is online when it reaches Instagram, or failing that a public DNS
+# server (in case a network drops ICMP to Instagram only).
+ONLINE_HOSTS = ("i.instagram.com", "8.8.8.8")
+PING_OK = re.compile(r"\b[1-9]\d* (?:packets )?received")
+
+
 # ── Texas time ───────────────────────────────────────────────────────────────
 
 def central_offset(utc: datetime) -> int:
@@ -765,15 +788,32 @@ def has_history(nodes: list[Node], box: Node | None) -> bool:
     return False
 
 
+def as_dumped(text: str) -> str:
+    """The text as the phone's XML dump shows it. The dump writes each UTF-16
+    unit of a character outside the Basic Multilingual Plane (most emoji) as
+    ".", so "phone 😄" reads "phone .." (measured on the A20e, 2026-11-23)."""
+    return "".join(".." if ord(c) > 0xFFFF else c for c in text or "")
+
+
+def _folded(text: str) -> str:
+    return " ".join((text or "").split())
+
+
+def typed_matches(have: str, want: str) -> bool:
+    """The box holds exactly the message: read directly, or through the dump."""
+    return _folded(have) in (_folded(want), _folded(as_dumped(want)))
+
+
 def message_shown(nodes: list[Node], text: str, box: Node | None) -> bool:
-    want = normalize(text).casefold()
-    head, tail = want[:40], want[-40:]
+    wants = {normalize(text).casefold(), _folded(as_dumped(text)).casefold()}
     for n in ig(nodes):
         if n is box or "edittext" in n.cls.lower() or not n.label:
             continue
-        have = normalize(n.label).casefold()
-        if (head and head in have) or (tail and tail in have):
-            return True
+        haves = (normalize(n.label).casefold(), _folded(n.label).casefold())
+        for want in wants:
+            head, tail = want[:40], want[-40:]
+            if any((head and head in have) or (tail and tail in have) for have in haves):
+                return True
     return False
 
 
@@ -804,7 +844,7 @@ class Sender:
     def save_screen(self, step: str, nodes: list[Node]) -> None:
         SCREENS_DIR.mkdir(parents=True, exist_ok=True)
         stamp = time.strftime("%Y%m%dT%H%M%S")
-        rows = [{"label": n.label[:200], "rid": n.rid.split("/")[-1], "cls": n.cls.split(".")[-1],
+        rows = [{"label": n.label[:1200], "rid": n.rid.split("/")[-1], "cls": n.cls.split(".")[-1],
                  "click": n.clickable, "bounds": n.bounds} for n in nodes if n.package == INSTAGRAM]
         (SCREENS_DIR / f"{stamp}-{step}.json").write_text(json.dumps(rows, indent=0, ensure_ascii=False),
                                                           encoding="utf-8")
@@ -892,6 +932,25 @@ class Sender:
         except (ScreenProblem, PhoneUnavailable) as err:
             log.warning("Could not switch back to @%s: %s", previous, err)
 
+    def require_unpaused(self) -> None:
+        """The email finder shares the phone: a challenge it meets while this
+        batch waits for the phone pauses everything, and nothing goes on after it."""
+        if self.g.phone_paused_for() or self.g.paused_for("instagram"):
+            raise Paused(f"{DEVICE_NAME} was paused after a security check")
+
+    async def online(self) -> bool:
+        for host in ONLINE_HOSTS:
+            if PING_OK.search(await self.g._shell(f"ping -c 2 -W 4 {host}", timeout=20)):
+                return True
+        return False
+
+    async def require_online(self) -> None:
+        """Raise Offline unless the phone has internet. Asked before a batch and
+        again before any lead is skipped, held or failed, so a dropped hotspot
+        never reads as "the account does not exist"."""
+        if not await self.online():
+            raise Offline(f"{DEVICE_NAME} has no internet connection")
+
     # one message
 
     async def open_thread(self, lead: Lead) -> tuple[list[Node], Node, str]:
@@ -944,6 +1003,21 @@ class Sender:
                                                             "packageName": INSTAGRAM}
         await asyncio.to_thread(lambda: ui(**selector).set_text(text))
 
+    async def read_box(self, box: Node) -> str | None:
+        """The message box's text read directly (exact, emoji included), or None
+        when that fails and only the XML dump's version is left."""
+        ui = self.g._ui
+        if ui is None:
+            return None
+        selector = {"resourceId": box.rid} if box.rid else {"className": "android.widget.EditText",
+                                                            "packageName": INSTAGRAM}
+        try:
+            text = await asyncio.to_thread(lambda: ui(**selector).get_text())
+        except Exception:  # noqa: BLE001 - the dump is the fallback
+            return None
+        text = text or ""
+        return "" if COMPOSER_HINT.match(text.strip()) else text
+
     async def send(self, lead: Lead, text: str, dry_run: bool = False) -> str:
         """'sent', 'unverified' or 'probe-ok'; raises LookupError (skip), ScreenProblem, Pushback."""
         nodes, box, name = await self.open_thread(lead)
@@ -961,7 +1035,12 @@ class Sender:
         await self.wait(1.2)
         nodes = await self.check()
         box = composer(nodes)
-        if box is None or normalize(composer_text(box)) != normalize(text):
+        typed = None
+        if box is not None:
+            typed = await self.read_box(box)
+            if typed is None:
+                typed = composer_text(box)
+        if box is None or not typed_matches(typed, text):
             self.save_screen("typed", nodes)
             if box is not None:
                 try:
@@ -995,16 +1074,20 @@ class Sender:
         sent = failures = 0
         if not await self.g.available():
             raise PhoneUnavailable(f"{DEVICE_NAME} is locked or off USB")
-        if not await self.g._hold_phone(150):
-            raise PhoneUnavailable(f"{DEVICE_NAME} is busy with another process")
+        # Queued: the email finder lets the phone go after its current step.
+        if not await self.g._hold_phone(PHONE_WAIT_S, queue=True):
+            raise PhoneBusy(f"{DEVICE_NAME} stayed busy with another process for {PHONE_WAIT_S // 60} min")
         previous = ""
         stopped = False  # after a challenge or notice the phone is left exactly as it is
         held_streak: list[str] = []
         try:
+            self.require_unpaused()
+            await self.require_online()
             previous = await self.ensure_account()
             for i, lead in enumerate(leads):
                 if i:
                     await self.wait(random.uniform(*gap))
+                    self.require_unpaused()
                 try:
                     text = compose(lead)
                 except ValueError as err:
@@ -1013,6 +1096,7 @@ class Sender:
                 try:
                     result = await self.send(lead, text, dry_run=dry_run)
                 except Held as err:
+                    await self.require_online()
                     self.store.mark(lead.handle, "held", str(err))
                     log.info("@%s held: %s", lead.handle, err)
                     held_streak.append(str(err))
@@ -1021,10 +1105,12 @@ class Sender:
                                             f"see {SCREENS_DIR} and use `requeue`")
                     continue
                 except Skip as err:
+                    await self.require_online()
                     self.store.mark(lead.handle, "skipped", str(err))
                     log.info("@%s skipped: %s", lead.handle, err)
                     continue
                 except ScreenProblem as err:
+                    await self.require_online()
                     self.store.failed_attempt(lead.handle, f"screen: {err}")
                     failures += 1
                     log.warning("@%s not sent: %s", lead.handle, err)
@@ -1141,6 +1227,23 @@ async def run(args: argparse.Namespace) -> None:
             if not args.loop:
                 return
             continue
+        except Paused as err:
+            log.warning("%s; the batch stopped there.", err)
+            if not args.loop:
+                return
+            continue  # the gate waits out the pause
+        except PhoneBusy as err:
+            log.info("%s; trying again in 2 min.", err)
+            if not args.loop:
+                return
+            await asyncio.sleep(120)
+            continue
+        except Offline as err:
+            log.warning("%s; nothing is recorded against any lead. Trying again in 10 min.", err)
+            if not args.loop:
+                return
+            await asyncio.sleep(10 * 60)
+            continue
         except (ScreenProblem, PhoneUnavailable) as err:
             log.info("Batch not started: %s", err)
             failures += 1
@@ -1168,7 +1271,10 @@ async def probe(args: argparse.Namespace) -> None:
     if not leads:
         raise SystemExit("no lead to probe")
     sender = Sender(galaxy, store, args.account, restore=not args.keep_account)
-    await sender.batch(leads[:1], dry_run=True)
+    try:
+        await sender.batch(leads[:1], dry_run=True)
+    except (Offline, Paused, PhoneBusy) as err:
+        raise SystemExit(str(err)) from None
     row = store.db.execute("select handle, state, why, attempts from leads where handle=?",
                            (leads[0].handle,)).fetchone()
     print(json.dumps(dict(row), indent=1))

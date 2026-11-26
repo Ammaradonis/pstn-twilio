@@ -25,6 +25,7 @@ from __future__ import annotations
 
 import asyncio
 import hashlib
+import json
 import logging
 import os
 import random
@@ -34,7 +35,7 @@ from dataclasses import asdict, dataclass, field
 from typing import TYPE_CHECKING, Iterable
 from urllib.parse import quote
 
-from .android import Node, PhoneUnavailable, STOP_SCREEN, CHALLENGE_SCREEN, find_button
+from .android import Node, PhoneUnavailable, find_button
 from .fb_vocab import MEMBERS, MEMBER_WORD, GroupCandidate, SearchTerm, parse_members, \
     score_group, keep, term_key
 
@@ -181,6 +182,12 @@ CHALLENGE_SCREEN_TEXT = re.compile(
     r"verify your account", re.I)
 LOGIN_SCREEN_TEXT = re.compile(r"\blog ?in\b|sign up|create (?:a )?new account|"
                                r"forgot (?:your )?password", re.I)
+# The app's bottom tabs ("Home, tab 1 of 6"). A checkpoint or a login takes the
+# whole app over, so a screen that still shows them is the feed, a group or a
+# post, whatever its posts say.
+APP_TABS = re.compile(r"\btab \d+ of \d+\b", re.I)
+# A checkpoint's title and buttons are short; a longer label is someone's post.
+SCREEN_LABEL_MAX = 90
 
 
 # ── reading a screen ─────────────────────────────────────────────────────────
@@ -642,24 +649,41 @@ def composer(nodes: list[Node]) -> Node | None:
     return None
 
 
+def save_stop_screen(kind: str, nodes: list[Node]) -> None:
+    """Keep the screen that stopped the phone, so it can be checked by hand."""
+    from .config import CACHE_DIR
+
+    try:
+        folder = CACHE_DIR / "fb-stop-screens"
+        folder.mkdir(parents=True, exist_ok=True)
+        rows = [{"label": n.label[:300], "rid": n.rid.split("/")[-1], "bounds": n.bounds}
+                for n in nodes if n.label or n.rid]
+        path = folder / f"{time.strftime('%Y%m%dT%H%M%S')}-{kind}.json"
+        path.write_text(json.dumps(rows, indent=0, ensure_ascii=False), encoding="utf-8")
+        for old in sorted(folder.glob("*.json"))[:-30]:
+            old.unlink(missing_ok=True)
+        log.warning("Facebook %s screen saved to %s", kind, path)
+    except OSError as err:
+        log.info("Could not save the Facebook %s screen: %s", kind, err)
+
+
 def challenge_kind(nodes: list[Node]) -> str:
     """'challenge' | 'login' | '' — from what is on screen, not from the activity.
 
-    Facebook's checkpoint copy is not Instagram's, so it gets its own patterns;
-    the shared `STOP_SCREEN` is kept as a net for anything either app reuses.
+    Only Facebook's own short copy counts. The bare words the activity-name net
+    (`STOP_SCREEN`) looks for, "challenge", "confirm", "login", are everyday
+    post text ("30-day challenge", a friend request's Confirm, "sign up for
+    class"); matched in any label they stopped the phone for 12 h four times
+    in two days (2026-11-22/23) with no checkpoint on the phone.
     """
-    for node in nodes:
-        if not node.package.startswith(FACEBOOK):
-            continue
-        label = node.label
-        if CHALLENGE_SCREEN_TEXT.search(label):
-            return "challenge"
-        if LOGIN_SCREEN_TEXT.search(label):
-            return "login"
-        if STOP_SCREEN.search(label) and CHALLENGE_SCREEN.search(label):
-            return "challenge"
-        if STOP_SCREEN.search(label):
-            return "login"
+    labels = [n.label for n in nodes if n.package.startswith(FACEBOOK) and n.label]
+    if any(APP_TABS.search(label) for label in labels):
+        return ""
+    short = [label for label in labels if len(label) <= SCREEN_LABEL_MAX]
+    if any(CHALLENGE_SCREEN_TEXT.search(label) for label in short):
+        return "challenge"
+    if any(LOGIN_SCREEN_TEXT.search(label) for label in short):
+        return "login"
     return ""
 
 
@@ -955,6 +979,8 @@ class FacebookGroups:
         """'' when it is safe to act, else why not (and pause what must pause)."""
         nodes = await self._screen()
         kind = challenge_kind(nodes)
+        if kind:
+            save_stop_screen(kind, nodes)
         if kind == "challenge":
             self.phone._pause("facebook", "a security checkpoint")
             if self.limits.stop_on_challenge:

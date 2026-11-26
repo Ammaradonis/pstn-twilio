@@ -171,8 +171,13 @@ class _Scored:
 class Engine:
     def __init__(self, fetcher: Fetcher, search: BraveSearch, domains: DomainChecker, max_site_pages: int = 8,
                  *, scoring: ScoreWeights | None = None, people_executor=None,
-                 google: GoogleFreeSearch | None = None, google_mode: str = "bare", galaxy=None):
+                 google: GoogleFreeSearch | None = None, google_mode: str = "bare", galaxy=None,
+                 collect: str = "all"):
         self.fetcher = fetcher
+        # "all": every free source is read even after the first address, so a
+        # school's every published address is collected; "paid" adds paid search
+        # for rows that already have one; "first" stops at the first good address.
+        self.collect = collect if collect in ("all", "paid", "first") else "all"
         self.search = search
         # The user's Galaxy A20e (android.Galaxy): the real Meta apps as a backup.
         self.galaxy = galaxy
@@ -183,6 +188,10 @@ class Engine:
         self.max_site_pages = max_site_pages
         self.scoring = scoring if scoring is not None else load_weights()
         self.people_executor = people_executor
+
+    @property
+    def collect_all(self) -> bool:
+        return self.collect in ("all", "paid")
 
     async def find(self, row: Row) -> Finding:
         job = _Job(self, row)
@@ -560,8 +569,10 @@ class _Job:
             await self._crawl_site(site)
 
         best = await self._decide()
-        if not best and self._panel_used and self.social:
+        if (not best or self.e.collect_all) and self._panel_used and self.social:
             # The profiles its Business Profile lists, before any paid search.
+            # Collecting every address, they are read even when the site had one:
+            # the owner's own inbox is often only on Facebook or Instagram.
             await self._scrape_social_profiles()
             best = await self._decide()
         free_route = self._google_first()
@@ -570,7 +581,7 @@ class _Job:
             # deferred rather than paid for. Every query in the row has then been
             # asked of Google before any Brave credit is considered.
             best = await self._google_pass()
-            if not best and self.social:
+            if (not best or self.e.collect_all) and self.social:
                 # Profiles Google turned up are read before paying for a search.
                 await self._scrape_social_profiles()
                 best = await self._decide()
@@ -583,16 +594,19 @@ class _Job:
                 self.finding.retry_after = RETRY_WHEN_GOOGLE_STALLS
                 await self._finish(best)
                 return self.finding
-        # Anything the free pass answered skips Brave: one address is the goal,
-        # and these rows exist to be served before any credit is spent. A bare
-        # row whose free pass never got an answer was already deferred above, so
-        # reaching here with no answer means Google said "none" or refused.
-        if not best and self.e.search.enabled and (
+        # Anything the free pass answered skips Brave: these rows exist to be
+        # served before any credit is spent. A bare row whose free pass never got
+        # an answer was already deferred above, so reaching here with no answer
+        # means Google said "none" or refused. Paid search for a row that already
+        # has an address only runs when collect is "paid".
+        paid_extra = self.e.collect == "paid" and not free_route
+        if (not best or paid_extra) and self.e.search.enabled and (
             not free_route or self._google_blocked or self._google_answered
         ):
             try:
                 for stage in self._search_stages():
-                    if best and best.kind == "decision-maker" and best.score >= 85:
+                    if (best and best.kind == "decision-maker" and best.score >= 85
+                            and not self.e.collect_all):
                         break
                     await stage()
                     best = await self._decide()
@@ -606,7 +620,7 @@ class _Job:
             self.finding.research_complete = False
             self.finding.notes.append("Search not configured; website-only research")
 
-        if not best or best.kind != "decision-maker":
+        if self.e.collect_all or not best or best.kind != "decision-maker":
             await self._scrape_social_profiles()
             best = await self._decide()
 
@@ -721,7 +735,9 @@ class _Job:
             for stage in (self._search_google_strategies, *self._search_stages()):
                 await stage()
                 best = await self._decide()
-                if self._google_blocked or (best and best.kind == "decision-maker" and best.score >= 85):
+                if self._google_blocked:
+                    break
+                if best and best.kind == "decision-maker" and best.score >= 85 and not self.e.collect_all:
                     break
         finally:
             self._free_only = False
@@ -776,7 +792,7 @@ class _Job:
                 # Resolve math challenges on sub-pages too
                 if sub_info.challenge and sub_info.math_answer is not None and self.e.fetcher.use_browser:
                     await self._resolve_math_challenge(page.final_url, sub_info.math_answer)
-            if self._has_strong_owner_email():
+            if not self.e.collect_all and self._has_strong_owner_email():
                 break
 
         # Nothing from this site's plain HTML (other sources don't count): many
@@ -876,6 +892,12 @@ class _Job:
                 if page:
                     self.finding.notes.append(f"Social login or human verification required: {url}")
                 # Facebook resisted the browser (blocked, paused, out of page loads): the phone.
+                # With an address already in hand that lookup is only nice to have.
+                if await self._decide():
+                    galaxy = self.e.galaxy
+                    if self.e.collect_all and galaxy is not None and galaxy.has_spare():
+                        await self._galaxy_lookup("facebook", url, optional=True)
+                    continue
                 await self._galaxy_lookup("facebook", url)
 
         guessed: set[str] = set()
@@ -907,12 +929,12 @@ class _Job:
             self.social.add(url)
             info = self._take(page.final_url, page.html, page.via)
             links += [link for link in _profile_links(info) if link not in links]
-        if links and not await self._decide():
+        if links and (self.e.collect_all or not await self._decide()):
             await self._follow_profile_links(links)
         # A Facebook page the Instagram profile links to (one round, no further hops).
         for url in sorted(self.social - set(facebook) - self._scraped)[:1]:
             if (host_matches(_host(url), {"facebook.com", "fb.com", "m.facebook.com"})
-                    and _is_profile(url) and not await self._decide()):
+                    and _is_profile(url) and (self.e.collect_all or not await self._decide())):
                 self._scraped.add(url)
                 page = await self.e.fetcher.fetch_fb_profile(url)
                 if page and not page.blocked:
@@ -921,7 +943,14 @@ class _Job:
         # button Instagram's website lacks.
         for url in on_phone[:2]:
             if await self._decide():
-                break
+                # Already an address: the app's Contact button may list another
+                # one, but only while the phone has lookups to spare, so rows with
+                # nothing yet keep their share of the day's limit.
+                galaxy = self.e.galaxy
+                if not self.e.collect_all or galaxy is None or not galaxy.has_spare():
+                    break
+                await self._galaxy_lookup("instagram", url, must_match=url in guessed, optional=True)
+                continue
             await self._galaxy_lookup("instagram", url, must_match=url in guessed)
 
     async def _galaxy_lookup(self, app: str, url: str, must_match: bool = False,
@@ -987,7 +1016,7 @@ class _Job:
             elif not self.site_host and not host_matches(host, SNIPPET_ONLY_HOSTS | VENDOR_HOSTS):
                 # Listed by the school's own profile: no phone/town proof needed.
                 await self._crawl_site(link)
-            if await self._decide():
+            if not self.e.collect_all and await self._decide():
                 return
 
     # ── search ────────────────────────────────────────────────────────────────

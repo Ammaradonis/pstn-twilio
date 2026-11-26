@@ -84,6 +84,13 @@ class Settings:
     # Brave for rows with no website or social profile, "all" for every row.
     google_free: str = "bare"
     google_free_daily_limit: int = 150
+    # How many addresses a row is researched for. "all" (default): every free
+    # source is read even after the first address (the whole site, the Facebook
+    # and Instagram profiles, the links they list, the whole free Google pass),
+    # so every address the school publishes is collected; paid search still runs
+    # only for rows with nothing yet. "paid": paid search too, for every row.
+    # "first": the old behaviour, research stops at the first good address.
+    collect: str = "all"
     cse_daily_limit: int = 200
     # cookies.txt export whose google.com cookies sign the search browser in.
     google_cookies: Path | None = None
@@ -134,6 +141,7 @@ def load_settings() -> Settings:
     )
     vertex_location = os.environ.get("VERTEX_AI_LOCATION") or "global"
     google_free = (os.environ.get("EMAIL_FINDER_GOOGLE_FREE") or "bare").strip().lower()
+    collect = (os.environ.get("EMAIL_FINDER_COLLECT") or "all").strip().lower()
     google_cookies = _cookie_file("EMAIL_FINDER_GOOGLE_COOKIES", "www.google.com_cookies.txt", "cookies.txt")
 
     return Settings(
@@ -157,6 +165,7 @@ def load_settings() -> Settings:
         browser_cdp_url=os.environ.get("EMAIL_FINDER_BROWSER_CDP_URL") or None,
         row_timeout=min(1000, max(60, _int("EMAIL_FINDER_ROW_TIMEOUT", 900))),
         google_free=google_free if google_free in ("bare", "all", "off") else "bare",
+        collect=collect if collect in ("all", "paid", "first") else "all",
         google_free_daily_limit=_int("EMAIL_FINDER_GOOGLE_FREE_DAILY_LIMIT", 150),
         cse_daily_limit=_int("EMAIL_FINDER_CSE_DAILY_LIMIT", 200),
         google_cookies=google_cookies,

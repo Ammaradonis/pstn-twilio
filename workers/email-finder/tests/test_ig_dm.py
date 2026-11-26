@@ -17,7 +17,7 @@ sys.path.insert(0, str(ROOT / "scripts"))
 from email_finder.android import INSTAGRAM, Node  # noqa: E402
 import ig_dm  # noqa: E402
 from ig_dm import (  # noqa: E402
-    Lead, Pushback, AccountProblem, Sender, Store, account_title, brand_name, build_leads, call_kind, central_offset,
+    Lead, Offline, Paused, Pushback, AccountProblem, Sender, Store, account_title, brand_name, build_leads, call_kind, central_offset,
     city_of, compose, composer, composer_text, first_name, handle_of, has_history, message_problems, message_shown,
     profile_message_button, pushback_on, recipient_refuses, send_button, seconds_until_window, thread_is_with,
 )
@@ -260,14 +260,25 @@ class FakeUi:
     def set_text(self, text: str) -> None:
         self.phone.typed = self.phone.mangle(text)
 
+    def get_text(self) -> str:
+        if self.phone.get_text_fails:
+            raise RuntimeError("UiObjectNotFoundException")
+        return self.phone.typed or "Message..."
+
 
 class FakePhone:
     """Just enough of Galaxy for Sender: an app with accounts, profiles and threads."""
 
     def __init__(self, tmp: Path, active="matboss_online", accounts=("matboss_online", "finder_acct"),
-                 history=(), after_send=None, mangle=lambda t: t) -> None:
+                 history=(), after_send=None, mangle=lambda t: t, pings=(True,), missing=(),
+                 pause_while_waiting=0.0, dump_dots=True, get_text_fails=False) -> None:
+        # dump_dots: the real dump writes each emoji as ".." (each UTF-16 unit a ".")
+        self.dump_dots, self.get_text_fails = dump_dots, get_text_fails
         self.active, self.accounts, self.history = active, accounts, history
         self.after_send, self.mangle = after_send, mangle
+        self.pings, self.missing = list(pings), set(missing)  # the last ping result repeats
+        self.pause_while_waiting = pause_while_waiting
+        self.phone_pause = 0.0
         self.state, self.handle, self.typed, self.sent = "home", "", "", []
         self.lock_path = tmp / "galaxy.lock"
         self._ui = FakeUi(self)
@@ -276,9 +287,13 @@ class FakePhone:
 
     # Galaxy's surface
     async def available(self): return True
-    async def _hold_phone(self, wait_s=150): self.lock_path.write_text("1"); return True
+    async def _hold_phone(self, wait_s=150, queue=False):
+        self.lock_path.write_text("1")
+        self.phone_pause = self.pause_while_waiting  # another process met a challenge meanwhile
+        return True
+
     def _release_phone(self): self.lock_path.unlink(missing_ok=True)
-    def phone_paused_for(self): return 0.0
+    def phone_paused_for(self): return self.phone_pause
     def paused_for(self, app): return 0.0
     def _pause(self, app, why): self.paused.append(why)
     async def _stopped(self, app): return None
@@ -286,7 +301,10 @@ class FakePhone:
     async def _leave(self, mode="home"): self.state = "home"
     async def _key(self, name): self.state = "own" if self.state == "switcher" else "home"
 
-    async def _shell(self, cmd):
+    async def _shell(self, cmd, timeout=25):
+        if cmd.startswith("ping"):
+            up = self.pings.pop(0) if len(self.pings) > 1 else self.pings[0]
+            return f"2 packets transmitted, {2 if up else 0} received, {0 if up else 100}% packet loss"
         if "--activity-clear-top" in cmd:
             self.state = "main"
         return ""
@@ -329,10 +347,13 @@ class FakePhone:
                 nodes.append(n("Add Instagram account", "", y=1450, clickable=True))
             return nodes
         if self.state == "profile":
+            if self.handle in self.missing:
+                return [n("Sorry, this page isn't available.", y=400), floor()]
             return profile_screen(self.handle, "Lake Texoma ATA")
         if self.state in ("thread", "after"):
             extra = (n(self.after_send, y=700),) if self.state == "after" and self.after_send else ()
-            return thread_screen("Lake Texoma ATA", self.typed, self.history, extra)
+            show = ig_dm.as_dumped if self.dump_dots else (lambda t: t)
+            return thread_screen("Lake Texoma ATA", show(self.typed), tuple(show(b) for b in self.history), extra)
         return [floor()]
 
 
@@ -364,6 +385,22 @@ def test_sends_from_matboss_and_records_it(tmp_path, store):
     assert row["state"] == "sent" and row["account"] == "matboss_online" and row["message"] == text
     assert store.sent_on(ig_dm.central_day()) == 1
     assert not phone.lock_path.exists()
+
+
+def test_emoji_the_dump_shows_as_dots_still_send(tmp_path, store):
+    emoji_lead = next(l for l in store.next(5) if any(ord(c) > 0xFFFF for c in compose(l)))
+    for fails in (False, True):  # read directly, or (when that fails) through the dump
+        s = Store(tmp_path / f"dm-{fails}.sqlite")
+        s.upsert([emoji_lead])
+        phone = FakePhone(tmp_path, get_text_fails=fails)
+        sent, failures = run_batch(phone, s)
+        assert (sent, failures) == (1, 0), fails
+        assert phone.sent[0][2] == compose(emoji_lead)  # typed with its emoji
+        assert s.db.execute("select state from leads").fetchone()[0] == "sent"
+
+
+def test_as_dumped_matches_the_phone():
+    assert ig_dm.as_dumped("on the phone \U0001F604\n\nok \U0001F94B.") == "on the phone ..\n\nok ..."
 
 
 def test_switches_to_matboss_and_back(tmp_path, store):
@@ -405,6 +442,40 @@ def test_try_again_later_after_send_stops_everything(tmp_path, store):
     assert row["state"] == "unverified"  # it may have gone out: never again
     assert store.dm_pause_left() > 23 * 3600 and phone.paused
     assert store.next(5)[0].handle == "second_school"
+
+
+def test_a_missing_account_is_skipped_when_online(tmp_path, store):
+    phone = FakePhone(tmp_path, missing={"lake_texoma_ata"})
+    sent, _ = run_batch(phone, store)
+    row = store.db.execute("select state, why from leads where handle='lake_texoma_ata'").fetchone()
+    assert sent == 0 and row["state"] == "skipped" and "does not exist" in row["why"]
+
+
+def test_nothing_is_judged_while_the_phone_is_offline(tmp_path, store):
+    # Online at the start, then the hotspot drops: Instagram's offline page reads
+    # like a deleted account, so the lead must stay queued, untouched.
+    phone = FakePhone(tmp_path, missing={"lake_texoma_ata"}, pings=(True, False))
+    with pytest.raises(Offline):
+        run_batch(phone, store)
+    row = store.db.execute("select state, why, attempts from leads where handle='lake_texoma_ata'").fetchone()
+    assert (row["state"], row["why"], row["attempts"]) == ("queued", "", 0)
+    assert phone.sent == [] and not phone.lock_path.exists()
+
+
+def test_a_pause_set_while_waiting_for_the_phone_stops_the_batch(tmp_path, store):
+    phone = FakePhone(tmp_path, pause_while_waiting=12 * 3600)
+    with pytest.raises(Paused):
+        run_batch(phone, store, store.next(2))
+    assert phone.taps == [] and phone.sent == [] and not phone.lock_path.exists()
+    assert {r[0] for r in store.db.execute("select state from leads")} == {"queued"}
+
+
+def test_an_offline_phone_starts_no_batch(tmp_path, store):
+    phone = FakePhone(tmp_path, pings=(False,))
+    with pytest.raises(Offline):
+        run_batch(phone, store)
+    assert phone.taps == [] and phone.sent == [] and not phone.lock_path.exists()
+    assert store.next(5)[0].handle == "lake_texoma_ata"
 
 
 def test_a_crash_mid_send_is_never_retried(tmp_path):
