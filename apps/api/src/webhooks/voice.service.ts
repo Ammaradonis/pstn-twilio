@@ -20,6 +20,7 @@ import { RedisService } from '../redis/redis.service';
 import { TwilioService } from '../twilio/twilio.service';
 import { VoiceAppCallsService } from '../voice-app/voice-app-calls.service';
 
+import { isInboundBlocked } from './inbound-block';
 import { mapTwilioCallStatus } from './voice-status.mapper';
 
 // Deduplication TTL in Redis: 24 hours covers Twilio's longest possible retry
@@ -140,6 +141,10 @@ export class VoiceWebhookService {
     const from = params.From ?? '';
     if (!callSid || !to) {
       this.logger.warn('Inbound voice webhook missing CallSid or To');
+      return rejectTwiml();
+    }
+    if (isInboundBlocked(to)) {
+      this.logger.log(`Blocked incoming call to ${to} (sid ${callSid})`);
       return rejectTwiml();
     }
 
@@ -319,6 +324,8 @@ export class VoiceWebhookService {
       (params.ParentCallSid
         ? await this.prisma.call.findUnique({ where: { twilioCallSid: params.ParentCallSid } })
         : null);
+    // A blocked incoming call was never logged; keep it out of the call history.
+    if (!existing && params.Direction === 'inbound' && isInboundBlocked(params.To)) return;
     const newStatus = mapTwilioCallStatus(statusRaw);
     const duration = parseDuration(params.CallDuration ?? params.Duration);
     const existingMatchesCallbackCall = existing?.twilioCallSid === callSid;

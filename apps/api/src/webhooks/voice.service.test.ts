@@ -88,6 +88,20 @@ describe('VoiceWebhookService.handleInbound', () => {
     expect(xml).toContain('<Response><Reject reason="busy"/></Response>');
   });
 
+  it('turns away every incoming call to the blocked 877 number without logging or ringing', async () => {
+    const { service, prisma, realtime } = buildService();
+    const xml = await service.handleInbound({
+      CallSid: 'CA877',
+      From: '+15551111111',
+      To: '+18776524532',
+    });
+    expect(xml).toContain('<Response><Reject reason="busy"/></Response>');
+    expect(prisma.webhookEvent.create).not.toHaveBeenCalled();
+    expect(prisma.phoneNumber.findUnique).not.toHaveBeenCalled();
+    expect(prisma.call.create).not.toHaveBeenCalled();
+    expect(realtime.callInboundRinging).not.toHaveBeenCalled();
+  });
+
   it('returns hangup TwiML for unknown destination number', async () => {
     const prisma = {
       webhookEvent: {
@@ -795,6 +809,43 @@ describe('VoiceWebhookService.handleStatus', () => {
     expect(prisma.webhookEvent.create).not.toHaveBeenCalled();
   });
 
+  it('keeps status callbacks of blocked incoming calls out of the call history', async () => {
+    const { service, prisma, realtime } = buildService();
+    await service.handleStatus({
+      CallSid: 'CA877',
+      CallStatus: 'busy',
+      Direction: 'inbound',
+      From: '+15551111111',
+      To: '+18776524532',
+    });
+    expect(prisma.call.create).not.toHaveBeenCalled();
+    expect(prisma.call.update).not.toHaveBeenCalled();
+    expect(realtime.callStatusUpdated).not.toHaveBeenCalled();
+  });
+
+  it('still logs calls placed from the 877 number', async () => {
+    const { service, prisma } = buildService();
+    prisma.call.create.mockResolvedValue({
+      id: 'c1',
+      phoneNumberId: null,
+      twilioCallSid: 'CA1',
+      direction: CallDirection.OUTBOUND,
+      fromE164: '+18776524532',
+      toE164: '+15551111111',
+      status: CallStatus.COMPLETED,
+      createdAt: new Date(),
+      updatedAt: new Date(),
+    });
+    await service.handleStatus({
+      CallSid: 'CA1',
+      CallStatus: 'completed',
+      Direction: 'outbound-dial',
+      From: '+18776524532',
+      To: '+15551111111',
+    });
+    expect(prisma.call.create).toHaveBeenCalled();
+  });
+
   it('dedupes when the same (sid, status) pair was already processed', async () => {
     const prisma = {
       webhookEvent: {
@@ -1210,7 +1261,7 @@ describe('VoiceWebhookService.handleInbound for voice app users', () => {
   function setup(isVoiceUser: boolean) {
     const phoneNumber = {
       id: 'pn1',
-      phoneNumberE164: '+18776524532',
+      phoneNumberE164: '+18885550123',
       userId: 'u1',
       active: true,
       capabilitiesVoice: true,
@@ -1222,7 +1273,7 @@ describe('VoiceWebhookService.handleInbound for voice app users', () => {
       twilioCallSid: 'CA1',
       direction: CallDirection.INBOUND,
       fromE164: '+14155550100',
-      toE164: '+18776524532',
+      toE164: '+18885550123',
       status: CallStatus.RINGING,
       createdAt: new Date(),
       startedAt: new Date(),
@@ -1257,7 +1308,7 @@ describe('VoiceWebhookService.handleInbound for voice app users', () => {
     );
     return { service, voiceApp, realtime };
   }
-  const params = { CallSid: 'CA1', From: '+14155550100', To: '+18776524532' };
+  const params = { CallSid: 'CA1', From: '+14155550100', To: '+18885550123' };
 
   it('hands calls to voice app users to the voice app routing', async () => {
     const { service, voiceApp, realtime } = setup(true);

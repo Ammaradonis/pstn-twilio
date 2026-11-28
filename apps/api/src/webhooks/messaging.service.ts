@@ -6,6 +6,7 @@ import { PrismaService } from '../prisma/prisma.service';
 import { RealtimeService } from '../realtime/realtime.service';
 import { VoiceAppCallsService } from '../voice-app/voice-app-calls.service';
 
+import { isInboundBlocked } from './inbound-block';
 import {
   describeTwilioMessagingError,
   mapTwilioStatusToEnum,
@@ -50,6 +51,10 @@ export class MessagingWebhookService {
     const sid = params.MessageSid ?? params.SmsSid;
     if (!sid) {
       throw new Error('MessageSid missing from inbound webhook');
+    }
+    if (isInboundBlocked(params.To)) {
+      this.logger.log(`Blocked incoming text to ${params.To} (sid ${sid})`);
+      return { deduped: false };
     }
     const dedupeKey = `messaging:inbound:${sid}`;
     if (await this.alreadyProcessed(dedupeKey)) {

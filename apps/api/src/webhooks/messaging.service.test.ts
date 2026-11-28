@@ -25,6 +25,28 @@ function buildService(overrides: { prisma?: any; realtime?: any } = {}) {
 }
 
 describe('MessagingWebhookService.handleInbound', () => {
+  it('drops every incoming text to the blocked 877 number without storing or showing it', async () => {
+    const prisma = {
+      webhookEvent: { findUnique: vi.fn(), create: vi.fn() },
+      phoneNumber: { findUnique: vi.fn() },
+      smsMessage: { findUnique: vi.fn(), create: vi.fn(), update: vi.fn() },
+    };
+    const realtime = { smsReceived: vi.fn(), smsStatusUpdated: vi.fn() };
+    const service = buildService({ prisma, realtime });
+
+    await service.handleInbound({
+      MessageSid: 'SM877',
+      From: '+15551111111',
+      To: '+18776524532',
+      Body: 'hello',
+    });
+
+    expect(prisma.webhookEvent.create).not.toHaveBeenCalled();
+    expect(prisma.phoneNumber.findUnique).not.toHaveBeenCalled();
+    expect(prisma.smsMessage.create).not.toHaveBeenCalled();
+    expect(realtime.smsReceived).not.toHaveBeenCalled();
+  });
+
   it('dedupes when an event with the same MessageSid was already processed', async () => {
     const prisma = {
       webhookEvent: {
