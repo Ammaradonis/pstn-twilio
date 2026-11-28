@@ -163,12 +163,19 @@ def user_not_found(nodes: list[Node]) -> bool:
     return any(n.package == INSTAGRAM and NOT_FOUND.search(n.label) for n in nodes if n.label)
 
 
+# Where a profile prints its username. The top bar's title held it until
+# Instagram's 2026-11-26 layout; since then the top bar is empty and the
+# username is a header line (under the display name, or the name itself).
+PROFILE_HANDLE_RIDS = ("action_bar_title", "profile_header_full_name_above_vanity",
+                       "profile_header_prominent_name", "profile_header_username")
+
+
 def instagram_profile_shown(nodes: list[Node], handle: str) -> bool:
     """Verify the requested profile, not the old profile or a Reel's Message tab."""
     visible = [n for n in nodes if n.package == INSTAGRAM
                and n.bounds[2] > n.bounds[0] and n.bounds[3] > n.bounds[1]]
-    return (any(n.rid == f"{INSTAGRAM}:id/action_bar_title"
-                and n.label.lstrip("@").casefold() == handle.casefold() for n in visible)
+    return (any(n.rid.split("/")[-1] in PROFILE_HANDLE_RIDS
+                and n.label.strip().lstrip("@").casefold() == handle.casefold() for n in visible)
             and any(n.rid.startswith(f"{INSTAGRAM}:id/profile_header_") for n in visible))
 
 

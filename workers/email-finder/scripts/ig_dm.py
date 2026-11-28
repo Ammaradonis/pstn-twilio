@@ -206,7 +206,8 @@ def seconds_until_next_day(now: float | None = None, window: tuple[int, int] = W
 
 def seconds_left_in_window(now: float | None = None, window: tuple[int, int] = WINDOW) -> float:
     local = central(now)
-    closes = local.replace(hour=window[1], minute=0, second=0, microsecond=0)
+    # As an offset from midnight, so --end-hour 24 means "until midnight".
+    closes = local.replace(hour=0, minute=0, second=0, microsecond=0) + timedelta(hours=window[1])
     return max(0.0, (closes - local).total_seconds())
 
 
@@ -733,6 +734,21 @@ def account_title(nodes: list[Node]) -> Node | None:
     return titles[0] if titles else None
 
 
+def header_account(nodes: list[Node]) -> tuple[Node | None, Node | None]:
+    """The own profile as Instagram lays it out since 2026-11-26: no title in the top bar; the
+    display name is a button with the account-switcher chevron, and the username is the line
+    under it. Returns (username node, switcher button)."""
+    switcher = next((n for n in ig(nodes) if n.rid.split("/")[-1] == "profile_header_prominent_name"), None)
+    if switcher is None:
+        return None, None
+    names = [n for n in ig(nodes) if n.label and switcher.center[1] < n.center[1] < switcher.bounds[3] + 120
+             and any(part in n.rid.split("/")[-1] for part in ("vanity", "username"))
+             and "pronoun" not in n.rid
+             and re.fullmatch(r"@?[A-Za-z0-9._]{1,30}", n.label.strip())]
+    names.sort(key=lambda n: n.center[1])
+    return (names[0] if names else None), switcher
+
+
 def full_name_on_profile(nodes: list[Node]) -> str:
     for n in ig(nodes):
         if n.rid.split("/")[-1].startswith("profile_header_full_name") and n.label:
@@ -883,7 +899,11 @@ class Sender:
             self.save_screen("own-profile", nodes)
             raise ScreenProblem("the own profile did not open (no Edit profile button)")
         title = account_title(nodes)
-        return (title.label.strip().lstrip("@").casefold() if title else ""), title, nodes
+        if title is not None:
+            return title.label.strip().lstrip("@").casefold(), title, nodes
+        # Newer layout: the switcher is the display-name button, the username sits under it.
+        name, switcher = header_account(nodes)
+        return (name.label.strip().lstrip("@").casefold() if name else ""), switcher, nodes
 
     async def switch_to(self, username: str, title: Node | None, nodes: list[Node]) -> bool:
         """Own profile -> the title's account switcher -> that exact username. Taps nothing else."""

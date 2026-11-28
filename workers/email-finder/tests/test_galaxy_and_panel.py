@@ -607,6 +607,16 @@ def test_profile_header_must_be_visible_and_belong_to_instagram():
     assert not instagram_profile_shown(parse_dump(PROFILE_WITH_CONTACT.replace(IG, "other.app")), "calsma_official")
 
 
+def test_profile_without_top_bar_title_is_recognised_by_its_header_username():
+    # Instagram's 2026-11-26 layout: an empty top bar, the display name, then the username.
+    nodes = parse_dump(PROFILE_WITH_CONTACT.replace(":id/action_bar_title", ":id/profile_header_full_name_above_vanity"))
+    assert instagram_profile_shown(nodes, "calsma_official")
+    assert not instagram_profile_shown(nodes, "previous_school")
+    # A handle that is only a chip further down (a "Followed by" or story label) is not the header.
+    chip = parse_dump(PROFILE_WITH_CONTACT.replace(":id/action_bar_title", ":id/igds_prism_chip_label"))
+    assert not instagram_profile_shown(chip, "calsma_official")
+
+
 def test_delayed_contact_sheet_is_waited_for(tmp_path, monkeypatch):
     _quick(monkeypatch)
     phone = FakePhone(tmp_path, [PROFILE_WITH_CONTACT] * 4 + [REAL_SHEET])

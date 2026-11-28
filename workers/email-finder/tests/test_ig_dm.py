@@ -174,6 +174,10 @@ def test_window():
     assert seconds_until_window(ts(2026, 11, 23, 14, 0)) == 3600  # 08:00 CST
     assert seconds_until_window(ts(2026, 11, 24, 3, 0)) == 12 * 3600  # 21:00 CST -> 09:00
     assert ig_dm.seconds_until_next_day(ts(2026, 11, 23, 20, 0)) == 19 * 3600  # 14:00 -> 09:00 next day
+    # A one-off run with --end-hour 24 sends until midnight.
+    assert seconds_until_window(ts(2026, 11, 28, 5, 30), (0, 24)) == 0.0  # 23:30 CST
+    assert ig_dm.seconds_left_in_window(ts(2026, 11, 28, 5, 30), (0, 24)) == 30 * 60
+    assert ig_dm.seconds_left_in_window(ts(2026, 11, 24, 0, 0), ig_dm.WINDOW) == 3 * 3600  # 18:00 -> 21:00
 
 
 # ── screens ──────────────────────────────────────────────────────────────────
@@ -246,6 +250,31 @@ def test_account_title_skips_toolbar_buttons():
              n("Edit profile", "button", y=600, clickable=True), floor()]
     assert account_title(nodes).label == "matboss_online"
     assert account_title([n("Menu", "action_bar_title_menu", y=100, clickable=True), floor()]) is None
+
+
+def own_profile_2026_11(username="matboss_online") -> list[Node]:
+    """Instagram's own profile since 2026-11-26 (from a saved screen): no title in the top bar."""
+    return [n("Create New", "profile_header_create_button", y=107, x=42, w=84, clickable=True, desc=True),
+            n("Options", "", y=107, x=678, w=84, clickable=True, desc=True),
+            n("Your profile. No story", "row_profile_header_imageview", y=270, x=108, w=147, desc=True),
+            n("Ammar Alkh…", "profile_header_prominent_name", y=173, x=318, w=217, h=34, clickable=True,
+              cls="android.widget.Button"),
+            n(username, "profile_header_full_name_above_vanity", y=239, x=284, w=148, h=24),
+            n("he/him/his/they", "profile_header_pronouns_above_vanity", y=239, x=440, w=150, h=24),
+            n("935posts", "profile_header_post_count_front_familiar", y=292, x=277, w=135, clickable=True),
+            n("Edit profile", "button", y=600, clickable=True), floor()]
+
+
+def test_reads_the_username_from_the_newer_own_profile():
+    nodes = own_profile_2026_11()
+    assert account_title(nodes) is None  # nothing in the top bar any more
+    name, switcher = ig_dm.header_account(nodes)
+    assert name.label == "matboss_online"
+    assert switcher.rid.endswith("/profile_header_prominent_name")  # the account switcher
+    # The display name, pronouns or post count are never read as the username.
+    name, _ = ig_dm.header_account([x for x in nodes if "above_vanity" not in x.rid])
+    assert name is None
+    assert ig_dm.header_account([x for x in nodes if "prominent_name" not in x.rid]) == (None, None)
 
 
 # ── the flow, on a simulated phone ───────────────────────────────────────────
