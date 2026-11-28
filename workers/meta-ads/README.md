@@ -24,7 +24,27 @@ workers/email-finder/.venv/Scripts/python.exe workers/meta-ads/run.py --all-time
 ```
 
 For a hidden process at below-normal priority, run
-`powershell -File workers/meta-ads/start.ps1` after refreshing the inventory.
+`powershell -File workers/meta-ads/start.ps1`. It refreshes the inventory when
+it is a week old and does nothing while a pass is running.
+
+**It runs by itself:** `install-autostart.ps1` registers the scheduled task
+"BestSoftphone Meta Ads", which runs `start.ps1` at log-in and every hour. A
+finished search is due again after 21 days (`--refresh-days`), so "still
+advertising now" (an ad seen in the last 30 days) stays true for schools that
+still are; with nothing due, a pass exits without opening a browser. Schools
+already seen advertising are searched first, then those with a Facebook page.
+
+Until 28 Nov the pass waited a fixed 5 s after loading a search. On this PC the
+results draw in 8-25 s, so the empty grid read as an unknown layout and every
+pass stopped on its first search (status `interrupted`, `No recognizable ad
+cards`). It now waits up to 45 s for cards or Meta's results count, records a
+page that never draws as `unrecognized` (retried later), and only stops after
+three of those in a row. Keyword seeds stop after 40 scrolls and school names
+after 25 (`capped`), because a >50,000-result page outgrows this PC's memory.
+
+Each upload also carries what the ad says (`adText`, `adCta`, `adLink`). The
+API starts a 6-email Meta-ad sequence for every matched school as soon as the
+evidence arrives (`apps/api/templates/meta-ads/sequence.txt`).
 Its stdout/stderr are saved as `worker.log` and `worker-error.log` in the output
 directory. A process lock prevents concurrent runs using the same browser.
 

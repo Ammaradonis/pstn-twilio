@@ -2,6 +2,7 @@ import type { MetaAdEvidenceDto } from '@pstn-twilio/shared';
 import { describe, expect, it, vi } from 'vitest';
 
 import { facebookKey, nameKey, schoolKey } from './facebook-url';
+import type { MetaAdOutreachService } from './meta-ad-outreach.service';
 import { bestEvidence, matchRow, MetaAdsService, tabTitleFor } from './meta-ads.service';
 import type { StoredEvidence } from './meta-ads.service';
 import type { SheetsService } from './sheets.service';
@@ -136,6 +137,20 @@ function stubSheets(tabs = [{ sheetId: 7, title: 'Texas', columnCount: 5 }]) {
     } as unknown as SheetsService,
   };
 }
+
+// The Meta-ad email sequence has its own tests (meta-ad-outreach.service.test.ts).
+const stubOutreach = {
+  kick: () => undefined,
+  summary: async () => ({
+    started: 0,
+    queued: 0,
+    waitingForEmail: 0,
+    finished: 0,
+    replied: 0,
+    stopped: 0,
+    emailsSent: 0,
+  }),
+} as unknown as MetaAdOutreachService;
 
 function stubPrisma(rows: MetaAdEvidenceDto[] = EVIDENCE) {
   // Prisma hands the service Date objects, not the DTO's ISO strings.
@@ -320,7 +335,7 @@ describe('name-only evidence, the case most tabs are in', () => {
 describe('the Meta ad filter', () => {
   it('keeps only rows advertising now by default', async () => {
     const sheets = stubSheets();
-    const service = new MetaAdsService(stubPrisma(), sheets.service);
+    const service = new MetaAdsService(stubPrisma(), sheets.service, stubOutreach);
     const result = await service.filter('user', 'sheet-1', 'Texas', 'ACTIVE');
 
     expect(result.tabTitle).toBe('Meta ads - running now - Texas');
@@ -366,7 +381,7 @@ describe('the Meta ad filter', () => {
 
   it('offers the past filter separately', async () => {
     const sheets = stubSheets();
-    const service = new MetaAdsService(stubPrisma(), sheets.service);
+    const service = new MetaAdsService(stubPrisma(), sheets.service, stubOutreach);
     const result = await service.filter('user', 'sheet-1', 'Texas', 'PAST');
 
     expect(result.tabTitle).toBe('Meta ads - ran in the past - Texas');
@@ -392,6 +407,7 @@ describe('the Meta ad filter', () => {
         }),
       ]),
       sheets.service,
+      stubOutreach,
     );
     const result = await service.filter('user', 'sheet-1', 'Texas', 'ACTIVE');
     expect(result.rows).toBe(1);
@@ -407,7 +423,7 @@ describe('the Meta ad filter', () => {
     const sheets = stubSheets();
     const old = evidence({ schoolTitle: 'Austin Shotokan', rowIndex: 2 });
     delete (old as { matchKind?: string }).matchKind;
-    const service = new MetaAdsService(stubPrisma([old]), sheets.service);
+    const service = new MetaAdsService(stubPrisma([old]), sheets.service, stubOutreach);
     const result = await service.filter('user', 'sheet-1', 'Texas', 'ACTIVE');
     expect(result.rows).toBe(1);
     const written = sheets.calls.find((c) => c.method === 'PUT')!;
@@ -421,7 +437,7 @@ describe('the Meta ad filter', () => {
       { sheetId: 7, title: 'Texas', columnCount: 5 },
       { sheetId: 42, title: 'Meta ads - running now - Texas', columnCount: 11 },
     ]);
-    const service = new MetaAdsService(stubPrisma(), sheets.service);
+    const service = new MetaAdsService(stubPrisma(), sheets.service, stubOutreach);
     const result = await service.filter('user', 'sheet-1', 'Texas', 'ACTIVE');
 
     expect(result.reused).toBe(true);
@@ -436,7 +452,7 @@ describe('the Meta ad filter', () => {
 
   it('explains an empty evidence store instead of making a blank tab', async () => {
     const sheets = stubSheets();
-    const service = new MetaAdsService(stubPrisma([]), sheets.service);
+    const service = new MetaAdsService(stubPrisma([]), sheets.service, stubOutreach);
     await expect(service.filter('user', 'sheet-1', 'Texas', 'ACTIVE')).rejects.toThrow(
       /has not reported any matches/,
     );
@@ -450,6 +466,7 @@ describe('the Meta ad filter', () => {
         evidence({ schoolTitle: 'Closed Dojo', facebookUrl: 'https://facebook.com/closeddojo' }),
       ]),
       sheets.service,
+      stubOutreach,
     );
     const result = await service.filter('user', 'sheet-1', 'Texas', 'ACTIVE');
     expect(result.rows).toBe(0);
@@ -467,6 +484,7 @@ describe('the Meta ad filter', () => {
         evidence({ schoolTitle: 'Closed Dojo', facebookUrl: 'https://facebook.com/closeddojo' }),
       ]),
       sheets.service,
+      stubOutreach,
     );
     await service.filter('user', 'sheet-1', 'Texas', 'ACTIVE');
     const resize = sheets.calls.find(
@@ -501,6 +519,7 @@ describe('the button status', () => {
         }),
       ]),
       sheets.service,
+      stubOutreach,
     );
     const status = await service.status('user', 'sheet-1', 'Texas');
     expect(status).toMatchObject({ active: 1, past: 2, both: 1, matched: 3, evidence: 4 });

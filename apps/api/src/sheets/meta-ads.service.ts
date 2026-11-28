@@ -25,6 +25,7 @@ import type {
 import { PrismaService } from '../prisma/prisma.service';
 
 import { facebookKey, nameKey, schoolKey } from './facebook-url';
+import { MetaAdOutreachService } from './meta-ad-outreach.service';
 import { findColumns, SheetsService, text, type Row } from './sheets.service';
 import { a1, normalizeHeader } from './sheets.util';
 
@@ -73,6 +74,7 @@ export class MetaAdsService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly sheets: SheetsService,
+    private readonly outreach: MetaAdOutreachService,
   ) {}
 
   // ── Evidence upload (worker) ──────────────────────────────────────────────
@@ -103,6 +105,10 @@ export class MetaAdsService {
         startedAt: o.startedAt ? new Date(`${o.startedAt}T00:00:00Z`) : null,
         endedAt: o.endedAt ? new Date(`${o.endedAt}T00:00:00Z`) : null,
         observedAt: new Date(o.observedAt),
+        // A later read without the card text keeps what an earlier one saw.
+        ...(o.adText ? { adText: o.adText } : {}),
+        ...(o.adCta ? { adCta: o.adCta } : {}),
+        ...(o.adLink ? { adLink: o.adLink } : {}),
       };
       return this.prisma.metaAdEvidence.upsert({
         where: {
@@ -118,6 +124,8 @@ export class MetaAdsService {
       });
     });
     await this.prisma.$transaction(writes);
+    // Advertisers get their email sequence as soon as they are known.
+    this.outreach.kick();
 
     this.logger.log(
       `Meta ad evidence: ${observations.length} pairs across ${tabs.size} tab${tabs.size === 1 ? '' : 's'}.`,
@@ -166,6 +174,7 @@ export class MetaAdsService {
       evidence: evidence.length,
       lastObservedAt: lastObservedAt?.toISOString() ?? null,
       freshDays: FRESH_DAYS,
+      outreach: await this.outreach.summary(spreadsheetId, sheetId),
     };
   }
 

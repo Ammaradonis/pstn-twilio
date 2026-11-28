@@ -71,6 +71,14 @@ export const evidenceSchema = z.object({
         // Older workers only uploaded page-verified pairs, so a missing field
         // means "page".
         matchKind: z.enum(['page', 'name']).default('page'),
+        // What the ad says, for the Meta-ad email sequence. Optional: older
+        // workers don't send it, and a long ad is cut rather than refused.
+        adText: z
+          .string()
+          .transform((v) => v.slice(0, 1000))
+          .nullish(),
+        adCta: z.string().max(100).nullish(),
+        adLink: z.string().max(300).nullish(),
       }),
     )
     .min(1)

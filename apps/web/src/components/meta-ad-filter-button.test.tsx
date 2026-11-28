@@ -120,3 +120,23 @@ describe('the Meta ad filter button', () => {
     expect(await screen.findByText(/has not reported any matches/)).toBeInTheDocument();
   });
 });
+
+describe('outreachLine', () => {
+  it('summarises the Meta-ad email sequence, or says nothing before it starts', async () => {
+    const { outreachLine } = await import('./meta-ad-filter-button');
+    expect(outreachLine(undefined)).toBeNull();
+    const none = {
+      started: 0,
+      queued: 0,
+      waitingForEmail: 0,
+      finished: 0,
+      replied: 0,
+      stopped: 0,
+      emailsSent: 0,
+    };
+    expect(outreachLine(none)).toBeNull();
+    expect(
+      outreachLine({ ...none, started: 12, queued: 3, waitingForEmail: 5, emailsSent: 31 }),
+    ).toBe('Meta-ad emails: 12 started · 3 queued · 5 waiting for an address · 31 sent');
+  });
+});

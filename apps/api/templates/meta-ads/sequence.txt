@@ -1,0 +1,136 @@
+SEQUENCE: meta ads (schools seen advertising on Facebook/Instagram)
+
+How this file works (see apps/api/src/sheets/meta-ad-sequence.ts):
+- Same blocks as templates/sequences: EMAIL <n>, Subject:, a blank line, the body.
+- "Subject: A || B" uses the first subject whose details this school has.
+- A line that needs a detail the school doesn't have is left out, so every
+  email still reads whole. Only {{hey}}, {{school_name}}, {{ad_seen}},
+  {{ad_seen_short}}, {{when_it_runs}}, {{category}}, {{city_or_area}} and
+  {{demo}} are always there; {{program_clause}} and {{teaching_clause}} may be
+  empty inside a sentence.
+- {{demo}} is (667) 220-6726 for U.S. Conquest and 02045726501 for The Official UK.
+- Sent on days 0, 2, 4, 7, 10 and 14 after the school's ad was found, never
+  less than 20 hours apart, stopped as soon as they reply.
+
+==============================
+EMAIL 1
+Subject: saw your ad, {{first_name}} || saw the {{school_name}} ad
+
+{{hey}}
+
+I saw {{ad_seen}}.
+"{{ad_quote}}" is a good hook. Thats the kind of line that makes a parent stop scrolling.
+And the button says {{ad_cta}}, so the people who want in are ready to talk.
+
+Heres the part nobody tracks. A lot of the people who see that ad dont fill a form. They call. And if that call lands while your on the mat{{teaching_clause}}, it rings out, they hang up and they try the next {{category}} in {{city_or_area}}.
+
+You paid for that click and someone else got the trial.
+
+I built a phone agent for martial arts schools that picks up every one of those calls, answers the questions and books the trial. Call the demo at {{demo}} and pretend you just saw your own ad.
+
+Then reply and tell me how it handled you.
+
+Ammar
+
+PS. I recorded a personal video for martial arts school owners about the calls that slip through while your on the mat. Hit play between classes and see if any of it sounds familiar.
+https://www.loom.com/share/a3614b444000454daebb01634bc47711
+
+(if this isnt for you, just reply "no thanks" and I wont email again.)
+
+==============================
+EMAIL 2
+Subject: the math on one missed call || what one missed call costs {{school_name}}
+
+{{hey}}
+
+Quick math on the ad I mentioned.
+
+Every click on {{ad_seen_short}} costs you money. The people who click and call are the warmest leads you will ever get. They already picked you.
+
+If 1 in 4 of those calls goes to voicemail, a quarter of the ad budget is buying trials for whoever answers first in {{city_or_area}}. Parents dont leave voicemails. They just keep scrolling.
+{{offer_line}}
+
+The demo is at {{demo}}. Ask it what a parent would. price, schedule, what to wear to the first class.
+
+Then one thing. how do calls get answered when the whole team is teaching?
+
+Ammar
+
+(reply "no thanks" anytime and I'll stop.)
+
+==============================
+EMAIL 3
+Subject: {{rating}} stars and an ad that works || {{school_name}} gets them to the phone
+
+{{hey}}
+
+{{review_count}} reviews at {{rating}} stars on google. The families who make it through the door clearly love {{school_name}}.
+{{instructor_line}}
+
+So the training isnt the problem and the ad isnt the problem. The gap is the 30 seconds between "I saw your ad" and someone actually picking up.
+
+Thats all my agent does. It answers in your schools name, knows your classes{{program_clause}}, books the trial and sends you the details so its done before you walk off the mat.
+
+Try to break it at {{demo}}. ask if a shy 6 year old can start, ask about the price, ask if they need a uniform.
+
+Reply with what it got right or wrong.
+
+Ammar
+
+(not for you? reply "no thanks" and I wont email again.)
+
+==============================
+EMAIL 4
+Subject: not here to replace your front desk || {{first_name}}, about your front desk
+
+{{hey}}
+
+Not trying to replace anyone at {{school_name}}.
+
+If someone grabs the phone between classes, great. Keep it that way. The agent only picks up when nobody can. during class, after close, on a sunday afternoon.
+{{hours_line}}
+
+The leads from your ad dont wait for office hours. Meta shows it at 9pm on a tuesday because thats when parents are on their phones, and thats exactly when nobody is at the desk.
+
+Give the demo a call at {{demo}} tonight, after you close. Thats the call it was built for.
+
+Ammar
+
+(reply "no thanks" and I'll stop.)
+
+==============================
+EMAIL 5
+Subject: where your ad leads go at night || {{school_name}} after 9pm
+
+{{hey}}
+
+One more thought on {{ad_seen_short}}.
+It sends people to {{ad_link}}. Thats good, but the ones in a hurry skip the site and tap your number.
+
+Most schools I talk to have never counted how many calls they miss {{when_it_runs}}. When they do, its usually more than the ad brings in on the form.
+
+Its called MatBoss (matboss.online). It answers every one of those calls, 24/7, in a normal friendly voice, and the parent never knows they almost called the school down the road.
+
+{{demo}} if you want to hear it. 2 minutes.
+
+Ammar
+
+(reply "no thanks" and I wont email again.)
+
+==============================
+EMAIL 6
+Subject: last one from me, {{first_name}} || last one from me
+
+{{hey}}
+
+Last email, promise.
+
+You're already doing the hard part. You put {{school_name}} in front of parents in {{city_or_area}} with a real ad. Most schools never get that far.
+
+The only thing I'd add is something that picks up the phone {{when_it_runs}}, so every parent the ad sends actually gets an answer.
+
+If you ever want to hear it, the demo stays live at {{demo}} and the rest is on matboss.online.
+
+Either way, good luck with the ads.
+
+Ammar

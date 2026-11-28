@@ -11,6 +11,7 @@ is only exported when the advertiser name and the Facebook page both verified.
 from __future__ import annotations
 
 import os
+import re
 from pathlib import Path
 from typing import Iterable, Iterator
 
@@ -40,6 +41,51 @@ except ImportError:  # pragma: no cover - dotenv is part of the worker venv
     pass
 
 STATUS = {'Active': 'ACTIVE', 'Inactive': 'INACTIVE'}
+
+# The buttons Meta prints under an ad. The first one on the card is the ad's CTA.
+CTA_LABELS = {
+    'learn more', 'sign up', 'book now', 'send message', 'call now', 'shop now', 'contact us',
+    'get offer', 'apply now', 'subscribe', 'watch more', 'get quote', 'get directions',
+    'send whatsapp message', 'register now', 'get started', 'see menu', 'download',
+    'request time', 'order now', 'get tickets', 'listen now', 'interested', 'like page',
+    'send instagram message', 'view instagram profile', 'join now', 'claim offer',
+}
+DOMAIN_LINE = re.compile(r'^(?:https?://)?(?:www\.)?([A-Za-z0-9-]+(?:\.[A-Za-z0-9-]+)*\.[A-Za-z]{2,})/?$')
+MEDIA_LINE = re.compile(r'^\d+:\d+\s*/\s*\d+:\d+$')
+MAX_AD_TEXT = 600
+
+
+def ad_copy(text: str) -> dict:
+    """What the ad itself says, from the card text: primary text, button and landing domain.
+
+    The card reads "... <advertiser> / Sponsored / <primary text> / [video clock] /
+    [LANDING.COM / headline] / <button>". Anything that is not clearly one of
+    these is left out rather than guessed.
+    """
+    lines = [s.strip() for s in (text or '').split('\n')]
+    lines = [s for s in lines if s and s != '​']
+    try:
+        start = lines.index('Sponsored') + 1
+    except ValueError:
+        return {}
+    body, cta, link = [], None, None
+    for line in lines[start:]:
+        if MEDIA_LINE.match(line):
+            continue
+        if line.casefold() in CTA_LABELS:
+            cta = line
+            break
+        domain = DOMAIN_LINE.match(line)
+        if domain and ' ' not in line:
+            link = link or domain.group(1).lower()
+            continue
+        if link:
+            continue  # the headline under the landing domain
+        body.append(line)
+    words = ' '.join(body).strip()
+    if len(words) > MAX_AD_TEXT:
+        words = words[:MAX_AD_TEXT].rsplit(' ', 1)[0] + '…'
+    return {k: v for k, v in {'adText': words or None, 'adCta': cta, 'adLink': link}.items() if v}
 
 
 def api_base() -> str:
@@ -90,6 +136,8 @@ def observation(result: dict) -> dict | None:
         # 'name': the tab has no page URL, so the exact school name is what
         # matched; the filter tab shows the advertiser's page alongside it.
         'matchKind': 'page' if result.get('urlMatch') else 'name',
+        # What the ad says, for the Meta-ad email sequence's personal lines.
+        **ad_copy(ad.get('text') or ''),
     }
 
 

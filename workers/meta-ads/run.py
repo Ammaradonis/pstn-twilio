@@ -11,6 +11,7 @@ import csv
 import json
 import msvcrt
 import os
+import re
 import sqlite3
 import shutil
 import sys
@@ -36,9 +37,53 @@ SEEDS = ['martial arts', 'karate', 'taekwondo', 'jiu jitsu', 'kickboxing', 'kung
 # timeout or a dropped connection does not, and is handled per query.
 STOP_TEXT = ['temporarily blocked', 'you’re temporarily blocked', 'too many requests', 'confirm you are human']
 
+# Meta's "no ads" wording, old and new ("0 results" since late 2026).
+NO_RESULTS_TEXT = ['No ads match', 'No results found']
+RESULTS_LINE = re.compile(r'^\s*[~>]?\s*([\d,.]+)\s*(K|M)?\s+results?\s*$', re.I | re.M)
+
+# The results draw well after domcontentloaded on this PC (8-25 s with the other
+# workers running). The pass used to read the page after a fixed 5 s, take the
+# empty grid for a layout it did not know, and stop for good on the very first
+# search (25 Oct): no search ever finished and the filter's evidence aged out.
+RENDER_WAIT_MS = 45000
+# Several unreadable pages in a row mean the layout really changed; one is a slow page.
+MAX_UNRECOGNIZED_IN_A_ROW = 3
+
+# A finished search is due again after this many days, so "still advertising
+# now" (ads seen in the last 30 days) stays true for schools that still are.
+REFRESH_DAYS = 21
+DONE = ('stalled', 'no_results', 'capped')
+# Scroll caps. The keyword seeds return >50,000 ads: scrolling them out grows one
+# page past what this 4 GB PC can hold. A school name returns a handful.
+DISCOVERY_SCROLLS = 40
+SCHOOL_SCROLLS = 25
+
 
 class StopScrape(RuntimeError):
     """Facebook needs the user; continuing would make it worse."""
+
+
+def result_count(body: str) -> int | None:
+    """The '~1,200 results' line Meta prints above the cards, as a number."""
+    match = RESULTS_LINE.search(body)
+    if not match:
+        return None
+    value = float(match.group(1).replace(',', ''))
+    return int(value * {'K': 1000, 'M': 1000000}.get((match.group(2) or '').upper(), 1))
+
+
+def is_due(prior: tuple | None, refresh: bool, refresh_days: float, now_ts: float | None = None) -> bool:
+    """Whether a search should run: new, unfinished, or finished long enough ago."""
+    if prior is None or refresh:
+        return True
+    status, observed = prior
+    if status not in DONE:
+        return True
+    try:
+        age = (now_ts or time.time()) - datetime.fromisoformat(observed).timestamp()
+    except (TypeError, ValueError):
+        return True
+    return age >= refresh_days * 86400
 
 
 async def body_text(page) -> str:
@@ -99,7 +144,7 @@ class Pipeline:
                                                      'apply': {'state': self.apply_state, 'note': self.apply_note},
                                                      **extra}, indent=2), encoding='utf-8')
 
-    async def query_reason(self, page, country, query, extractor):
+    async def query_reason(self, page, country, query, extractor, cap=0):
         """One library search: (why it stopped, cards seen).
 
         A transient page failure is contained to its own query. It used to raise
@@ -108,37 +153,57 @@ class Pipeline:
         recorded as 'error', not 'stalled'/'no_results', so a later run retries it.
         """
         try:
-            return await self.search(page, country, query, extractor)
+            return await self.search(page, country, query, extractor, cap)
         except PlaywrightError as err:
             print(json.dumps({'country': country, 'query': query,
                               'error': str(err)[:300]}), flush=True)
             return 'error', 0
 
-    async def search(self, page, country, query, extractor):
+    async def check_page(self, page, country, body):
+        """Stop on the states only the user can clear; verify the filters."""
+        if '/checkpoint' in page.url or '/login' in page.url or await page.locator('input[name="email"], iframe[src*="captcha"]').count():
+            raise StopScrape('Facebook needs manual login or verification; collection stopped.')
+        if any(t in body.lower() for t in STOP_TEXT):
+            raise StopScrape('Facebook access limit encountered; collection stopped.')
+        filters = parse_qs(urlsplit(page.url).query)
+        country_label = 'United States' if country == 'US' else 'United Kingdom'
+        if filters.get('country') != [country] or filters.get('ad_type') != ['all'] or country_label not in body or 'All ads' not in body:
+            raise StopScrape('Could not verify country and All ads filters.')
+
+    async def first_results(self, page, country, extractor):
+        """Wait for the first cards: ('cards', snapshot), ('no_results', []) or ('unrecognized', [])."""
+        deadline = time.monotonic() + RENDER_WAIT_MS / 1000
+        body = ''
+        while True:
+            body = await body_text(page)
+            await self.check_page(page, country, body)
+            snapshot = await page.evaluate(extractor)
+            if snapshot:
+                return 'cards', snapshot
+            if any(t in body for t in NO_RESULTS_TEXT) or result_count(body) == 0:
+                return 'no_results', []
+            if time.monotonic() >= deadline:
+                break
+            await page.wait_for_timeout(2000)
+        (OUT / 'unrecognized-page.txt').write_text(body, encoding='utf-8')
+        return 'unrecognized', []
+
+    async def search(self, page, country, query, extractor, cap=0):
         """Scroll one search until it stalls: (stop reason, cards seen)."""
         params = {'active_status': 'all', 'ad_type': 'all', 'country': country, 'q': query,
                   'search_type': 'keyword_unordered', 'media_type': 'all'}
         await page.goto('https://www.facebook.com/ads/library/?' + urlencode(params), wait_until='domcontentloaded', timeout=60000)
-        await page.wait_for_timeout(5000)
+        state, first = await self.first_results(page, country, extractor)
+        if state != 'cards':
+            # 'unrecognized' is not a negative result: the search is retried on a later run.
+            return state, 0
         seen, idle, scrolls = set(), 0, 0
         while idle < 6:
             if (OUT / 'STOP').exists():
                 return 'stopped', len(seen)
             body = await body_text(page)
-            if '/checkpoint' in page.url or '/login' in page.url or await page.locator('input[name="email"], iframe[src*="captcha"]').count():
-                raise StopScrape('Facebook needs manual login or verification; collection stopped.')
-            if any(t in body.lower() for t in STOP_TEXT):
-                raise StopScrape('Facebook access limit encountered; collection stopped.')
-            filters = parse_qs(urlsplit(page.url).query)
-            country_label = 'United States' if country == 'US' else 'United Kingdom'
-            if filters.get('country') != [country] or filters.get('ad_type') != ['all'] or country_label not in body or 'All ads' not in body:
-                raise StopScrape('Could not verify country and All ads filters.')
-            snapshot = await page.evaluate(extractor)
-            if not snapshot and ('No ads match' in body or 'No results found' in body):
-                return 'no_results', 0
-            if not snapshot and scrolls == 0:
-                (OUT / 'unrecognized-page.txt').write_text(body, encoding='utf-8')
-                raise StopScrape('No recognizable ad cards; inspect unrecognized-page.txt. No negative result inferred.')
+            await self.check_page(page, country, body)
+            snapshot = first if scrolls == 0 else await page.evaluate(extractor)
             fresh = {a['adId'] for a in snapshot} - seen
             seen.update(a['adId'] for a in snapshot)
             idle = 0 if fresh else idle + 1
@@ -149,9 +214,37 @@ class Pipeline:
             scrolls += 1
             if self.args.max_scrolls and scrolls >= self.args.max_scrolls:
                 return 'scroll_limit', len(seen)
+            if cap and scrolls >= cap:
+                # As far as this search is read on purpose: complete, and due again later.
+                return 'capped', len(seen)
             await page.evaluate('window.scrollTo(0, document.documentElement.scrollHeight)')
             await page.wait_for_timeout(2500)
         return 'stalled', len(seen)
+
+    def due_queries(self):
+        """The searches this pass runs, in order: (country, is_discovery, query).
+
+        Discovery seeds first, then the schools: those already seen advertising
+        (so "running now" stays true for the ones that still are), then those
+        with a saved Facebook page, then the rest.
+        """
+        prior = {(c, q): (s, o) for c, q, s, o in self.db.execute('SELECT country, query, status, observed_at FROM searches')}
+        known = {(json.loads(raw).get('country'), name_key(json.loads(raw).get('name', '')))
+                 for (raw,) in self.db.execute('SELECT data FROM ads')}
+        out = []
+        for country in ('US', 'GB'):
+            for query in dict.fromkeys(SEEDS[:self.args.seeds]):
+                out.append((0, country, True, query))
+        if not self.args.seed_only:
+            titles = {(l['country'], l['title']) for l in self.inventory['leads'] if l['title'].strip()}
+            for country, title in titles:
+                key = (country, name_key(title))
+                has_page = any(facebook_key(l['facebookUrl']) for l in self.names[key])
+                rank = 1 if key in known else (2 if has_page else 3)
+                out.append((rank, country, False, title))
+        out.sort(key=lambda item: (item[0], item[1] != 'US', item[3].casefold()))
+        return [(c, d, q) for _, c, d, q in out
+                if is_due(prior.get((c, q)), self.args.refresh, self.args.refresh_days)]
 
     async def scroll(self, ctx):
         page = await ctx.new_page()
@@ -162,26 +255,21 @@ class Pipeline:
                 await self.ads.put(json.loads(raw))
             if self.args.replay_only:
                 return
-            # Discovery covers both countries before per-school searches begin.
-            for country, discovery in [('US', True), ('GB', True), ('US', False), ('GB', False)]:
-                if not discovery and self.args.seed_only:
-                    continue
-                queries = list(SEEDS[:self.args.seeds])
-                if not discovery:
-                    queries = sorted({l['title'] for l in self.inventory['leads'] if l['country'] == country},
-                                     key=lambda title: (not any(facebook_key(l['facebookUrl']) for l in self.names[(country, name_key(title))]), title))
-                for query in dict.fromkeys(queries):
-                    if (OUT / 'STOP').exists():
-                        return
-                    prior = self.db.execute('SELECT status FROM searches WHERE country=? AND query=?', (country, query)).fetchone()
-                    if prior and prior[0] in ('stalled', 'no_results') and not self.args.refresh:
-                        continue
-                    reason, ads = await self.query_reason(page, country, query, extractor)
-                    self.db.execute('INSERT OR REPLACE INTO searches VALUES(?,?,?,?)', (country, query, reason, now()))
-                    self.db.commit()
-                    self.counts['searches'] += 1
-                    self.export()
-                    print(json.dumps({'country': country, 'query': query, 'ads': ads, 'stopReason': reason}), flush=True)
+            unrecognized = 0
+            for country, discovery, query in self.due_queries():
+                if (OUT / 'STOP').exists():
+                    return
+                cap = DISCOVERY_SCROLLS if discovery else SCHOOL_SCROLLS
+                reason, ads = await self.query_reason(page, country, query, extractor, cap)
+                unrecognized = unrecognized + 1 if reason == 'unrecognized' else 0
+                self.db.execute('INSERT OR REPLACE INTO searches VALUES(?,?,?,?)', (country, query, reason, now()))
+                self.db.commit()
+                self.counts['searches'] += 1
+                self.export()
+                print(json.dumps({'country': country, 'query': query, 'ads': ads, 'stopReason': reason}), flush=True)
+                if unrecognized >= MAX_UNRECOGNIZED_IN_A_ROW:
+                    raise StopScrape(f'{unrecognized} searches in a row showed no recognizable ad cards; '
+                                     'inspect unrecognized-page.txt. No negative result inferred.')
         finally:
             await page.close()
             await self.snapshots.put(None)
@@ -388,6 +476,11 @@ class Pipeline:
         if self.args.sync_only:
             await self.sync_only()
             return
+        if not self.args.replay_only and not self.due_queries():
+            # The scheduled task starts this every hour; a browser only opens when a search is due.
+            self.status('idle', note=f'Every search is less than {self.args.refresh_days:g} days old.')
+            self.db.close()
+            return
         self.status('starting')
         try:
             async with async_playwright() as p:
@@ -423,7 +516,9 @@ if __name__ == '__main__':
     parser.add_argument('--seeds', type=int, default=len(SEEDS))
     parser.add_argument('--max-scrolls', type=int, default=0, help='0 scrolls until no new cards for six passes')
     parser.add_argument('--replay-only', action='store_true')
-    parser.add_argument('--refresh', action='store_true')
+    parser.add_argument('--refresh', action='store_true', help='Run every search again now, however recent')
+    parser.add_argument('--refresh-days', type=float, default=REFRESH_DAYS,
+                        help='A finished search is due again after this many days')
     parser.add_argument('--no-sync', action='store_true', help='Do not upload matches; the Meta ad filter then has nothing to work from')
     parser.add_argument('--sync-only', action='store_true', help='Upload the existing prospects.json and exit; no browser')
     args = parser.parse_args()

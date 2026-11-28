@@ -122,6 +122,7 @@ model User {
   readMarkers         ReadMarker[]
   smsCampaign         SmsCampaign?
   smsCampaignSends    SmsCampaignSend[]
+  metaAdOutreach      MetaAdOutreach[]
 
   @@map("users")
 }
@@ -666,6 +667,11 @@ model MetaAdEvidence {
   endedAt        DateTime? @map("ended_at")
   // When the worker read the Ads Library; "running now" requires this to be recent.
   observedAt     DateTime  @map("observed_at")
+  // What the ad says (primary text, button, landing domain), when the card showed it.
+  // The Meta-ad email sequence quotes these.
+  adText         String?   @map("ad_text")
+  adCta          String?   @map("ad_cta")
+  adLink         String?   @map("ad_link")
   createdAt      DateTime  @default(now()) @map("created_at")
   updatedAt      DateTime  @updatedAt @map("updated_at")
 
@@ -673,6 +679,49 @@ model MetaAdEvidence {
   @@unique([spreadsheetId, sheetId, adId, schoolTitle], map: "meta_ad_evidence_school_ad_key")
   @@index([spreadsheetId, sheetId, status, observedAt], map: "meta_ad_evidence_tab_status_idx")
   @@map("meta_ad_evidence")
+}
+
+// The 6-email Meta-ad sequence: one per school with Meta ad evidence, started
+// as soon as the evidence arrives, whether or not the school was called or
+// emailed before. Sent by MetaAdOutreachService on its own schedule.
+model MetaAdOutreach {
+  id            String    @id @default(uuid())
+  userId        String    @map("user_id")
+  spreadsheetId String    @map("spreadsheet_id")
+  sheetId       Int       @map("sheet_id")
+  sheetTitle    String    @map("sheet_title")
+  schoolTitle   String    @map("school_title")
+  // schoolKey(title, facebookUrl) as the filter uses it: one sequence per school per tab.
+  schoolKey     String    @map("school_key")
+  // WAITING_EMAIL | PENDING | SENDING | SENT | REPLIED | FAILED | SKIPPED
+  status        String    @default("WAITING_EMAIL")
+  emailTo       String?   @map("email_to")
+  // The school's sheet row by normalized header, read when the sequence was planned.
+  rowData       Json?     @map("row_data")
+  // The ad the emails talk about (see meta-ad-sequence.ts AdFacts).
+  ad            Json
+  // What the school publishes about itself, from the finder's profile pass.
+  profile       Json?
+  timeZone      String    @map("time_zone")
+  // Which of the 6 emails goes out next (1-based).
+  step          Int       @default(1)
+  dueAt         DateTime? @map("due_at")
+  firstSentAt   DateTime? @map("first_sent_at")
+  lastSentAt    DateTime? @map("last_sent_at")
+  emailsSent    Int       @default(0) @map("emails_sent")
+  attempts      Int       @default(0)
+  error         String?
+  // Next look for an address while WAITING_EMAIL.
+  checkAt       DateTime? @map("check_at")
+  createdAt     DateTime  @default(now()) @map("created_at")
+  updatedAt     DateTime  @updatedAt @map("updated_at")
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, spreadsheetId, sheetId, schoolKey], map: "meta_ad_outreach_school_key")
+  @@index([status, dueAt], map: "meta_ad_outreach_due_idx")
+  @@index([spreadsheetId, sheetId], map: "meta_ad_outreach_tab_idx")
+  @@map("meta_ad_outreach")
 }
 
 // ---------------------------------------------------------------------------

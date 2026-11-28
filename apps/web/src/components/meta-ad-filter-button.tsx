@@ -49,6 +49,20 @@ function summary(s: MetaAdsStatusDto): string {
   return `${parts.join(' · ')} · last checked ${since(s.lastObservedAt)}`;
 }
 
+/** "Meta-ad emails: 12 started · 3 queued · 5 waiting for an address · 31 sent". */
+export function outreachLine(o: MetaAdsStatusDto['outreach']): string | null {
+  if (!o) return null;
+  const parts: string[] = [];
+  if (o.started) parts.push(`${o.started.toLocaleString()} started`);
+  if (o.queued) parts.push(`${o.queued.toLocaleString()} queued`);
+  if (o.waitingForEmail) parts.push(`${o.waitingForEmail.toLocaleString()} waiting for an address`);
+  if (o.finished) parts.push(`${o.finished.toLocaleString()} finished`);
+  if (o.replied) parts.push(`${o.replied.toLocaleString()} replied`);
+  if (o.stopped) parts.push(`${o.stopped.toLocaleString()} stopped`);
+  if (parts.length === 0) return null;
+  return `Meta-ad emails: ${parts.join(' · ')} · ${o.emailsSent.toLocaleString()} sent`;
+}
+
 function outcome(r: MetaAdFilterResultDto): string {
   const verb = r.reused ? 'Updated' : 'Added';
   const rows = `${r.rows.toLocaleString()} of ${r.sourceRows.toLocaleString()} rows`;
@@ -100,12 +114,14 @@ export function MetaAdFilterButton({ spreadsheetId, sheetTitle }: Props) {
               : 'checks this tab against the Meta Ad Library and copies the matching rows into a new tab of this spreadsheet.'}
           </p>
           {s && s.evidence > 0 && <p className="text-slate-500">{summary(s)}</p>}
+          {s && outreachLine(s.outreach) && (
+            <p className="text-slate-500">{outreachLine(s.outreach)}</p>
+          )}
           {s && s.evidence === 0 && (
             <p className="text-amber-700">
-              No Meta matches reported for this tab yet. Run{' '}
-              <code className="rounded bg-amber-50 px-1">workers\meta-ads\start.ps1</code> on your
-              PC, then press again — the worker verifies every school&apos;s name and Facebook page
-              before anything is copied.
+              No Meta matches reported for this tab yet. The Meta ads worker on your PC (task
+              “BestSoftphone Meta Ads”) searches the Ad Library for every school and reports matches
+              as it goes; each one also starts its 6-email Meta-ad sequence.
             </p>
           )}
           {status.isError && (

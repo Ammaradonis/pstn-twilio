@@ -6,6 +6,7 @@ import { FbGroupsController, FbGroupsWorkerController } from './fb-groups.contro
 import { FbGroupsService } from './fb-groups.service';
 import { FollowUpRenderer } from './follow-up-renderer.service';
 import { GmailService } from './gmail.service';
+import { MetaAdOutreachService } from './meta-ad-outreach.service';
 import { MetaAdsController, MetaAdsWorkerController } from './meta-ads.controller';
 import { MetaAdsService } from './meta-ads.service';
 import { SheetsFollowUpService } from './sheets-follow-up.service';
@@ -42,6 +43,7 @@ import { SheetsService } from './sheets.service';
     EmailFinderService,
     ContactFormService,
     FbGroupsService,
+    MetaAdOutreachService,
     MetaAdsService,
     FinderWorkerGuard,
   ],

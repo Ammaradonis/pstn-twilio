@@ -59,6 +59,12 @@ export interface MetaAdEvidenceDto {
   observedAt: string;
   /** Which identity matched; older uploads are treated as `page`. */
   matchKind?: MetaAdMatchKind;
+  /** The ad's primary text as Meta printed it (capped), for the Meta-ad email sequence. */
+  adText?: string | null;
+  /** The ad's button ("Sign Up", "Learn More"). */
+  adCta?: string | null;
+  /** The landing domain printed on the ad ("sevenstarma.com"). */
+  adLink?: string | null;
 }
 
 /** The worker's upload: a batch of verified observations. */
@@ -90,6 +96,29 @@ export interface MetaAdsStatusDto {
   lastObservedAt: string | null;
   /** Observations older than this no longer count as "running now". */
   freshDays: number;
+  /** The Meta-ad email sequence for this tab's advertisers. */
+  outreach?: MetaAdOutreachSummaryDto;
+}
+
+/**
+ * The 6-email Meta-ad sequence for one tab: every school with Meta evidence
+ * gets one, whether or not it was called or emailed before.
+ */
+export interface MetaAdOutreachSummaryDto {
+  /** Sequences that have sent at least one email (running or finished). */
+  started: number;
+  /** Queued for their first email. */
+  queued: number;
+  /** Advertisers with no email address yet (re-checked as the finder fills the tab). */
+  waitingForEmail: number;
+  /** All 6 sent. */
+  finished: number;
+  /** Stopped because the school wrote back. */
+  replied: number;
+  /** Failed or skipped (see the API log). */
+  stopped: number;
+  /** Emails sent across the tab's sequences. */
+  emailsSent: number;
 }
 
 /** The new tab the button created, in the same spreadsheet as the source tab. */

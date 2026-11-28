@@ -185,3 +185,24 @@ class UploadTest(unittest.TestCase):
 
 if __name__ == '__main__':
     unittest.main()
+
+
+class AdCopyTests(unittest.TestCase):
+    def test_primary_text_button_and_landing_domain(self):
+        text = ('Inactive\nLibrary ID: 1189707452341804\nAug 27, 2024 - Oct 15, 2026\nPlatforms\n'
+                'See ad details\nSeven Star Martial Arts Kids\nSponsored\nGive your child an edge in martial arts\n'
+                '0:00 / 0:00\nSEVENSTARMA.COM\nFREE TRIAL WEEK\nSign Up\n')
+        from remote import ad_copy
+        self.assertEqual(ad_copy(text), {'adText': 'Give your child an edge in martial arts',
+                                         'adCta': 'Sign Up', 'adLink': 'sevenstarma.com'})
+
+    def test_no_sponsored_line_means_nothing_is_guessed(self):
+        from remote import ad_copy
+        self.assertEqual(ad_copy('Active\nLibrary ID: 1\nSome page'), {})
+
+    def test_observation_carries_the_ad_copy(self):
+        ad = {**ACTIVE_AD, 'text': 'Austin Shotokan\nSponsored\nKarate for the whole family\nLearn More'}
+        row = observation({'lead': LEAD, 'ad': ad, 'evidence': True, 'urlMatch': True})
+        self.assertEqual(row['adText'], 'Karate for the whole family')
+        self.assertEqual(row['adCta'], 'Learn More')
+        self.assertNotIn('adLink', row)
